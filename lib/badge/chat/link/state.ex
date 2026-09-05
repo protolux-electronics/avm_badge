@@ -166,13 +166,15 @@ defmodule Badge.Chat.Link.State do
     {%{state | rooms_channel: :out}, []}
   end
 
-  defp reply(state, :join_room, "ok", response) do
+  defp reply(%{room: slug} = state, {:join_room, slug}, "ok", response) do
     {%{state | room_channel: :joined, messages: history(response, state.chip)}, []}
   end
 
-  defp reply(state, :join_room, _status, _response) do
+  defp reply(%{room: slug} = state, {:join_room, slug}, _status, _response) do
     {%{state | room_channel: :out}, []}
   end
+
+  defp reply(state, {:join_room, _slug}, _status, _response), do: {state, []}
 
   defp reply(state, :say, "ok", _response), do: {%{state | refused: nil}, []}
 
@@ -282,7 +284,7 @@ defmodule Badge.Chat.Link.State do
       state
       | room_channel: :joining,
         room_join_ref: join_ref,
-        pending: Map.put(state.pending, ref, :join_room)
+        pending: Map.put(state.pending, ref, {:join_room, slug})
     }
 
     {state, [{join_ref, ref, topic(slug), "phx_join", %{}}]}

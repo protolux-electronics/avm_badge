@@ -336,6 +336,34 @@ defmodule Badge.Chat.Link.StateTest do
              ] = frames
     end
 
+    test "a stale join reply for a room already left is discarded" do
+      {state, frames} = State.connected(new())
+      {_join_ref, ref} = rooms_join(frames)
+
+      {state, []} =
+        State.received(
+          state,
+          reply(ref, "ok", %{
+            "banned" => false,
+            "rooms" => [%{"slug" => "lobby", "name" => "Lobby"}, %{"slug" => "goats", "name" => "Goats"}]
+          })
+        )
+
+      state = State.identify(state, "chip")
+      {state, [{_jr1, lobby_ref, "chat:lobby", "phx_join", %{}}]} = State.enter(state, "lobby")
+
+      {state, [_leave, {_jr2, _goats_ref, "chat:goats", "phx_join", %{}}]} = State.enter(state, "goats")
+
+      {state, []} =
+        State.received(state, room_reply(lobby_ref, "ok", %{"messages" => [%{"from" => "Ana", "body" => "hi"}]}))
+
+      status = State.status(state)
+
+      assert status.room == "goats"
+      assert status.messages == []
+      refute status.state == :joined
+    end
+
     test "a room archived out from under you pops you back to the list" do
       {state, ref} = in_lobby()
       {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
