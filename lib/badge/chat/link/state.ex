@@ -144,6 +144,18 @@ defmodule Badge.Chat.Link.State do
     end
   end
 
+  def received(state, %{topic: @rooms_topic, event: event}) when event in ["phx_error", "phx_close"] do
+    join_rooms(%{state | rooms_channel: :out})
+  end
+
+  def received(%{room: room} = state, %{topic: topic, event: event})
+      when event in ["phx_error", "phx_close"] and is_binary(room) do
+    case topic == topic(room) do
+      true -> join_room(%{state | room_channel: :out}, room)
+      false -> {state, []}
+    end
+  end
+
   def received(state, _message), do: {state, []}
 
   defp reply(state, :join_rooms, "ok", response) do

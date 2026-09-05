@@ -348,6 +348,58 @@ defmodule Badge.Chat.Link.StateTest do
     end
   end
 
+  describe "channel errors" do
+    defp channel_frame(topic, event), do: %{join_ref: nil, ref: nil, topic: topic, event: event, payload: %{}}
+
+    test "phx_error on the room channel rejoins it" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {state, frames} = State.received(state, channel_frame("chat:lobby", "phx_error"))
+
+      assert [{_jr, _r, "chat:lobby", "phx_join", %{}}] = frames
+      refute State.status(state).state == :joined
+    end
+
+    test "phx_close on the room channel rejoins it" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {state, frames} = State.received(state, channel_frame("chat:lobby", "phx_close"))
+
+      assert [{_jr, _r, "chat:lobby", "phx_join", %{}}] = frames
+      refute State.status(state).state == :joined
+    end
+
+    test "phx_error on the rooms channel rejoins it and clears ready" do
+      state = ready()
+
+      {state, frames} = State.received(state, channel_frame(@rooms, "phx_error"))
+
+      assert [{_jr, _r, @rooms, "phx_join", %{}}] = frames
+      refute State.status(state).ready
+    end
+
+    test "phx_close on the rooms channel rejoins it and clears ready" do
+      state = ready()
+
+      {state, frames} = State.received(state, channel_frame(@rooms, "phx_close"))
+
+      assert [{_jr, _r, @rooms, "phx_join", %{}}] = frames
+      refute State.status(state).ready
+    end
+
+    test "an unrelated topic is undisturbed by phx_error" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {next, frames} = State.received(state, channel_frame("chat:goats", "phx_error"))
+
+      assert frames == []
+      assert next == state
+    end
+  end
+
   describe "posting" do
     test "a refused post says which refusal it was" do
       {state, ref} = in_lobby()
