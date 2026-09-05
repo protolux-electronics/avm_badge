@@ -129,14 +129,62 @@ defmodule Badge.Chat.Link do
   end
 
   defp decoded(state, :error), do: state
-  defp decoded(state, {:ok, message}), do: apply_link(state, State.received(state.link, message))
 
-  # Every transition answers frames; sending them is the only thing this
-  # process does that the state machine cannot.
+  defp decoded(state, {:ok, message}) do
+    log_message(state, message)
+    apply_link(state, State.received(state.link, message))
+  end
+
   defp apply_link(state, {link, frames}) do
+    log_transition(State.status(state.link), State.status(link))
+
     :lists.foreach(fn frame -> send_frame(state, frame) end, frames)
 
     %{state | link: link}
+  end
+
+  defp log_transition(%{state: from}, %{state: :joined, room: room})
+       when from != :joined and room != nil do
+    :io.format(~c"Chat: joined ~s~n", [State.topic(room)])
+  end
+
+  defp log_transition(%{state: from, room: room}, %{state: :out, room: room})
+       when from != :out and room != nil do
+    :io.format(~c"Chat: join ~s refused~n", [State.topic(room)])
+  end
+
+  defp log_transition(%{ready: false}, %{ready: true}), do: :io.format(~c"Chat: rooms ready~n")
+
+  defp log_transition(_before, _next), do: :ok
+
+  defp log_message(state, %{topic: topic, event: "new_msg", payload: payload}) do
+    case topic == room_topic(state) do
+      true -> :io.format(~c"Chat: ~s: ~s~n", [field(payload, "from"), field(payload, "body")])
+      false -> :ok
+    end
+  end
+
+  defp log_message(state, %{topic: topic, event: event}) when event in ["phx_error", "phx_close"] do
+    case topic == room_topic(state) do
+      true -> :io.format(~c"Chat: channel ~s~n", [event])
+      false -> :ok
+    end
+  end
+
+  defp log_message(_state, _message), do: :ok
+
+  defp room_topic(state) do
+    case State.status(state.link).room do
+      room when is_binary(room) -> State.topic(room)
+      _none -> nil
+    end
+  end
+
+  defp field(payload, key) do
+    case Map.get(payload, key) do
+      value when is_binary(value) -> value
+      _absent -> ""
+    end
   end
 
   defp send_frame(state, {join_ref, ref, topic, event, payload}) do
