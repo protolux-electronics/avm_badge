@@ -137,10 +137,16 @@ defmodule Badge.Page.Chat.RoomTest do
       assert Enum.any?(texts(typed(Room.init(), "hello")), &(:binary.match(&1, "hello") != :nomatch))
     end
 
-    test "enter clears the draft, so a line is not sent twice" do
-      state = typed(Room.init(), "hello") |> press({:edit, :newline})
+    test "enter while joined clears the draft, so a line is not sent twice" do
+      state = typed(%{Room.init() | link: :joined}, "hello") |> press({:edit, :newline})
 
       assert Badge.Field.value(state.draft) == ""
+    end
+
+    test "enter while not joined keeps the draft so it can be sent again" do
+      state = typed(%{Room.init() | link: :offline}, "hello") |> press({:edit, :newline})
+
+      assert Badge.Field.value(state.draft) == "hello"
     end
 
     test "enter on an empty draft is ignored rather than sending nothing" do

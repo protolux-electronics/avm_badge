@@ -181,8 +181,12 @@ defmodule Badge.Page.Chat.Room do
   defp send_draft(body, state) do
     Link.say(body)
 
-    {:ok, %{state | draft: Field.new(Field.capacity(state.draft))}}
+    {:ok, %{state | draft: cleared_draft(state)}}
   end
+
+  # Only a joined link actually sent the line; otherwise keep it to try again.
+  defp cleared_draft(%{link: :joined} = state), do: Field.new(Field.capacity(state.draft))
+  defp cleared_draft(state), do: state.draft
 
   @impl true
   def render(state) do
