@@ -35,8 +35,7 @@ defmodule Badge.Page.Chat.Rooms do
   # How many rooms fit between the heading rule and the description rule.
   @rows div(@foot_rule_y - @top, @pitch)
 
-  # A room gives up its first column to the marker and a second as a gap, so
-  # the caret does not crowd the name.
+  # Marker column, then a gap column, before the name starts.
   @name_x @margin + 2 * @char_w
 
   @heading "ROOMS"
