@@ -131,12 +131,16 @@ defmodule Badge.Chat.Link do
   defp decoded(state, :error), do: state
 
   defp decoded(state, {:ok, message}) do
-    log_message(state, message)
-    apply_link(state, State.received(state.link, message))
+    before = State.status(state.link)
+
+    log_message(before, message)
+    apply_link(state, State.received(state.link, message), before)
   end
 
-  defp apply_link(state, {link, frames}) do
-    log_transition(State.status(state.link), State.status(link))
+  defp apply_link(state, {link, frames}), do: apply_link(state, {link, frames}, State.status(state.link))
+
+  defp apply_link(state, {link, frames}, before) do
+    log_transition(before, State.status(link))
 
     :lists.foreach(fn frame -> send_frame(state, frame) end, frames)
 
@@ -157,28 +161,24 @@ defmodule Badge.Chat.Link do
 
   defp log_transition(_before, _next), do: :ok
 
-  defp log_message(state, %{topic: topic, event: "new_msg", payload: payload}) do
-    case topic == room_topic(state) do
+  defp log_message(status, %{topic: topic, event: "new_msg", payload: payload}) do
+    case topic == room_topic(status) do
       true -> :io.format(~c"Chat: ~s: ~s~n", [field(payload, "from"), field(payload, "body")])
       false -> :ok
     end
   end
 
-  defp log_message(state, %{topic: topic, event: event}) when event in ["phx_error", "phx_close"] do
-    case topic == room_topic(state) do
+  defp log_message(status, %{topic: topic, event: event}) when event in ["phx_error", "phx_close"] do
+    case topic == room_topic(status) do
       true -> :io.format(~c"Chat: channel ~s~n", [event])
       false -> :ok
     end
   end
 
-  defp log_message(_state, _message), do: :ok
+  defp log_message(_status, _message), do: :ok
 
-  defp room_topic(state) do
-    case State.status(state.link).room do
-      room when is_binary(room) -> State.topic(room)
-      _none -> nil
-    end
-  end
+  defp room_topic(%{room: room}) when is_binary(room), do: State.topic(room)
+  defp room_topic(_status), do: nil
 
   defp field(payload, key) do
     case Map.get(payload, key) do
