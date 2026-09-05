@@ -59,7 +59,35 @@ defmodule Badge.Chat.Link.StateTest do
       status = State.status(state)
 
       assert status.ready
-      assert status.rooms == [%{slug: "lobby", name: "Lobby"}, %{slug: "goats", name: "Goats"}]
+
+      assert status.rooms == [
+               %{slug: "lobby", name: "Lobby", description: ""},
+               %{slug: "goats", name: "Goats", description: ""}
+             ]
+    end
+
+    test "the join reply carries each room's description" do
+      {state, frames} = State.connected(new())
+      {_join_ref, ref} = rooms_join(frames)
+
+      {state, []} =
+        State.received(
+          state,
+          reply(ref, "ok", %{
+            "banned" => false,
+            "rooms" => [
+              %{"slug" => "lobby", "name" => "Lobby", "description" => "Bring your badge"},
+              %{"slug" => "goats", "name" => "Goats", "description" => :null}
+            ]
+          })
+        )
+
+      status = State.status(state)
+
+      assert status.rooms == [
+               %{slug: "lobby", name: "Lobby", description: "Bring your badge"},
+               %{slug: "goats", name: "Goats", description: ""}
+             ]
     end
 
     test "a ban arrives instead of a room list" do
@@ -155,7 +183,7 @@ defmodule Badge.Chat.Link.StateTest do
           push_frame(@rooms, "rooms", %{"rooms" => [%{"slug" => "goats", "name" => "Goats"}]})
         )
 
-      assert State.status(state).rooms == [%{slug: "goats", name: "Goats"}]
+      assert State.status(state).rooms == [%{slug: "goats", name: "Goats", description: ""}]
     end
 
     test "a malformed room list is ignored rather than emptying the rail" do

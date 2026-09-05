@@ -189,7 +189,7 @@ defmodule Badge.Chat.Link.State do
   defp wire_rooms([room | rest], acc) when is_map(room) do
     case {Map.get(room, "slug"), Map.get(room, "name")} do
       {slug, name} when is_binary(slug) and is_binary(name) ->
-        wire_rooms(rest, [%{slug: slug, name: name} | acc])
+        wire_rooms(rest, [%{slug: slug, name: name, description: text(room, "description")} | acc])
 
       _malformed ->
         wire_rooms(rest, acc)
