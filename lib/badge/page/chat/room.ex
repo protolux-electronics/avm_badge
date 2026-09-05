@@ -1,13 +1,11 @@
-defmodule Badge.Page.Chat do
+defmodule Badge.Page.Chat.Room do
   @moduledoc """
-  The room, on the panel.
+  The conversation, on the panel.
 
-  Messages arrive through `Badge.Chat.Link`, which does the polling; this page
-  only reads what it has heard and hands typed lines back. Newest sits nearest
-  the draft line, so the eye follows the conversation downwards.
-
-  The link is opened on the first tick and closed on the way out, because a
-  session held open costs heap the badge needs for whatever else is on screen.
+  A sub-page of `Badge.Page.Chat`, which owns the link and feeds this module
+  its status via `apply_status/2`. This module only reads what it has heard
+  and hands typed lines back. Newest sits nearest the draft line, so the eye
+  follows the conversation downwards.
   """
 
   use Badge.Page
@@ -65,10 +63,7 @@ defmodule Badge.Page.Chat do
   @none "No messages yet"
 
   @impl true
-  def title, do: "Chat"
-
-  @impl true
-  def icon, do: :triangle
+  def title, do: "Room"
 
   # A frame is a whole panel, and messages arrive at walking pace.
   @impl true
@@ -84,34 +79,33 @@ defmodule Badge.Page.Chat do
       offset: 0,
       heard: 0,
       limit: limit_for(nil),
-      loaded: false
+      loaded: false,
+      refused: nil
     }
   end
 
-  # Hardware is only touched here, never from a key handler.
-  @impl true
-  def tick(state) do
-    Link.open()
-    status = Link.status()
-
+  @doc "Takes what the container read from the link. Called instead of `tick/1`."
+  @spec apply_status(map, map) :: map
+  def apply_status(status, state) do
     state = named(state)
-    draft = Field.resize(state.draft, state.limit)
 
-    %{state | messages: status.messages, link: status.state, draft: draft, heard: status.heard}
+    %{
+      state
+      | messages: status.messages,
+        link: status.state,
+        refused: status.refused,
+        draft: Field.resize(state.draft, state.limit)
+    }
     |> drift(status.heard - state.heard)
+    |> Map.put(:heard, status.heard)
   end
 
-  # The profile arrives on the first tick, so init/0 stays pure. A page is built
-  # afresh on every visit, so a name changed since the last one is picked up.
+  # The profile arrives on the first status; a page built afresh picks up a renamed badge.
   defp named(%{loaded: true} = state), do: state
 
   defp named(state) do
     %{state | loaded: true, limit: limit_for(Profile.display_name(Profile.load()))}
   end
-
-  # A page is not a process, so the session has nowhere else to be given back.
-  @impl true
-  def leave(_state), do: Link.close()
 
   @impl true
   def handle_key({:move, :up}, state), do: older(state, length(state.messages))
@@ -304,7 +298,9 @@ defmodule Badge.Page.Chat do
     clip(line, 2 + at)
   end
 
-  # An empty draft is the only time there is room to say the link is still coming up.
+  # An empty draft is the only time there is room to say why the last line failed.
+  defp idle(%{refused: :banned}), do: prompt("banned - cannot post", @alert)
+  defp idle(%{refused: :empty}), do: prompt("nothing to say", @warn)
   defp idle(%{link: :joined}), do: prompt("> _", @select)
   defp idle(_state), do: prompt("connecting to the room", @muted)
 
