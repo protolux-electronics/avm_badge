@@ -97,8 +97,12 @@ defmodule Badge.Page.Chat.Room do
         draft: Field.resize(state.draft, state.limit)
     }
     |> drift(status.heard - state.heard)
+    |> clamp_offset()
     |> Map.put(:heard, status.heard)
   end
+
+  # A rejoin can replace the messages with a shorter history than was scrolled to.
+  defp clamp_offset(state), do: %{state | offset: min(state.offset, max(length(state.messages) - 1, 0))}
 
   # The profile arrives on the first status; a page built afresh picks up a renamed badge.
   defp named(%{loaded: true} = state), do: state

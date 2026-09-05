@@ -592,6 +592,16 @@ defmodule Badge.Page.Chat.RoomTest do
     end
   end
 
+  describe "apply_status clamps a stale offset" do
+    test "an offset beyond the new message count is pulled back into range" do
+      state = %{Room.init() | loaded: true, offset: 5, selected: nil}
+      next = Room.apply_status(status(%{messages: said(2), heard: 0}), state)
+
+      assert next.offset <= 1
+      assert Enum.any?(texts(next), &(:binary.match(&1, "message") != :nomatch))
+    end
+  end
+
   describe "drift" do
     # Sets messages directly, so drift/2 can be exercised alone rather than
     # through the drift apply_status/2 already runs internally.
