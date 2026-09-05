@@ -164,4 +164,193 @@ defmodule Badge.Chat.Link.StateTest do
       assert length(State.status(state).rooms) == 2
     end
   end
+
+  describe "rooms" do
+    defp in_lobby do
+      {state, frames} = State.connected(new())
+      {_join_ref, ref} = rooms_join(frames)
+
+      {state, []} =
+        State.received(
+          state,
+          reply(ref, "ok", %{
+            "banned" => false,
+            "rooms" => [%{"slug" => "lobby", "name" => "Lobby"}]
+          })
+        )
+
+      state = State.identify(state, "90DA7247F828")
+      {state, [{_jr, join_ref_ref, "chat:lobby", "phx_join", %{}}]} = State.enter(state, "lobby")
+
+      {state, join_ref_ref}
+    end
+
+    defp room_reply(ref, status, response) do
+      %{
+        join_ref: nil,
+        ref: ref,
+        topic: "chat:lobby",
+        event: "phx_reply",
+        payload: %{"status" => status, "response" => response}
+      }
+    end
+
+    test "entering a room joins its topic" do
+      {state, _ref} = in_lobby()
+
+      assert State.status(state).room == "lobby"
+      assert State.status(state).state == :joining
+    end
+
+    test "entering clears that room's unread" do
+      {state, frames} = State.connected(new())
+      {_join_ref, ref} = rooms_join(frames)
+
+      {state, []} =
+        State.received(
+          state,
+          reply(ref, "ok", %{"banned" => false, "rooms" => [%{"slug" => "lobby", "name" => "Lobby"}]})
+        )
+
+      {state, []} = State.received(state, push_frame(@rooms, "activity", %{"slug" => "lobby"}))
+      assert State.status(state).unread == %{"lobby" => 1}
+
+      {state, _frames} = State.enter(state, "lobby")
+      assert State.status(state).unread == %{}
+    end
+
+    test "the join reply's history becomes the messages, newest first" do
+      {state, ref} = in_lobby()
+
+      {state, []} =
+        State.received(
+          state,
+          room_reply(ref, "ok", %{
+            "messages" => [
+              %{"chip" => "90DA7247F828", "from" => "Gus", "body" => "two"},
+              %{"chip" => "AAAAAAAAAAAA", "from" => "Ana", "body" => "one"}
+            ]
+          })
+        )
+
+      status = State.status(state)
+
+      assert status.state == :joined
+      assert for(m <- status.messages, do: m.body) == ["two", "one"]
+      assert for(m <- status.messages, do: m.mine) == [true, false]
+    end
+
+    test "a refused room join says why" do
+      {state, ref} = in_lobby()
+
+      {state, []} = State.received(state, room_reply(ref, "error", %{"reason" => "banned"}))
+
+      assert State.status(state).state == :out
+    end
+
+    test "a new message is prepended and counted" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {state, []} =
+        State.received(state, %{
+          join_ref: nil,
+          ref: nil,
+          topic: "chat:lobby",
+          event: "new_msg",
+          payload: %{"chip" => "AAAAAAAAAAAA", "from" => "Ana", "body" => "hi"}
+        })
+
+      status = State.status(state)
+
+      assert [%{from: "Ana", body: "hi", mine: false}] = status.messages
+      assert status.heard == 1
+    end
+
+    test "a message in a room it is not in is not taken" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {state, []} =
+        State.received(state, %{
+          join_ref: nil,
+          ref: nil,
+          topic: "chat:goats",
+          event: "new_msg",
+          payload: %{"chip" => "AAAAAAAAAAAA", "from" => "Ana", "body" => "elsewhere"}
+        })
+
+      assert State.status(state).messages == []
+    end
+
+    test "leaving a room sends phx_leave and drops the messages" do
+      {state, ref} = in_lobby()
+
+      {state, []} =
+        State.received(state, room_reply(ref, "ok", %{"messages" => [%{"from" => "Ana", "body" => "hi"}]}))
+
+      {state, frames} = State.leave_room(state)
+
+      assert [{_jr, _r, "chat:lobby", "phx_leave", %{}}] = frames
+      assert State.status(state).room == nil
+      assert State.status(state).messages == []
+    end
+
+    test "entering another room leaves the first" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {_state, frames} = State.enter(state, "goats")
+
+      assert [
+               {_lr, _lref, "chat:lobby", "phx_leave", %{}},
+               {_jr, _jref, "chat:goats", "phx_join", %{}}
+             ] = frames
+    end
+
+    test "a room archived out from under you pops you back to the list" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {state, frames} =
+        State.received(state, push_frame(@rooms, "rooms", %{"rooms" => []}))
+
+      assert [{_jr, _r, "chat:lobby", "phx_leave", %{}}] = frames
+      assert State.status(state).room == nil
+    end
+  end
+
+  describe "posting" do
+    test "a refused post says which refusal it was" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {state, [{_jr, say_ref, "chat:lobby", "new_msg", %{"body" => "hi"}}]} =
+        State.say(state, "hi")
+
+      {state, []} = State.received(state, room_reply(say_ref, "error", %{"reason" => "banned"}))
+
+      assert State.status(state).refused == :banned
+    end
+
+    test "an accepted post clears a previous refusal" do
+      {state, ref} = in_lobby()
+      {state, []} = State.received(state, room_reply(ref, "ok", %{"messages" => []}))
+
+      {state, [{_jr, first, _t, "new_msg", _p}]} = State.say(state, "hi")
+      {state, []} = State.received(state, room_reply(first, "error", %{"reason" => "empty"}))
+      assert State.status(state).refused == :empty
+
+      {state, [{_jr, second, _t, "new_msg", _p}]} = State.say(state, "again")
+      {state, []} = State.received(state, room_reply(second, "ok", %{}))
+
+      assert State.status(state).refused == nil
+    end
+
+    test "saying nothing while out of a room sends nothing" do
+      {state, _frames} = State.connected(new())
+
+      assert {_state, []} = State.say(state, "hi")
+    end
+  end
 end

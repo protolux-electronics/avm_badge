@@ -59,6 +59,49 @@ defmodule Badge.Chat.Link.State do
     {%{state | up: false, rooms_channel: :out, room_channel: :out}, []}
   end
 
+  @doc "The chip this badge posts as, so its own lines can be marked."
+  @spec identify(map, binary) :: map
+  def identify(state, chip), do: %{state | chip: chip}
+
+  @doc "Enters a room, leaving whichever one it was in."
+  @spec enter(map, binary) :: {map, [tuple]}
+  def enter(state, slug) when is_binary(slug) do
+    {state, leave_frames} = leave_room(state)
+
+    state = %{
+      state
+      | room: slug,
+        messages: [],
+        refused: nil,
+        unread: Map.delete(state.unread, slug)
+    }
+
+    {state, join_frames} = join_room(state, slug)
+
+    {state, leave_frames ++ join_frames}
+  end
+
+  @doc "Leaves the room, keeping the socket and the rooms channel."
+  @spec leave_room(map) :: {map, [tuple]}
+  def leave_room(%{room: nil} = state), do: {state, []}
+
+  def leave_room(state) do
+    {next, frames} = leave_frames(state)
+
+    {%{next | room: nil, room_channel: :out, messages: [], refused: nil}, frames}
+  end
+
+  @doc "Posts a line to the room, or nothing at all if not in one."
+  @spec say(map, binary) :: {map, [tuple]}
+  def say(%{room_channel: channel} = state, _body) when channel != :joined, do: {state, []}
+
+  def say(state, body) do
+    {state, ref} = next_ref(state)
+    state = %{state | pending: Map.put(state.pending, ref, :say)}
+
+    {state, [{state.room_join_ref, ref, topic(state.room), "new_msg", %{"body" => body}}]}
+  end
+
   @doc "What the page reads. Called from the render loop, so it only reads."
   @spec status(map) :: map
   def status(state) do
@@ -90,7 +133,15 @@ defmodule Badge.Chat.Link.State do
   end
 
   def received(state, %{topic: @rooms_topic, event: "rooms", payload: payload}) do
-    {listed(state, Map.get(payload, "rooms")), []}
+    pruned(listed(state, Map.get(payload, "rooms")))
+  end
+
+  def received(%{room: room} = state, %{topic: topic, event: "new_msg", payload: payload})
+      when is_binary(room) do
+    case topic == topic(room) do
+      true -> {heard(state, payload), []}
+      false -> {state, []}
+    end
   end
 
   def received(state, _message), do: {state, []}
@@ -103,6 +154,20 @@ defmodule Badge.Chat.Link.State do
     {%{state | rooms_channel: :out}, []}
   end
 
+  defp reply(state, :join_room, "ok", response) do
+    {%{state | room_channel: :joined, messages: history(response, state.chip)}, []}
+  end
+
+  defp reply(state, :join_room, _status, _response) do
+    {%{state | room_channel: :out}, []}
+  end
+
+  defp reply(state, :say, "ok", _response), do: {%{state | refused: nil}, []}
+
+  defp reply(state, :say, _status, response) do
+    {%{state | refused: refusal(text(response, "reason"))}, []}
+  end
+
   defp reply(state, _purpose, _status, _response), do: {state, []}
 
   defp joined_rooms(state, response) do
@@ -112,8 +177,7 @@ defmodule Badge.Chat.Link.State do
     end
   end
 
-  # A list that is not a list of rooms leaves the rail alone: an empty rail is
-  # a worse lie than a stale one.
+  # A non-list leaves the rail as it was, rather than emptying it.
   defp listed(state, rooms) when is_list(rooms) do
     %{state | rooms: :lists.reverse(wire_rooms(rooms, []))}
   end
@@ -133,6 +197,46 @@ defmodule Badge.Chat.Link.State do
   end
 
   defp wire_rooms([_room | rest], acc), do: wire_rooms(rest, acc)
+
+  # A room archived while you are standing in it: the list is the truth.
+  defp pruned(%{room: nil} = state), do: {state, []}
+
+  defp pruned(state) do
+    case listed?(state.rooms, state.room) do
+      true -> {state, []}
+      false -> leave_room(state)
+    end
+  end
+
+  defp listed?([], _slug), do: false
+  defp listed?([%{slug: slug} | _rest], slug), do: true
+  defp listed?([_room | rest], slug), do: listed?(rest, slug)
+
+  @keep 16
+
+  defp history(response, chip) do
+    case Map.get(response, "messages") do
+      messages when is_list(messages) -> for message <- messages, do: line(message, chip)
+      _absent -> []
+    end
+  end
+
+  defp heard(state, payload) do
+    messages = keep([line(payload, state.chip) | state.messages], @keep, [])
+
+    %{state | messages: messages, heard: state.heard + 1}
+  end
+
+  defp keep(_list, 0, acc), do: :lists.reverse(acc)
+  defp keep([], _left, acc), do: :lists.reverse(acc)
+  defp keep([head | rest], left, acc), do: keep(rest, left - 1, [head | acc])
+
+  defp line(payload, chip) do
+    %{from: text(payload, "from"), body: text(payload, "body"), mine: text(payload, "chip") == chip}
+  end
+
+  defp refusal("banned"), do: :banned
+  defp refusal(_reason), do: :empty
 
   defp noted(state, slug) when is_binary(slug) do
     case slug == state.room do
@@ -178,11 +282,22 @@ defmodule Badge.Chat.Link.State do
   @spec topic(binary) :: binary
   def topic(slug), do: @chat_prefix <> slug
 
-  # A join_ref is per join, never reused: Phoenix matches a channel's messages
-  # against it, and a rejoin of the same topic under the old one is dropped.
+  # A fresh join_ref per join; a rejoin under the old one is dropped.
   defp next_join(state) do
     {%{state | join_ref: state.join_ref + 1, ref: state.ref + 1},
      :erlang.integer_to_binary(state.join_ref), :erlang.integer_to_binary(state.ref)}
+  end
+
+  defp leave_frames(%{up: false} = state), do: {state, []}
+
+  defp leave_frames(state) do
+    {state, ref} = next_ref(state)
+
+    {state, [{state.room_join_ref, ref, topic(state.room), "phx_leave", %{}}]}
+  end
+
+  defp next_ref(state) do
+    {%{state | ref: state.ref + 1}, :erlang.integer_to_binary(state.ref)}
   end
 
   defp take(pending, ref) do
