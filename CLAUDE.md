@@ -58,7 +58,27 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 ## Chat transport
 
 - The chat rides a websocket from the `atomvm_websocket_client` ESP-IDF
-  component; `Badge.Chat.Socket` wraps it, `Badge.Chat.Link` owns the port
+  component; `Badge.Chat.Socket` wraps it, `Badge.Chat.Link` owns the port and
+  `Badge.Chat.Link.State` holds every transition as plain data. The state
+  machine is the only part that can be tested on the host, so put logic there
+  and keep the GenServer a shell
+- Two channels on one socket: `rooms:badge` for the room list, activity and
+  the ban notice, and `chat:<slug>` for whichever room is entered. Both are
+  joined with their own `join_ref`; **a rejoin must not reuse the old one** or
+  Phoenix drops the channel's messages silently
+- **Replies are dispatched by ref, not by topic.** A room carries both a join
+  reply and a `new_msg` reply on the same topic. Matching on topic alone is
+  why a banned badge used to post into silence
+- A banned badge connects and joins `rooms:badge`, which answers with the
+  reason and no room list. Ban and unban both disconnect the socket server-side
+  so the reconnect picks the new state up
+- Rooms carry a third wire key, `description` (admin-set, 80 characters), next
+  to `slug` and `name`. `Badge.Page.Chat.Rooms` draws it, wrapped to two
+  lines, under a rule at the bottom of the list — only for the highlighted
+  room
+- The room list scrolls: `offset` follows `selected` so it never runs off
+  either end, and more rooms than fit between the heading and footer rules
+  stay reachable
 - The server is the `chat_url` NVS key, falling back to
   `wss://badge-chat.protolux.io` compiled into `Badge.Chat.Socket`. Write it
   with `tools/provision.py --chat-url ...` or `AVM_BADGE_SERVER_URL`. Store a
