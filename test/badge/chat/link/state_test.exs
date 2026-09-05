@@ -134,6 +134,16 @@ defmodule Badge.Chat.Link.StateTest do
       assert [{_jr, _r, @rooms, "phx_join", %{}}] = frames
     end
 
+    test "a drop clears any outstanding pending refs" do
+      {state, frames} = State.connected(new())
+      {_join_ref, _ref} = rooms_join(frames)
+      assert map_size(state.pending) > 0
+
+      {state, []} = State.disconnected(state)
+
+      assert state.pending == %{}
+    end
+
     test "each join gets its own join_ref" do
       {state, first} = State.connected(new())
       {state, []} = State.disconnected(state)

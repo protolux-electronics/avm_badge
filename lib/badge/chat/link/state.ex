@@ -56,7 +56,7 @@ defmodule Badge.Chat.Link.State do
   @doc "The socket went away. The room is remembered so a reconnection can rejoin it."
   @spec disconnected(map) :: {map, [tuple]}
   def disconnected(state) do
-    {%{state | up: false, rooms_channel: :out, room_channel: :out}, []}
+    {%{state | up: false, rooms_channel: :out, room_channel: :out, pending: %{}}, []}
   end
 
   @doc "The chip this badge posts as, so its own lines can be marked."
