@@ -10,16 +10,7 @@ chip=esp32s3
 
 port="${1:-${PORT:-}}"
 if [ -z "$port" ]; then
-  ports=( /dev/cu.usbmodem* )
-  if [ ! -e "${ports[0]}" ]; then
-    echo "flashassets: no /dev/cu.usbmodem* found, is the badge plugged in?" >&2
-    exit 1
-  fi
-  if [ "${#ports[@]}" -gt 1 ]; then
-    echo "flashassets: several ports, pass one: ${ports[*]}" >&2
-    exit 1
-  fi
-  port="${ports[0]}"
+  port="$(python3 "$root/tools/serial_port.py")"
 fi
 
 ( cd "$root" && mix badge.assets >/dev/null )

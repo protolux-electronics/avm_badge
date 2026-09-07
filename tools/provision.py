@@ -22,12 +22,13 @@ preserved; they hold wifi driver config and RF calibration, and are rebuilt on
 the next boot at the cost of a slower first connection.
 """
 import argparse
-import glob
 import importlib.util
 import os
 import subprocess
 import sys
 import tempfile
+
+from serial_port import find_port
 
 NVS_OFFSET = 0x9000
 NVS_SIZE = 0x6000
@@ -45,15 +46,6 @@ SETTINGS = [
     ("wifi_psk", "--wifi-psk", "BADGE_WIFI_PSK"),
     ("chat_url", "--chat-url", "AVM_BADGE_SERVER_URL"),
 ]
-
-
-def port():
-    found = sorted(glob.glob("/dev/cu.usbmodem*"))
-    if not found:
-        sys.exit("no board found at /dev/cu.usbmodem*")
-    if len(found) > 1:
-        sys.exit(f"more than one board: {', '.join(found)}")
-    return found[0]
 
 
 def load_parser():
@@ -160,6 +152,7 @@ def main():
     )
     for _key, flag, env in SETTINGS:
         ap.add_argument(flag, help=f"or {env}")
+    ap.add_argument("--port", help="serial device; auto-detected when omitted")
     ap.add_argument("--dry-run", action="store_true", help="say what would happen")
     args = ap.parse_args()
 
@@ -175,7 +168,7 @@ def main():
             print(f"warning: {key} not supplied, keeping whatever the badge holds",
                   file=sys.stderr)
 
-    device = port()
+    device = args.port or find_port()
     parser = load_parser()
 
     with tempfile.TemporaryDirectory() as work:

@@ -9,9 +9,11 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
-- `ls /dev/cu.usbmodem*` — board re-enumerates, path changes between sessions
-- Board resets after flashing, so chain flash and read to catch boot output:
-  `( mix atomvm.esp32.flash >/dev/null 2>&1; stty -f <port> 115200 raw -echo; timeout 25 cat <port> )`
+- `ls /dev/cu.usbmodem*` on macOS or `ls /dev/ttyACM*` on Linux — the board
+  re-enumerates, so its path changes between sessions
+- Board resets after flashing, so chain flash and read to catch boot output;
+  use `stty -f <port>` on macOS or `stty -F <port>` on Linux:
+  `( mix atomvm.esp32.flash >/dev/null 2>&1; stty -F <port> 115200 raw -echo; timeout 25 cat <port> )`
 - Never run unbounded `cat`/`screen` on the port — it blocks the next flash
 - Reflashing does not need `erase-flash`: `nvs` is unchanged by the repartition,
   so wifi credentials, profile and peers survive

@@ -10,18 +10,20 @@ written with hex2bin encoding. A CSV 'string' row would produce an NVS string
 type instead, which reads back as undefined with no error anywhere.
 
 Usage:
-  python3 tools/provision_wifi.py [--port /dev/cu.usbmodemXXXX]
+  python3 tools/provision_wifi.py [--port /dev/cu.usbmodemXXXX]  # macOS
+  python3 tools/provision_wifi.py [--port /dev/ttyACM0]           # Linux
   python3 tools/provision_wifi.py --clear   # forget the saved network
 """
 
 import argparse
 import getpass
-import glob
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+
+from serial_port import find_port
 
 # From AtomVM/src/platforms/esp32/partitions-elixir.csv
 NVS_OFFSET = "0x9000"
@@ -33,17 +35,11 @@ MIN_OFFSET = -720
 MAX_OFFSET = 840
 
 
-def find_port(explicit):
+def select_port(explicit):
     if explicit:
         return explicit
 
-    ports = sorted(glob.glob("/dev/cu.usbmodem*"))
-    if not ports:
-        sys.exit(
-            "No /dev/cu.usbmodem* device found. Plug the badge in and check "
-            "`ls /dev/cu.*` - if only Bluetooth ports appear, reseat the cable."
-        )
-    return ports[0]
+    return find_port()
 
 
 def prompt():
@@ -149,7 +145,7 @@ def main():
     )
     args = parser.parse_args()
 
-    port = find_port(args.port)
+    port = select_port(args.port)
 
     if args.clear:
         print(f"Clearing all saved settings on {port}.")
