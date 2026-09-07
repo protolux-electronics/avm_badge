@@ -13,3 +13,7 @@ __pycache__/
 tools/.mise.local.toml
 
 /.base/
+
+# Ignore direnv setup with nix
+.envrc
+.direnv/
