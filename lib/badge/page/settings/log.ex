@@ -13,9 +13,6 @@ defmodule Badge.Page.Settings.Log do
   alias Badge.Page.Settings
   alias Badge.Theme
 
-  @fg Theme.fg()
-  @bg Theme.bg()
-
   @x 8
   @top Settings.content_top()
   @pitch 16
@@ -74,6 +71,6 @@ defmodule Badge.Page.Settings.Log do
   defp items([], _y, acc), do: :lists.reverse(acc)
 
   defp items([row | rest], y, acc) do
-    items(rest, y + @pitch, [{:text, @x, y, :default16px, @fg, @bg, row} | acc])
+    items(rest, y + @pitch, [{:text, @x, y, :default16px, Theme.fg(), Theme.bg(), row} | acc])
   end
 end
