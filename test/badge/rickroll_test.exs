@@ -15,6 +15,14 @@ defmodule Badge.RickrollTest do
   end
 
   describe "item/3" do
+    test "a negative index still lands on a frame, as it does on a host clock" do
+      assert {:scaled_cropped_image, _x, _y, _w, _h, _bg, 0, 0, _sx, _sy, [],
+              {:rgba8888, _s, _s2, data}} =
+               Rickroll.item(-3, 0, 0)
+
+      assert is_binary(data)
+    end
+
     test "is a scaled image whose stored size times the scale is what is drawn" do
       assert {:scaled_cropped_image, 10, 20, drawn, drawn, _bg, 0, 0, scale, scale, [],
               {:rgba8888, stored, stored, binary}} = Rickroll.item(0, 10, 20)

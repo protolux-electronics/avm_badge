@@ -57,12 +57,15 @@ defmodule Badge.Rickroll do
   @doc "Size of a frame once drawn."
   def size, do: @size * @scale
 
-  @doc "A display item for one frame, wrapping round if the index runs past the end."
+  @doc "A display item for one frame, wrapping round if the index runs past either end."
   @spec item(integer, integer, integer) :: tuple
   def item(index, x, y) do
     {:scaled_cropped_image, x, y, @size * @scale, @size * @scale, 0x000000, 0, 0, @scale, @scale,
-     [], {:rgba8888, @size, @size, frame(rem(index, @count))}}
+     [], {:rgba8888, @size, @size, frame(wrap(index))}}
   end
+
+  # A clock that started below zero, as the host's does, still lands on a frame.
+  defp wrap(index), do: rem(rem(index, @count) + @count, @count)
 
   # Names are fixed at compile time; the bytes come from the assets partition.
   for {file, index} <- Enum.with_index(@files) do
