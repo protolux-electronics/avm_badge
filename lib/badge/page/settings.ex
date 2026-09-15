@@ -17,6 +17,7 @@ defmodule Badge.Page.Settings do
   use Badge.Page
 
   alias Badge.Page.Settings.Display
+  alias Badge.Page.Settings.Log
   alias Badge.Page.Settings.Sudo
   alias Badge.Page.Settings.Update
   alias Badge.Page.Settings.Wifi
@@ -24,7 +25,7 @@ defmodule Badge.Page.Settings do
 
   @margin 8
 
-  @subpages [Display, Wifi, Update, Sudo]
+  @subpages [Display, Wifi, Update, Log, Sudo]
   @count length(@subpages)
 
   @char_w 8

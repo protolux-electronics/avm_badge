@@ -20,6 +20,10 @@ defmodule Badge do
   alias Badge.Hardware
 
   def start do
+    # First, so every process below prints through the log ring.
+    {:ok, _log} = Badge.Log.start_link(:ok)
+    Badge.Log.capture()
+
     :io.format(~c"Badge: starting~n")
 
     # Rickroll frames live in their own partition, shared by both OTA slots.

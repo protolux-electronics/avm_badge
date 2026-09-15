@@ -17,6 +17,7 @@ defmodule Badge.Update.Link do
   use GenServer
 
   alias Badge.Identity
+  alias Badge.Log
   alias Badge.Nvs
   alias Badge.Wifi
 
@@ -179,6 +180,8 @@ defmodule Badge.Update.Link do
   end
 
   def handle_info({:agent, {:ok, agent}}, state) do
+    Log.forward(agent)
+
     {:noreply, %{state | agent: agent, starting: false}}
   end
 
@@ -381,6 +384,7 @@ defmodule Badge.Update.Link do
   defp stop_agent(%{agent: nil} = state), do: idle(state)
 
   defp stop_agent(state) do
+    Log.forward(nil)
     NervesHubLink.stop(state.agent)
 
     idle(state)
