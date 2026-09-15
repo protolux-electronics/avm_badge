@@ -56,6 +56,9 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   GenServer, which restarts and resets the page to Home. It does **not**
   crash-loop. What Sudo Mode should draw when frames are absent is a pending
   follow-up decision.
+- The boot splash is `Badge.Page.Splash`, drawing `Badge.Logo` from
+  `assets/logo` (regenerate with `tools/logo.py`); it is skipped on a wake from
+  deep sleep. A page ends itself by returning `{:goto, page}` from `tick/1`
 - `dogica` and `pixel_operator` are compiled into `main.avm`, so text survives a
   missing assets partition. `w95fa` is read from it on demand; a failed read
   logs `UI: font ~p not in assets partition` once and is not retried.

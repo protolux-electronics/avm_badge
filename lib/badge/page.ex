@@ -32,8 +32,12 @@ defmodule Badge.Page do
   @doc "Applies an event, or returns `:ignore` if the page has no use for it."
   @callback handle_key(event, state) :: {:ok, state} | :ignore
 
-  @doc "Refreshes state from the outside world; returning the same state means nothing to draw."
-  @callback tick(state) :: state
+  @doc """
+  Refreshes state from the outside world; returning the same state means nothing to draw.
+
+  `{:goto, page}` instead hands the screen to another page, for a page that ends by itself.
+  """
+  @callback tick(state) :: state | {:goto, module}
 
   @doc """
   Shortest gap between frames, in milliseconds.

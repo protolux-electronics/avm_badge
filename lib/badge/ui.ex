@@ -36,6 +36,7 @@ defmodule Badge.UI do
   alias Badge.Clock
   alias Badge.Hardware
   alias Badge.Page.Home
+  alias Badge.Page.Splash
   alias Badge.Pages
   alias Badge.Pixels
   alias Badge.Power
@@ -92,10 +93,12 @@ defmodule Badge.UI do
 
   @impl true
   def init(port) do
+    page = first_page()
+
     state = %{
       port: port,
-      page: Home,
-      page_state: Home.init(),
+      page: page,
+      page_state: page.init(),
       dirty: false,
       countdown: 0,
       status: placeholder_status(),
@@ -157,32 +160,12 @@ defmodule Badge.UI do
     end
   end
 
+  # A page that is finished with the screen hands over by returning `{:goto, page}`.
   @impl true
   def handle_info(:render_tick, state) do
-    page_state = state.page.tick(state.page_state)
-    {status, status_countdown} = refresh_status(state)
-    dirty = state.dirty or page_state != state.page_state or status != state.status
-
-    next = %{
-      state
-      | page_state: page_state,
-        status: status,
-        status_countdown: status_countdown,
-        dirty: dirty
-    }
-
-    next = drowse(next)
-
-    # Nothing is visible while asleep, and a repaint is the costliest thing here.
-    case not next.asleep and dirty and next.countdown <= 0 do
-      true ->
-        drawn = sync_fonts(next)
-        render(drawn)
-
-        {:noreply, %{drawn | dirty: false, countdown: reload(drawn.page, drawn.page_state)}}
-
-      false ->
-        {:noreply, %{next | countdown: max(next.countdown - 1, 0)}}
+    case state.page.tick(state.page_state) do
+      {:goto, page} -> {:noreply, goto(state, page)}
+      page_state -> {:noreply, ticked(state, page_state)}
     end
   end
 
@@ -211,6 +194,40 @@ defmodule Badge.UI do
 
       :ignore ->
         {:noreply, state}
+    end
+  end
+
+  defp ticked(state, page_state) do
+    {status, status_countdown} = refresh_status(state)
+    dirty = state.dirty or page_state != state.page_state or status != state.status
+
+    next = %{
+      state
+      | page_state: page_state,
+        status: status,
+        status_countdown: status_countdown,
+        dirty: dirty
+    }
+
+    next = drowse(next)
+
+    # Nothing is visible while asleep, and a repaint is the costliest thing here.
+    case not next.asleep and dirty and next.countdown <= 0 do
+      true ->
+        drawn = sync_fonts(next)
+        render(drawn)
+
+        %{drawn | dirty: false, countdown: reload(drawn.page, drawn.page_state)}
+
+      false ->
+        %{next | countdown: max(next.countdown - 1, 0)}
+    end
+  end
+
+  defp first_page do
+    case Splash.wanted?() do
+      true -> Splash
+      false -> Home
     end
   end
 
