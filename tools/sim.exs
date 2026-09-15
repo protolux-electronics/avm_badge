@@ -527,7 +527,7 @@ defmodule Sim.Encode do
     {commands, Enum.reverse(assets), sent}
   end
 
-  defp command({:rect, x, y, w, h, colour}), do: {%{t: "rect", x: x, y: y, w: w, h: h, c: hex(colour)}, nil}
+  defp command({:rect, x, y, w, h, colour}), do: {%{t: "rect", x: x, y: y, w: w, h: h, c: colour(colour)}, nil}
 
   defp command({:image, x, y, bg, {:rgba8888, w, h, data}}) do
     id = "img#{:erlang.phash2(data)}"
@@ -564,7 +564,9 @@ defmodule Sim.Encode do
 
   defp hex(:transparent), do: nil
   defp hex(0), do: nil
-  defp hex(colour), do: "#" <> String.pad_leading(Integer.to_string(colour, 16), 6, "0")
+  defp hex(bg), do: colour(bg)
+
+  defp colour(value), do: "#" <> String.pad_leading(Integer.to_string(value, 16), 6, "0")
 end
 
 # ---------------------------------------------------------------------------
