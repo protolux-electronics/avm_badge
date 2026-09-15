@@ -21,7 +21,6 @@ defmodule Badge.Page.Splash do
 
   @compile {:no_warn_undefined, :esp}
 
-  @bg Theme.bg()
   @width Theme.width()
   @height Theme.height()
   @cover_h Theme.bar_h() + 1
@@ -146,7 +145,7 @@ defmodule Badge.Page.Splash do
   end
 
   # The title bar is drawn under page items, and the splash has no use for it.
-  defp cover, do: {:rect, 0, 0, @width, @cover_h, @bg}
+  defp cover, do: {:rect, 0, 0, @width, @cover_h, Theme.bg()}
 
   defp item({left, top, width, height}, slide) do
     Logo.piece(@x, @y, left, top, width, height, slide)
