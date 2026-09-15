@@ -340,7 +340,7 @@ defmodule Sim.Screen do
   alias Badge.Pages
   alias Badge.Theme
 
-  @compile {:no_warn_undefined, Badge.Page.Splash}
+  @compile {:no_warn_undefined, [Badge.Page.Splash, Badge.Skin]}
 
   @interval 100
 
@@ -351,6 +351,9 @@ defmodule Sim.Screen do
 
   @impl true
   def init(:ok) do
+    # Skins live in the drawing process's dictionary, as they do in Badge.UI.
+    if Code.ensure_loaded?(Badge.Skin), do: Badge.Skin.activate(Badge.Skin.load())
+
     page = first_page()
     state = %{page: page, page_state: page.init(), countdown: 0, dirty: true, viewers: [], sent: MapSet.new(), frame: []}
     Process.send_after(self(), :tick, @interval)
@@ -472,16 +475,26 @@ defmodule Sim.Screen do
 
   # The title bar, as Badge.UI draws it, on a badge that is charging and online.
   defp chrome(page) do
+    status = %{battery: Battery.icon(3900, true), wifi: :wifi, clock: Clock.face(System.os_time(:second), 120)}
+
+    case function_exported?(Theme, :chrome, 2) do
+      true -> Theme.chrome(page.title(), status)
+      false -> plain_chrome(page.title(), status)
+    end
+  end
+
+  # The bar as it was before skins, for a tree without them.
+  defp plain_chrome(title, status) do
     width = Theme.width()
-    clock = Clock.face(System.os_time(:second), 120)
+    clock = status.clock
     {icon_w, _} = Icons.size(:battery_100)
     battery_x = width - 6 - icon_w
 
     [
-      Icons.item(Battery.icon(3900, true), battery_x, 3),
-      Icons.item(:wifi, battery_x - 6 - icon_w, 3),
+      Icons.item(status.battery, battery_x, 3),
+      Icons.item(status.wifi, battery_x - 6 - icon_w, 3),
       {:text, div(width - 8 * byte_size(clock), 2), 3, :default16px, Theme.dim(), Theme.bg(), clock},
-      {:text, 6, 3, :pixel_operator, Theme.accent(), Theme.bg(), page.title()},
+      {:text, 6, 3, :pixel_operator, Theme.accent(), Theme.bg(), title},
       {:rect, 0, Theme.bar_h(), width, 1, Theme.dim()},
       {:rect, 0, 0, width, Theme.height(), Theme.bg()}
     ]
@@ -529,7 +542,7 @@ defmodule Sim.Encode do
   defp command({:text, x, y, font, fg, bg, text}) do
     text = IO.iodata_to_binary(text)
 
-    case Sim.Raster.text(font, fg, bg, text) do
+    case Sim.Raster.text(font, fg, background(bg), text) do
       nil ->
         IO.puts("unsupported font #{inspect(font)}")
         nil
@@ -545,7 +558,12 @@ defmodule Sim.Encode do
     nil
   end
 
+  # AtomGL draws no background for colour 0, so black behind an item means see-through.
+  defp background(0), do: :transparent
+  defp background(bg), do: bg
+
   defp hex(:transparent), do: nil
+  defp hex(0), do: nil
   defp hex(colour), do: "#" <> String.pad_leading(Integer.to_string(colour, 16), 6, "0")
 end
 
