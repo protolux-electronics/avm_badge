@@ -7,6 +7,7 @@ defmodule Badge.Page.Settings.UpdateTest do
 
   defp status(overrides) do
     base = %{
+      identifier: "90DA7247F804",
       state: :current,
       percent: 0,
       offer: nil,
@@ -80,6 +81,23 @@ defmodule Badge.Page.Settings.UpdateTest do
 
     test "firmware on trial says so" do
       assert says?(page(%{trial: true}), "on trial")
+    end
+
+    test "the hub identifier is shown whatever the link is doing" do
+      assert says?(page(%{state: :waiting}), "90DA7247F804")
+      assert says?(page(%{state: :failed, reason: "nope"}), "90DA7247F804")
+    end
+
+    test "an unknown identifier says so rather than going blank" do
+      assert says?(page(%{identifier: nil}), "unknown")
+    end
+
+    test "waiting names what it is waiting for when the link knows" do
+      assert says?(page(%{state: :waiting, reason: "wifi connecting"}), "wifi connecting")
+    end
+
+    test "a dropped socket shows why while it reconnects" do
+      assert says?(page(%{state: :connecting, reason: "closed"}), "closed")
     end
   end
 
@@ -189,7 +207,8 @@ defmodule Badge.Page.Settings.UpdateTest do
         page(%{state: :failed, reason: "a very long reason indeed, far too long"}),
         page(%{trial: true}),
         %{page(%{state: :ready}) | confirm: :reboot},
-        %{page(%{trial: true}) | confirm: :revert}
+        %{page(%{trial: true}) | confirm: :revert},
+        page(%{state: :waiting, reason: "a wait reason that runs on and on and on"})
       ]
 
       for state <- states do

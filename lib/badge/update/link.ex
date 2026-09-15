@@ -57,6 +57,7 @@ defmodule Badge.Update.Link do
 
   @doc "Where the link is, and what it knows about the firmware."
   @spec status() :: %{
+          identifier: binary,
           state: atom,
           percent: non_neg_integer,
           offer: binary | nil,
@@ -71,6 +72,7 @@ defmodule Badge.Update.Link do
   @impl true
   def init(:ok) do
     state = %{
+      identifier: Identity.format(Identity.chip_id()),
       agent: nil,
       want: false,
       state: :off,
@@ -95,6 +97,7 @@ defmodule Badge.Update.Link do
   @impl true
   def handle_call(:status, _from, state) do
     reply = %{
+      identifier: state.identifier,
       state: state.state,
       percent: state.percent,
       offer: state.offer,
@@ -251,19 +254,54 @@ defmodule Badge.Update.Link do
     offered(response, %{state | state: :current, reason: nil, trial: pending?()})
   end
 
-  defp hub({:join_error, reason}, state), do: failed(state, reason)
+  defp hub({:joined, topic, _response}, state) do
+    :io.format(~c"Update: joined ~s~n", [topic])
+
+    state
+  end
+
+  defp hub({:extensions_attached, names}, state) do
+    :io.format(~c"Update: extensions ~p~n", [names])
+
+    state
+  end
+
+  defp hub({:join_error, reason}, state) do
+    :io.format(~c"Update: join refused ~p~n", [reason])
+
+    failed(state, reason)
+  end
+
+  defp hub({:join_error, topic, reason}, state) do
+    :io.format(~c"Update: ~s join refused ~p~n", [topic, reason])
+
+    state
+  end
 
   defp hub({:message, "update", payload}, state), do: offered(payload, state)
 
-  defp hub({:disconnected, _reason}, %{want: true} = state) do
-    %{state | state: :connecting}
+  defp hub({:disconnected, reason}, %{want: true} = state) do
+    :io.format(~c"Update: disconnected ~p~n", [reason])
+
+    %{state | state: :connecting, reason: describe_reason(reason)}
   end
 
-  defp hub({:transport_error, reason}, state), do: failed(state, reason)
+  defp hub({:transport_error, reason}, state) do
+    :io.format(~c"Update: transport error ~p~n", [reason])
+
+    failed(state, reason)
+  end
+
+  # Not printed: the print would be forwarded to the agent that just failed to send.
+  defp hub({:send_failed, reason}, state), do: %{state | reason: describe_reason(reason)}
 
   defp hub({:firmware_committed, _slot}, state), do: %{state | trial: false}
 
-  defp hub(_event, state), do: state
+  defp hub(event, state) do
+    :io.format(~c"Update: hub ~p~n", [event])
+
+    state
+  end
 
   defp offered(payload, state) when is_map(payload) do
     case Map.get(payload, "update_available", false) do
@@ -299,16 +337,25 @@ defmodule Badge.Update.Link do
     end
   end
 
-  defp ready(%{radio: :connected, synced: true}, key, secret, state) do
-    connect(key, secret, state)
+  defp ready(wifi, key, secret, state) do
+    case blocker(wifi) do
+      nil -> connect(key, secret, state)
+      reason -> %{state | state: :waiting, reason: reason}
+    end
   end
 
-  defp ready(_status, _key, _secret, state), do: %{state | state: :waiting}
+  @doc "What keeps the agent from starting, given `Badge.Wifi.status/0`, or `nil`."
+  @spec blocker(map) :: binary | nil
+  def blocker(%{radio: :connected, synced: true}), do: nil
+  def blocker(%{radio: :connected}), do: "waiting for clock"
+  def blocker(%{radio: :connecting}), do: "wifi connecting"
+  def blocker(%{radio: :failed}), do: "wifi failed"
+  def blocker(_wifi), do: "wifi off"
 
   # Signing the shared secret is a thousand rounds of PBKDF2 and the handshake
   # is a second or more, so both run somewhere the page cannot be stuck behind.
   defp connect(key, secret, state) do
-    identifier = Identity.format(Identity.chip_id())
+    identifier = state.identifier
 
     :io.format(~c"Update: connecting as ~s~n", [identifier])
 
@@ -323,8 +370,7 @@ defmodule Badge.Update.Link do
       reboot: :manual,
       firmware: {:metadata, state.metadata},
       console: true,
-      extensions: :all,
-      capture_io: true
+      extensions: :all
     ]
 
     spawn(fn -> send(link, {:agent, NervesHubLink.start(options)}) end)

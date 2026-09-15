@@ -25,7 +25,8 @@ defmodule Badge.Page.Settings.Update do
   @reason_columns 24
 
   @hub_y Settings.content_top()
-  @running_y @hub_y + Readout.pitch()
+  @id_y @hub_y + Readout.pitch()
+  @running_y @id_y + Readout.pitch()
   @slot_y @running_y + Readout.pitch()
   @update_y @slot_y + Readout.pitch() + 8
 
@@ -118,11 +119,13 @@ defmodule Badge.Page.Settings.Update do
   def render(state), do: rows(state) ++ [help(help_text(state), Theme.dim())]
 
   defp rows(state) do
-    hub_row(state) ++ running_row(state) ++ slot_row(state) ++ update_row(state) ++ bar(state)
+    hub_row(state) ++
+      id_row(state) ++ running_row(state) ++ slot_row(state) ++ update_row(state) ++ bar(state)
   end
 
   defp unknown do
     %{
+      identifier: nil,
       state: :connecting,
       percent: 0,
       offer: nil,
@@ -139,8 +142,10 @@ defmodule Badge.Page.Settings.Update do
   end
 
   defp hub_text(%{state: :unprovisioned}), do: "not provisioned"
-  defp hub_text(%{state: :waiting}), do: "waiting for wifi"
-  defp hub_text(%{state: :connecting}), do: "connecting"
+  defp hub_text(%{state: :waiting, reason: nil}), do: "waiting for wifi"
+  defp hub_text(%{state: :waiting, reason: reason}), do: clip(reason)
+  defp hub_text(%{state: :connecting, reason: nil}), do: "connecting"
+  defp hub_text(%{state: :connecting, reason: reason}), do: clip(reason)
   defp hub_text(%{state: :failed, reason: nil}), do: "failed"
   defp hub_text(%{state: :failed, reason: reason}), do: clip(reason)
   defp hub_text(_status), do: "connected"
@@ -148,8 +153,14 @@ defmodule Badge.Page.Settings.Update do
   defp hub_colour(%{state: :failed}), do: Theme.alert()
   defp hub_colour(%{state: :unprovisioned}), do: Theme.warn()
   defp hub_colour(%{state: :waiting}), do: Theme.fg()
-  defp hub_colour(%{state: :connecting}), do: Theme.fg()
+  defp hub_colour(%{state: :connecting, reason: nil}), do: Theme.fg()
+  defp hub_colour(%{state: :connecting}), do: Theme.warn()
   defp hub_colour(_status), do: Theme.ok()
+
+  defp id_row(%{status: %{identifier: nil}}),
+    do: Readout.right_row("id", "unknown", @id_y, Theme.dim())
+
+  defp id_row(%{status: %{identifier: id}}), do: Readout.right_row("id", id, @id_y, Theme.fg())
 
   defp running_row(%{status: %{firmware: nil}}) do
     Readout.right_row("running", "unknown", @running_y, Theme.dim())

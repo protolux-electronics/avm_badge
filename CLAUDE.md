@@ -123,6 +123,8 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   Update tab; firmware that will not boot needs a cable
 - The agent commits a pending update when it joins, so opening the Update tab
   is what takes new firmware off trial
+- The agent runs only while the Update tab is showing; elsewhere the badge is
+  offline to NervesHub. The hub row names what blocks it
 - `atomvm.check` flags `json:encode/1`, `json:decode/1` and
   `erlang:binary_part/3` falsely - AtomVM ships `libs/estdlib/src/json.erl`,
   and `binary_part/3` is both a BIF and a NIF in `libAtomVM`. `erlang:--/2`,

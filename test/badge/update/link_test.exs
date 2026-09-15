@@ -44,4 +44,20 @@ defmodule Badge.Update.LinkTest do
       assert Link.firmware(%{metadata() | avm_sha256: "abc"}).sha == "abc"
     end
   end
+
+  describe "what holds the agent back" do
+    test "nothing, once associated with a synced clock" do
+      assert Link.blocker(%{radio: :connected, synced: true}) == nil
+    end
+
+    test "an association without a clock is still not enough" do
+      assert Link.blocker(%{radio: :connected, synced: false}) == "waiting for clock"
+    end
+
+    test "the radio's state is named, so a dropped network is not mistaken for a hub fault" do
+      assert Link.blocker(%{radio: :connecting, synced: false}) == "wifi connecting"
+      assert Link.blocker(%{radio: :failed, synced: false}) == "wifi failed"
+      assert Link.blocker(%{radio: :disabled, synced: false}) == "wifi off"
+    end
+  end
 end
