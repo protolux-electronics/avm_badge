@@ -9,8 +9,11 @@ defmodule Badge.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       # ExAtomVM writes no application.bin, and NervesHub cannot identify
-      # firmware without one.
-      aliases: ["atomvm.packbeam": ["atomvm.application_bin", "atomvm.packbeam"]],
+      # firmware without one. The flash task bypasses the packbeam alias.
+      aliases: [
+        "atomvm.packbeam": ["atomvm.application_bin", "atomvm.packbeam"],
+        "atomvm.esp32.flash": ["atomvm.application_bin", "atomvm.esp32.flash"]
+      ],
       atomvm: [
         start: Badge,
         flash_offset: 0x2B8000,

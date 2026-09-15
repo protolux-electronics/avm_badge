@@ -118,6 +118,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 - **ExAtomVM writes no `priv/application.bin`**, and `firmware: boot` needs one.
   Without it the agent refuses to start and NervesHub cannot parse an upload.
   `mix atomvm.application_bin` writes it and is aliased onto `atomvm.packbeam`
+  and `atomvm.esp32.flash`, which calls packbeam directly past the alias
 - There is **no automatic rollback**. `:nh_ota.revert/0` is reached from the
   Update tab; firmware that will not boot needs a cable
 - The agent commits a pending update when it joins, so opening the Update tab
