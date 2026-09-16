@@ -170,7 +170,13 @@ defmodule Badge.Update.Link do
   @impl true
   def handle_info(:tick, state), do: {:noreply, start_agent(state)}
 
-  def handle_info({:nerves_hub, event}, state), do: {:noreply, hub(event, state)}
+  # Forwarding is settled before the event is printed, so a print about a lost
+  # channel is not itself sent down that channel.
+  def handle_info({:nerves_hub, event}, state) do
+    forward(event, state)
+
+    {:noreply, hub(event, state)}
+  end
 
   # The tab was left while the handshake was still running.
   def handle_info({:agent, {:ok, agent}}, %{want: false} = state) do
@@ -180,8 +186,6 @@ defmodule Badge.Update.Link do
   end
 
   def handle_info({:agent, {:ok, agent}}, state) do
-    Log.forward(agent)
-
     {:noreply, %{state | agent: agent, starting: false}}
   end
 
@@ -304,6 +308,30 @@ defmodule Badge.Update.Link do
     :io.format(~c"Update: hub ~p~n", [event])
 
     state
+  end
+
+  @doc """
+  Whether a hub event starts, stops or leaves alone the forwarding of console
+  lines. Lines are only sent while the logging extension is joined: one pushed
+  before that bounces back as `not_joined`, which is printed, and so forwarded.
+  """
+  @spec forwarding(term) :: :start | :stop | :keep
+  def forwarding({:extensions_attached, names}) do
+    if :lists.member("logging", names), do: :start, else: :keep
+  end
+
+  def forwarding({:disconnected, _reason}), do: :stop
+  def forwarding({:channel_error, _payload}), do: :stop
+  def forwarding({:channel_closed, _payload}), do: :stop
+  def forwarding({:join_error, "extensions", _reason}), do: :stop
+  def forwarding(_event), do: :keep
+
+  defp forward(event, state) do
+    case forwarding(event) do
+      :start -> Log.forward(state.agent)
+      :stop -> Log.forward(nil)
+      :keep -> :ok
+    end
   end
 
   defp offered(payload, state) when is_map(payload) do

@@ -45,6 +45,28 @@ defmodule Badge.Update.LinkTest do
     end
   end
 
+  describe "when console lines are forwarded to the hub" do
+    test "only once the logging extension has attached" do
+      assert Link.forwarding({:extensions_attached, ["geo", "health", "logging"]}) == :start
+    end
+
+    test "not when the hub attached everything but logging" do
+      assert Link.forwarding({:extensions_attached, ["geo", "health"]}) == :keep
+    end
+
+    test "not before the join, when a line would only bounce back as not_joined" do
+      assert Link.forwarding({:joined, %{}}) == :keep
+      assert Link.forwarding({:reply, "ok", %{}}) == :keep
+    end
+
+    test "stopped as soon as the socket or the channel is gone" do
+      assert Link.forwarding({:disconnected, :closed}) == :stop
+      assert Link.forwarding({:channel_error, %{}}) == :stop
+      assert Link.forwarding({:channel_closed, %{}}) == :stop
+      assert Link.forwarding({:join_error, "extensions", %{}}) == :stop
+    end
+  end
+
   describe "what holds the agent back" do
     test "nothing, once associated with a synced clock" do
       assert Link.blocker(%{radio: :connected, synced: true}) == nil
