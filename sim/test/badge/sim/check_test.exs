@@ -21,6 +21,38 @@ defmodule Badge.Sim.CheckTest do
     end
   end
 
+  test "the board runs the production hardware owners and keeps their settings across reboot" do
+    assert %{percent: 80, sleep: :s30} = :sys.get_state(Badge.Backlight)
+    assert %{spi: :sim_spi} = :sys.get_state(Badge.Pixels)
+    assert %{i2c: :sim_i2c} = :sys.get_state(Badge.Sensors)
+    assert %{unit: :sim_adc} = :sys.get_state(Badge.Power)
+
+    assert Badge.Sensors.acceleration() == {0, 0, -1000}
+    assert Badge.Sensors.orientation() == Badge.Accel.flat()
+    assert Badge.Sensors.temperature() == 23
+    assert Badge.Power.status() == %{battery_mv: 3900, vbus_mv: 4600, usb: true}
+    refute Badge.Keyboard.holding?(~c"Fn")
+
+    nvs = Process.whereis(Badge.Sim.Nvs)
+    backlight = Process.whereis(Badge.Backlight)
+    pixels = Process.whereis(Badge.Pixels)
+
+    Badge.Backlight.set(42)
+    Badge.Backlight.store(42, :s60)
+    assert Badge.Backlight.settings() == %{brightness: 42, sleep: :s60}
+
+    Badge.Pixels.set_mode({:solid, 120})
+    assert Badge.Pixels.mode() == {:solid, 120}
+
+    Board.reboot()
+
+    assert Process.whereis(Badge.Sim.Nvs) == nvs
+    refute Process.whereis(Badge.Backlight) == backlight
+    refute Process.whereis(Badge.Pixels) == pixels
+    assert Badge.Backlight.settings() == %{brightness: 42, sleep: :s60}
+    assert Badge.Pixels.mode() == {:solid, 120}
+  end
+
   test "the board runs the shared UI and survives a reboot" do
     ui = Process.whereis(Badge.UI)
     assert is_pid(ui)

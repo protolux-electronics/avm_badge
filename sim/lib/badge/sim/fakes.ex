@@ -1,17 +1,11 @@
 defmodule Badge.Sim.Fakes do
-  @moduledoc "The hardware processes, answering as a healthy badge on USB power would."
+  @moduledoc "External services and input processes that do not run on the host."
 
   alias Badge.Chat.Link.State
   alias Badge.Sim.Fake
 
   def children do
     [
-      fake(Badge.Power, fn
-        :status, _ -> %{battery_mv: 3900, vbus_mv: 4600, usb: true}
-        :battery_mv, _ -> 3900
-        :vbus_mv, _ -> 4600
-        :usb_present?, _ -> true
-      end),
       fake(
         Badge.Wifi,
         fn
@@ -40,24 +34,7 @@ defmodule Badge.Sim.Fakes do
           _, d -> d
         end
       ),
-      fake(
-        Badge.Backlight,
-        fn :settings, d -> %{brightness: Map.get(d, :brightness, 80), sleep: Map.get(d, :sleep, :s30)} end,
-        fn
-          {:set, p}, d -> Map.put(d, :brightness, p)
-          {:store, p, s}, d -> Map.merge(d, %{brightness: p, sleep: s})
-          _, d -> d
-        end
-      ),
-      fake(Badge.Pixels, fn :mode, d -> Map.get(d, :mode, :rainbow) end, fn
-        {:mode, mode}, d -> Map.put(d, :mode, mode)
-        _, d -> d
-      end),
-      fake(Badge.Sensors, fn
-        :acceleration, _ -> {0, 0, -1000}
-        :orientation, _ -> Badge.Accel.orientation({0, 0, -1000})
-        :temperature, _ -> 23
-      end),
+      fake(Badge.Keyboard, fn {:holding?, _label}, _ -> false end),
       fake(Badge.Update.Link, fn :status, _ ->
         %{
           identifier: "90DA72000001",
