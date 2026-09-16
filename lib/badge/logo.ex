@@ -1,12 +1,16 @@
 defmodule Badge.Logo do
   @moduledoc """
-  The Goatmire logo from `assets/logo`, baked into the module at compile time.
+  The Goatmire logo, for the splash.
 
-  One `rgba8888` file named `goatmire@<width>x<height>.rgba`, composited onto
-  black and fully opaque like the icons, so AtomGL draws it without blending.
-  It is stored at half size and drawn at 2x, the same trick as the rickroll
-  frames. Regenerate it with `tools/logo.py`.
+  One `rgba8888` file in `assets/logo` named `goatmire@<width>x<height>.rgba`,
+  composited onto black and fully opaque like the icons, so AtomGL draws it
+  without blending. The name and size are fixed at compile time; the bytes
+  come from the assets partition, so `image/0` is `nil` on a badge without
+  one. It is stored at half size and drawn at 2x, the same trick as the
+  rickroll frames. Regenerate it with `tools/logo.py`.
   """
+
+  @compile {:no_warn_undefined, :atomvm}
 
   @dir Path.expand("../../assets/logo", __DIR__)
 
@@ -33,10 +37,11 @@ defmodule Badge.Logo do
   @height elem(@dimensions, 1)
   @scale 2
 
-  @data File.read!(@file)
+  # The bytes are not kept, but a file of the wrong size still fails the build.
+  byte_size(File.read!(@file)) == @width * @height * 4 ||
+    raise "logo: #{byte_size(File.read!(@file))} bytes, expected #{@width * @height * 4}"
 
-  byte_size(@data) == @width * @height * 4 ||
-    raise "logo: #{byte_size(@data)} bytes, expected #{@width * @height * 4}"
+  @name ~c"logo/" ++ String.to_charlist(Path.basename(@file))
 
   @doc "The logo's `{width, height}` as stored, in logo pixels."
   def size, do: {@width, @height}
@@ -44,26 +49,35 @@ defmodule Badge.Logo do
   @doc "How many screen pixels one logo pixel is drawn as."
   def scale, do: @scale
 
-  @doc "The raw `rgba8888` bytes."
-  def binary, do: @data
+  @doc "The logo as an AtomGL image, read from the assets partition, or `nil` without one."
+  @spec image() :: {:rgba8888, pos_integer, pos_integer, binary} | nil
+  def image, do: image(read())
 
-  @doc "A display item drawing the whole logo with its top-left corner at `x, y`."
-  @spec item(integer, integer) :: tuple
-  def item(x, y), do: piece(x, y, 0, 0, @width, @height, 0)
+  @doc "The image from what `:atomvm.read_priv/2` answered for the logo: `nil` unless it is the bytes."
+  @spec image(binary | :undefined) :: {:rgba8888, pos_integer, pos_integer, binary} | nil
+  def image(bytes) when is_binary(bytes), do: {:rgba8888, @width, @height, bytes}
+  def image(_absent), do: nil
+
+  defp read do
+    :atomvm.read_priv(:assets, @name)
+  catch
+    _kind, _error -> :undefined
+  end
+
+  @doc "A display item drawing the whole `image` with its top-left corner at `x, y`."
+  @spec item(integer, integer, tuple) :: tuple
+  def item(x, y, image), do: piece(x, y, 0, 0, @width, @height, 0, image)
 
   @doc """
-  A display item drawing one rectangle of the logo.
+  A display item drawing one rectangle of `image`.
 
   `left, top, width, height` pick the rectangle in logo pixels; it is drawn
   scaled at `x + left * scale + slide, y + top * scale`, so with no slide the
   piece lands exactly where the whole logo would put it.
   """
-  @spec piece(integer, integer, integer, integer, integer, integer, integer) :: tuple
-  def piece(x, y, left, top, width, height, slide) do
+  @spec piece(integer, integer, integer, integer, integer, integer, integer, tuple) :: tuple
+  def piece(x, y, left, top, width, height, slide, image) do
     {:scaled_cropped_image, x + left * @scale + slide, y + top * @scale, width * @scale,
-     height * @scale, 0x000000, left, top, @scale, @scale, [], image()}
+     height * @scale, 0x000000, left, top, @scale, @scale, [], image}
   end
-
-  # Built at runtime, so the bytes are one literal rather than one per item shape.
-  defp image, do: {:rgba8888, @width, @height, binary()}
 end

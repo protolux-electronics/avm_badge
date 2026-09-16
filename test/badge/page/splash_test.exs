@@ -7,6 +7,7 @@ defmodule Badge.Page.SplashTest do
   alias Badge.Theme
 
   @seed 12_345
+  @image {:rgba8888, 120, 68, <<>>}
 
   # Pieces are cut in logo pixels and drawn at twice the size.
   defp pieces(items) do
@@ -56,7 +57,7 @@ defmodule Badge.Page.SplashTest do
       {logo_w, logo_h} = Logo.size()
 
       assert [{:rect, 0, 0, _w, _h, _bg}, {x, y, w, h, 0, 0}] =
-               [hd(Splash.frame({:hold, 0}, @seed)) | pieces(Splash.frame({:hold, 0}, @seed))]
+               [hd(Splash.frame({:hold, 0}, @seed, @image)) | pieces(Splash.frame({:hold, 0}, @seed, @image))]
 
       assert {w, h} == {logo_w * 2, logo_h * 2}
       assert x == home_x()
@@ -64,14 +65,14 @@ defmodule Badge.Page.SplashTest do
     end
 
     test "pieces accumulate on the way in and are all there at the end" do
-      counts = for n <- 0..9, do: length(pieces(Splash.frame({:in, n}, @seed)))
+      counts = for n <- 0..9, do: length(pieces(Splash.frame({:in, n}, @seed, @image)))
 
       assert counts == Enum.sort(counts)
       assert List.last(counts) == length(Splash.pieces(@seed))
     end
 
     test "pieces drop out on the way out" do
-      counts = for n <- 0..5, do: length(pieces(Splash.frame({:out, n}, @seed)))
+      counts = for n <- 0..5, do: length(pieces(Splash.frame({:out, n}, @seed, @image)))
 
       assert counts == Enum.sort(counts, :desc)
       assert hd(counts) < length(Splash.pieces(@seed))
@@ -79,10 +80,10 @@ defmodule Badge.Page.SplashTest do
 
     test "a piece that landed two frames ago is at rest" do
       earlier =
-        for {_x, _y, _w, _h, cx, cy} <- pieces(Splash.frame({:in, 7}, @seed)), do: {cx, cy}
+        for {_x, _y, _w, _h, cx, cy} <- pieces(Splash.frame({:in, 7}, @seed, @image)), do: {cx, cy}
 
       rested =
-        for {x, _y, _w, _h, cx, cy} <- pieces(Splash.frame({:in, 9}, @seed)),
+        for {x, _y, _w, _h, cx, cy} <- pieces(Splash.frame({:in, 9}, @seed, @image)),
             {cx, cy} in earlier,
             do: x - cx * 2
 
@@ -92,7 +93,7 @@ defmodule Badge.Page.SplashTest do
 
     test "a landing piece is jittered sideways, then still" do
       moved =
-        for n <- 0..9, {x, _y, _w, _h, cx, _cy} <- pieces(Splash.frame({:in, n}, @seed)) do
+        for n <- 0..9, {x, _y, _w, _h, cx, _cy} <- pieces(Splash.frame({:in, n}, @seed, @image)) do
           x - cx * 2 - home_x()
         end
 
@@ -101,7 +102,7 @@ defmodule Badge.Page.SplashTest do
 
     test "pieces never leave the panel" do
       for phase <- [:in, :out], n <- 0..9 do
-        for {x, y, w, h, _cx, _cy} <- pieces(Splash.frame({phase, n}, @seed)) do
+        for {x, y, w, h, _cx, _cy} <- pieces(Splash.frame({phase, n}, @seed, @image)) do
           assert x >= 0 and x + w <= Theme.width()
           assert y > Theme.bar_h() and y + h <= Theme.height()
         end
@@ -131,22 +132,33 @@ defmodule Badge.Page.SplashTest do
     end
   end
 
+  describe "without the logo in the assets partition" do
+    test "the splash is not wanted, however fresh the boot" do
+      refute Splash.wanted?(:esp_rst_poweron, 2_000, nil)
+      assert Splash.wanted?(:esp_rst_poweron, 2_000, @image)
+    end
+
+    test "a frame is just the bar cover, should the page be reached anyway" do
+      assert [{:rect, 0, 0, _w, _h, _bg}] = Splash.render(%{Splash.init() | image: nil})
+    end
+  end
+
   describe "whether a start wants the splash" do
     test "a fresh boot does" do
-      assert Splash.wanted?(:esp_rst_poweron, 2_000)
+      assert Splash.wanted?(:esp_rst_poweron, 2_000, @image)
     end
 
     test "waking from deep sleep does not" do
-      refute Splash.wanted?(:esp_rst_deepsleep, 2_000)
+      refute Splash.wanted?(:esp_rst_deepsleep, 2_000, @image)
     end
 
     test "a UI restart minutes into the boot does not, whatever the reset was" do
-      refute Splash.wanted?(:esp_rst_poweron, 180_000)
+      refute Splash.wanted?(:esp_rst_poweron, 180_000, @image)
     end
   end
 
   test "the bar cover sits on top of everything" do
-    [{:rect, 0, 0, w, h, _bg} | _rest] = Splash.frame({:in, 3}, @seed)
+    [{:rect, 0, 0, w, h, _bg} | _rest] = Splash.frame({:in, 3}, @seed, @image)
 
     assert w == Theme.width()
     assert h > Theme.bar_h()

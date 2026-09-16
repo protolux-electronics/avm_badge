@@ -6,8 +6,8 @@ defmodule Badge.Page.Splash do
   one after another in a shuffled order, each landing with a sideways jitter
   that settles in two frames, until the whole logo is still. It holds, then
   the pieces drop out in another shuffled order, and the page hands over to
-  Home. Any key ends it early, and a badge waking from deep sleep does not
-  show it at all.
+  Home. Any key ends it early; a badge waking from deep sleep, or one without
+  the logo in its assets partition, does not show it at all.
 
   The cut and both orders come from one seed, so a frame is a pure function
   of the step and the seed and the sequence is testable on the host.
@@ -58,21 +58,42 @@ defmodule Badge.Page.Splash do
   def init do
     now = :erlang.monotonic_time(:millisecond)
 
-    %{started: now, seed: rem(abs(now), 1_000_003) + 1, step: {:in, 0}, done: false}
+    %{
+      started: now,
+      seed: rem(abs(now), 1_000_003) + 1,
+      step: {:in, 0},
+      done: false,
+      image: Logo.image()
+    }
   end
 
-  @doc "Whether this start should show the splash: see `wanted?/2`."
+  @doc "Whether this start should show the splash: see `wanted?/3`."
   @spec wanted?() :: boolean
-  def wanted?, do: wanted?(reset_reason(), :erlang.monotonic_time(:millisecond))
+  def wanted?, do: wanted?(reset_reason(), :erlang.monotonic_time(:millisecond), logo())
 
   @doc """
   Whether a start of the UI should show the splash, given the chip's reset
-  reason and how long it has been up. A boot does, unless it is a wake from
-  deep sleep; a UI restart later in the same boot does not.
+  reason, how long it has been up and the logo, if the assets partition has
+  it. A boot does, unless it is a wake from deep sleep; a UI restart later in
+  the same boot does not, and nor does a badge with nothing to show.
   """
-  @spec wanted?(atom, integer) :: boolean
-  def wanted?(reason, uptime_ms) do
+  @spec wanted?(atom, integer, tuple | nil) :: boolean
+  def wanted?(_reason, _uptime_ms, nil), do: false
+
+  def wanted?(reason, uptime_ms, _image) do
     reason != :esp_rst_deepsleep and uptime_ms < @boot_ms
+  end
+
+  defp logo do
+    case Logo.image() do
+      nil ->
+        :io.format(~c"Splash: no logo in assets partition~n")
+
+        nil
+
+      image ->
+        image
+    end
   end
 
   defp reset_reason do
@@ -97,7 +118,7 @@ defmodule Badge.Page.Splash do
   def handle_key(_event, state), do: {:ok, %{state | done: true}}
 
   @impl true
-  def render(state), do: frame(state.step, state.seed)
+  def render(state), do: frame(state.step, state.seed, state.image)
 
   @doc """
   Which part of the sequence `elapsed` milliseconds falls in, and the frame within it.
@@ -113,11 +134,13 @@ defmodule Badge.Page.Splash do
     {:out, div(elapsed - @in_frames * @frame_ms - @hold_ms, @frame_ms)}
   end
 
-  @doc "Display items for one step of the sequence."
-  @spec frame({atom, non_neg_integer}, pos_integer) :: [tuple]
-  def frame({:hold, _n}, _seed), do: [cover(), Logo.item(@x, @y)]
+  @doc "Display items for one step of the sequence, drawing `image`; only the cover without one."
+  @spec frame({atom, non_neg_integer}, pos_integer, tuple | nil) :: [tuple]
+  def frame(_step, _seed, nil), do: [cover()]
 
-  def frame({:in, n}, seed) do
+  def frame({:hold, _n}, _seed, image), do: [cover(), Logo.item(@x, @y, image)]
+
+  def frame({:in, n}, seed, image) do
     pieces = pieces(seed)
     count = length(pieces)
 
@@ -125,12 +148,12 @@ defmodule Badge.Page.Splash do
       for {piece, index} <- pieces,
           landed = land_frame(index, count, @in_frames),
           landed <= n,
-          do: item(piece, jitter(n - landed, seed, index))
+          do: item(piece, jitter(n - landed, seed, index), image)
 
     [cover() | items]
   end
 
-  def frame({:out, n}, seed) do
+  def frame({:out, n}, seed, image) do
     pieces = pieces(seed)
     count = length(pieces)
 
@@ -138,7 +161,7 @@ defmodule Badge.Page.Splash do
       for {piece, index} <- pieces,
           gone = land_frame(count - 1 - index, count, @out_frames),
           gone > n,
-          do: item(piece, jitter(gone - 1 - n, seed, index))
+          do: item(piece, jitter(gone - 1 - n, seed, index), image)
 
     [cover() | items]
   end
@@ -163,8 +186,8 @@ defmodule Badge.Page.Splash do
   # The title bar is drawn under page items, and the splash has no use for it.
   defp cover, do: {:rect, 0, 0, @width, @cover_h, Theme.bg()}
 
-  defp item({left, top, width, height}, slide) do
-    Logo.piece(@x, @y, left, top, width, height, slide)
+  defp item({left, top, width, height}, slide, image) do
+    Logo.piece(@x, @y, left, top, width, height, slide, image)
   end
 
   # The frame at which the piece with this place in the order lands.

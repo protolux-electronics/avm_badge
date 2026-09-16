@@ -44,8 +44,8 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 - Two packbeam slots: `main.avm` at `0x2B8000` and `alt.avm` at `0x35C000`, 656K
   each. NervesHub writes whichever one is not running and flips
   `atomvm`/`boot_path` in NVS
-- `assets.avm` at `0x278000` holds the rickroll frames and the `.uf` fonts,
-  mounted by `Badge.start/0`. `firmware/tools/flashassets.sh` packs it and
+- `assets.avm` at `0x278000` holds the rickroll frames, the `.uf` fonts and
+  the splash logo, mounted by `Badge.start/0`. `firmware/tools/flashassets.sh` packs it and
   writes it in one step, auto-detecting the port; it is **not** updated over the
   air. Run `firmware/tools/gif.py` first if the frames changed
 - `python3 firmware/tools/check_partitions.py <partitions.csv> [label=path ...]`
@@ -55,7 +55,10 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   `Badge: no assets partition:` — but opening Sudo Mode kills the `Badge.UI`
   GenServer, which restarts and resets the page to Home. It does **not**
   crash-loop. What Sudo Mode should draw when frames are absent is a pending
-  follow-up decision.
+  follow-up decision. The splash is skipped instead: `Splash: no logo in
+  assets partition` is printed once and the badge boots to Home
+- `:atomvm.read_priv/2` returns `:undefined` for a missing file or partition;
+  it does not raise. A guard that only catches will hand AtomGL `:undefined`
 - The boot splash is `Badge.Page.Splash`, drawing `Badge.Logo` from
   `assets/logo` (regenerate with `tools/logo.py`); it is skipped on a wake from
   deep sleep. A page ends itself by returning `{:goto, page}` from `tick/1`
