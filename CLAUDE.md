@@ -5,7 +5,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Commands
 
-- `mix test` — 1043 tests across 57 files, no board needed. 2 are excluded as
+- `mix test` — 1090 tests across 60 files, no board needed. 2 are excluded as
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
@@ -126,6 +126,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   the Update tab. A badge on the home grid holds no socket. Entering chat
   therefore costs a handshake it used not to
 
+<<<<<<< HEAD
 ## Clustering
 
 - `Badge.Page.Cluster` joins the badge to an Erlang cluster over wifi, and
@@ -160,6 +161,26 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   `tools/cluster.exs` instead
 - The cookie is the only thing guarding the node, and rpc runs anything, so
   joining is a keypress on the badge rather than something it does at boot
+=======
+## Schedule
+
+- `Badge.Page.Schedule` walks the programme from `https://goatmire.com/schedule.json`
+  as one timeline: the open session sits between two rules, Up and Down open
+  the neighbours, and Esc returns to now before it goes Home
+- `Badge.Schedule` is pure apart from `fetch/0`; `Badge.Schedule.Link` keeps the
+  fetched programme across page entries and refetches after 30 minutes, with
+  `Badge.Schedule.Link.State` holding the transitions as data. `status/0`
+  carries no sessions; the page asks for them only when `version` changes
+- The site's times are Swedish local time, so `Schedule.now/1` converts UTC
+  through `Badge.Zone` for `Europe/Stockholm`, not the badge's own zone
+- The fetch is plain `:ahttp_client` over `:ssl` with `verify: :verify_peer`,
+  which the fork's `ssl.erl` maps onto the ESP-IDF CA bundle. It waits for a
+  system clock past 2024 rather than for `Wifi.status()`, since SNTP is what
+  moves the clock. `:ssl.start/0` is called first; it is idempotent
+- `atomvm.check` also flags `lists:keysort/2` and `lists:flatmap/2` falsely;
+  both are in the fork's `lists.erl`
+- `test/fixtures/schedule.json` is the site's answer captured on 2026-09-16
+>>>>>>> 367a8c5 (Add a Schedule page that walks the programme from goatmire.com)
 
 ## Firmware updates
 

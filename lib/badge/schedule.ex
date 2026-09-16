@@ -1,0 +1,332 @@
+defmodule Badge.Schedule do
+  @moduledoc """
+  The conference programme from goatmire.com, flattened into one timeline.
+
+  The site publishes days, each holding spaces, each holding sessions.
+  `parse/1` turns that into a single list ordered by start, so a page can
+  walk it with two keys. Times are minutes on one axis that spans days, in
+  the event's own zone, which is what the site's clock times are in.
+
+  `fetch/0` blocks on the network and belongs in a process of its own;
+  everything else is pure.
+  """
+
+  alias Badge.Zone
+
+  @compile {:no_warn_undefined, [:ahttp_client, :ssl]}
+
+  @host "goatmire.com"
+  @port 443
+  @path "/schedule.json"
+
+  # The whole programme is about 31 kB; a bigger read is fewer round trips.
+  @chunk 4096
+  @reads 64
+
+  @zone "Europe/Stockholm"
+  @fallback_offset 120
+
+  @minutes_per_day 1_440
+  @epoch_days 719_528
+
+  # 2024-01-01T00:00:00Z: a clock reading before this has not been synced.
+  @floor 1_704_067_200
+
+  @type session :: %{
+          day: integer,
+          date: {integer, integer, integer},
+          weekday: 1..7,
+          label: binary | nil,
+          space: binary,
+          start: integer,
+          stop: integer,
+          title: binary,
+          speakers: [binary]
+        }
+
+  @doc "The programme, or an error when the site cannot be reached or read."
+  @spec fetch() :: {:ok, [session]} | {:error, term}
+  def fetch do
+    :ssl.start()
+
+    case :ahttp_client.connect(:https, @host, @port, active: false, verify: :verify_peer) do
+      {:ok, conn} -> request(conn)
+      {:error, reason} -> {:error, reason}
+    end
+  catch
+    kind, error -> {:error, {kind, error}}
+  end
+
+  defp request(conn) do
+    case :ahttp_client.request(conn, "GET", @path, [], nil) do
+      {:ok, conn, ref} -> collect(conn, ref, [], @reads)
+      {:error, reason} -> close(conn, {:error, reason})
+    end
+  end
+
+  # Chunks are kept as a list until the end, since appending binaries copies.
+  defp collect(conn, _ref, _chunks, 0), do: close(conn, {:error, :too_many_reads})
+
+  defp collect(conn, ref, chunks, left) do
+    case :ahttp_client.recv(conn, @chunk) do
+      {:ok, conn, responses} ->
+        {chunks, done} = harvest(responses, chunks, false)
+
+        continue(conn, ref, chunks, done, left)
+
+      {:error, reason} ->
+        close(conn, {:error, reason})
+    end
+  end
+
+  defp continue(conn, _ref, chunks, true, _left) do
+    close(conn, parsed(:erlang.iolist_to_binary(:lists.reverse(chunks))))
+  end
+
+  defp continue(conn, ref, chunks, false, left), do: collect(conn, ref, chunks, left - 1)
+
+  defp harvest([], chunks, done), do: {chunks, done}
+
+  defp harvest([{:data, _ref, chunk} | rest], chunks, done),
+    do: harvest(rest, [chunk | chunks], done)
+
+  defp harvest([{:done, _ref} | rest], chunks, _done), do: harvest(rest, chunks, true)
+  defp harvest([:done | rest], chunks, _done), do: harvest(rest, chunks, true)
+  defp harvest([_other | rest], chunks, done), do: harvest(rest, chunks, done)
+
+  defp parsed(body) do
+    case parse(body) do
+      {:ok, sessions} -> {:ok, sessions}
+      :error -> {:error, :unreadable}
+    end
+  end
+
+  defp close(conn, result) do
+    :ahttp_client.close(conn)
+
+    result
+  end
+
+  @doc "Reads the site's JSON into a timeline, or `:error` when it is not one."
+  @spec parse(binary) :: {:ok, [session]} | :error
+  def parse(body) do
+    case decode(body) do
+      {:ok, %{"days" => days}} when is_list(days) -> {:ok, timeline(days)}
+      _other -> :error
+    end
+  end
+
+  defp decode(body) do
+    {:ok, :json.decode(body)}
+  catch
+    _kind, _error -> :error
+  end
+
+  # Stable, so sessions that start together keep the site's space order.
+  defp timeline(days) do
+    keyed = :lists.flatmap(&day_sessions/1, days)
+
+    for {_start, session} <- :lists.keysort(1, keyed), do: session
+  end
+
+  defp day_sessions(%{"date" => date, "spaces" => spaces} = day) when is_list(spaces) do
+    case date(date) do
+      nil ->
+        []
+
+      {days, ymd} ->
+        label = text(day, "label")
+
+        :lists.flatmap(fn space -> space_sessions(space, days, ymd, label) end, spaces)
+    end
+  end
+
+  defp day_sessions(_day), do: []
+
+  defp space_sessions(%{"sessions" => sessions} = space, days, ymd, label)
+       when is_list(sessions) do
+    name = text(space, "name") || ""
+
+    :lists.flatmap(fn session -> session(session, days, ymd, label, name) end, sessions)
+  end
+
+  defp space_sessions(_space, _days, _ymd, _label), do: []
+
+  # A session missing a title or a time cannot be placed, so it is left out.
+  defp session(%{"title" => title} = session, days, ymd, label, space) when is_binary(title) do
+    with start when is_integer(start) <- clock(text(session, "start_time")),
+         stop when is_integer(stop) <- clock(text(session, "end_time")) do
+      entry = %{
+        day: days,
+        date: ymd,
+        weekday: :calendar.day_of_the_week(ymd),
+        label: label,
+        space: space,
+        start: days * @minutes_per_day + start,
+        stop: days * @minutes_per_day + stop,
+        title: title,
+        speakers: speakers(Map.get(session, "speakers"))
+      }
+
+      [{entry.start, entry}]
+    else
+      _missing -> []
+    end
+  end
+
+  defp session(_session, _days, _ymd, _label, _space), do: []
+
+  defp speakers(list) when is_list(list), do: :lists.flatmap(&speaker/1, list)
+  defp speakers(_other), do: []
+
+  defp speaker(%{"name" => name}) when is_binary(name), do: [name]
+  defp speaker(_other), do: []
+
+  defp text(map, key) do
+    case Map.get(map, key) do
+      value when is_binary(value) -> value
+      _absent -> nil
+    end
+  end
+
+  defp date(<<y::binary-4, ?-, m::binary-2, ?-, d::binary-2>>) do
+    with year when is_integer(year) <- digits(y),
+         month when is_integer(month) and month >= 1 and month <= 12 <- digits(m),
+         day when is_integer(day) and day >= 1 and day <= 31 <- digits(d) do
+      {:calendar.date_to_gregorian_days({year, month, day}), {year, month, day}}
+    else
+      _bad -> nil
+    end
+  catch
+    _kind, _error -> nil
+  end
+
+  defp date(_other), do: nil
+
+  defp clock(<<h::binary-2, ?:, m::binary-2>>) do
+    with hour when is_integer(hour) and hour < 24 <- digits(h),
+         minute when is_integer(minute) and minute < 60 <- digits(m) do
+      hour * 60 + minute
+    else
+      _bad -> nil
+    end
+  end
+
+  defp clock(_other), do: nil
+
+  defp digits(binary), do: digits(binary, 0)
+
+  defp digits(<<>>, acc), do: acc
+
+  defp digits(<<digit, rest::binary>>, acc) when digit >= ?0 and digit <= ?9 do
+    digits(rest, acc * 10 + (digit - ?0))
+  end
+
+  defp digits(_binary, _acc), do: nil
+
+  @doc """
+  Whether a UTC clock reading is a real one.
+
+  The badge has no RTC: until SNTP lands, the system clock reads a few
+  seconds past the epoch, and anything before this floor is that.
+  """
+  @spec clock_set?(integer) :: boolean
+  def clock_set?(utc_seconds), do: utc_seconds >= @floor
+
+  @doc """
+  The moment a UTC clock reading falls on, in the event's zone, or nil
+  while the clock is not set.
+
+  The programme is written in Swedish time whatever zone the badge is in, so
+  the event's zone is used rather than the badge's own.
+  """
+  @spec now(integer) :: integer | nil
+  def now(utc_seconds) when utc_seconds < @floor, do: nil
+
+  def now(utc_seconds) do
+    offset = Zone.offset_minutes(@zone, utc_seconds) || @fallback_offset
+
+    div(utc_seconds, 60) + offset + @epoch_days * @minutes_per_day
+  end
+
+  @doc """
+  Where on the timeline `now` falls: the running session, else the one
+  about to start, else the last one once it is all over.
+
+  Nil for an empty timeline, or when the clock is not known.
+  """
+  @spec focus([session], integer | nil) :: non_neg_integer | nil
+  def focus([], _now), do: nil
+  def focus(_sessions, nil), do: nil
+
+  def focus(sessions, now) do
+    running(sessions, now, 0) || upcoming(sessions, now, 0) || length(sessions) - 1
+  end
+
+  defp running([], _now, _index), do: nil
+
+  defp running([%{start: start, stop: stop} | _rest], now, index)
+       when start <= now and now < stop,
+       do: index
+
+  defp running([_session | rest], now, index), do: running(rest, now, index + 1)
+
+  @doc "The first session still to start at `now`, or nil once none is."
+  @spec upcoming([session], integer | nil) :: non_neg_integer | nil
+  def upcoming(_sessions, nil), do: nil
+  def upcoming(sessions, now), do: upcoming(sessions, now, 0)
+
+  defp upcoming([], _now, _index), do: nil
+  defp upcoming([%{start: start} | _rest], now, index) when start > now, do: index
+  defp upcoming([_session | rest], now, index), do: upcoming(rest, now, index + 1)
+
+  @doc "Whether a session is running, still to come, or done at `now`."
+  @spec phase(session, integer | nil) :: :now | :next | :done | :unknown
+  def phase(_session, nil), do: :unknown
+  def phase(%{start: start, stop: stop}, now) when start <= now and now < stop, do: :now
+  def phase(%{start: start}, now) when start > now, do: :next
+  def phase(_session, _now), do: :done
+
+  @doc "How long until a session starts, or how much of it is left, in minutes."
+  @spec countdown(session, integer) :: integer
+  def countdown(%{start: start}, now) when start > now, do: start - now
+  def countdown(%{stop: stop}, now), do: stop - now
+
+  @doc "A span of minutes as `25m`, `2h15m` or `3d`, short enough for a corner."
+  @spec span(integer) :: binary
+  def span(minutes) when minutes >= @minutes_per_day,
+    do: :erlang.integer_to_binary(div(minutes, @minutes_per_day)) <> "d"
+
+  def span(minutes) when minutes >= 60 do
+    :erlang.integer_to_binary(div(minutes, 60)) <> "h" <> trailing(rem(minutes, 60))
+  end
+
+  def span(minutes), do: :erlang.integer_to_binary(max(minutes, 0)) <> "m"
+
+  defp trailing(0), do: ""
+  defp trailing(minutes), do: :erlang.integer_to_binary(minutes) <> "m"
+
+  @doc "A timeline minute as `HH:MM`."
+  @spec clock_face(integer) :: binary
+  def clock_face(minutes) do
+    within = rem(minutes, @minutes_per_day)
+
+    pad(div(within, 60)) <> ":" <> pad(rem(within, 60))
+  end
+
+  @doc "A session's day as `Wed 30 Sep`."
+  @spec date_face(session) :: binary
+  def date_face(%{weekday: weekday, date: {_year, month, day}}) do
+    weekday_face(weekday) <> " " <> :erlang.integer_to_binary(day) <> " " <> month_face(month)
+  end
+
+  @doc "A weekday number as its three-letter name."
+  @spec weekday_face(1..7) :: binary
+  def weekday_face(weekday), do: :lists.nth(weekday, ~w(Mon Tue Wed Thu Fri Sat Sun))
+
+  defp month_face(month),
+    do: :lists.nth(month, ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec))
+
+  defp pad(value) when value < 10, do: "0" <> :erlang.integer_to_binary(value)
+  defp pad(value), do: :erlang.integer_to_binary(value)
+end

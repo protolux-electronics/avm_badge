@@ -1,0 +1,945 @@
+{
+  "event": "Goatmire Elixir & NervesConf EU 2026",
+  "site": "https://2026.goatmire.com",
+  "days": [
+    {
+      "date": "2026-09-28",
+      "label": "Workshops",
+      "spaces": [
+        {
+          "name": "Techarenan",
+          "sessions": [
+            {
+              "title": "Multimedia with Membrane 101",
+              "start_time": "08:00",
+              "end_time": "12:00",
+              "speakers": [
+                {
+                  "name": "Łukasz Kita",
+                  "url": "https://2026.goatmire.com/speaker/lukasz-kita"
+                },
+                {
+                  "name": "Feliks Pobiedziński",
+                  "url": "https://2026.goatmire.com/speaker/feliks-pobiedzinski"
+                },
+                {
+                  "name": "Kuba Pryc",
+                  "url": "https://2026.goatmire.com/speaker/kuba-pryc"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/multimedia-with-membrane-101"
+            },
+            {
+              "title": "Ash Demystified",
+              "start_time": "13:00",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "Barnabas Jovanovics",
+                  "url": "https://2026.goatmire.com/speaker/barnabas-jovanovics"
+                },
+                {
+                  "name": "Conor Sinclair",
+                  "url": "https://2026.goatmire.com/speaker/conor-sinclair"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/ash-demystified"
+            }
+          ]
+        },
+        {
+          "name": "Dramasalen",
+          "sessions": [
+            {
+              "title": "Nerves community hack session",
+              "start_time": "08:00",
+              "end_time": "12:00",
+              "speakers": [
+                {
+                  "name": "Frank Hunleth",
+                  "url": "https://2026.goatmire.com/speaker/frank-hunleth"
+                },
+                {
+                  "name": "Jon Carstens",
+                  "url": "https://2026.goatmire.com/speaker/jon-carstens"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/nerves-community-hack-session"
+            },
+            {
+              "title": "Hardware hacking",
+              "start_time": "13:00",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "Gus Workman",
+                  "url": "https://2026.goatmire.com/speaker/gus-workman"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/hardware-hacking"
+            }
+          ]
+        },
+        {
+          "name": "Large hall",
+          "sessions": [
+            {
+              "title": "Test-Driven Development",
+              "start_time": "08:00",
+              "end_time": "12:00",
+              "speakers": [
+                {
+                  "name": "Daniel Raniz Raneland",
+                  "url": "https://2026.goatmire.com/speaker/daniel-raniz-raneland"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/test-driven-development"
+            },
+            {
+              "title": "Docker 101",
+              "start_time": "13:00",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "Josep Lluis Giralt D'Lacoste",
+                  "url": "https://2026.goatmire.com/speaker/josep-lluis-giralt-dlacoste"
+                },
+                {
+                  "name": "Ellie Fairholm",
+                  "url": "https://2026.goatmire.com/speaker/ellie-fairholm"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/docker-101"
+            }
+          ]
+        },
+        {
+          "name": "Smaller hall",
+          "sessions": [
+            {
+              "title": "Introduction to Elixir",
+              "start_time": "08:00",
+              "end_time": "12:00",
+              "speakers": [
+                {
+                  "name": "Bruce Tate",
+                  "url": "https://2026.goatmire.com/speaker/bruce-tate"
+                },
+                {
+                  "name": "Benjamin Milde",
+                  "url": "https://2026.goatmire.com/speaker/benjamin-milde"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/introduction-to-elixir"
+            },
+            {
+              "title": "The Tinkerer's Guide to Elixir Processes",
+              "start_time": "13:00",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "Johan Mattisson",
+                  "url": "https://2026.goatmire.com/speaker/johan-mattisson"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/the-tinkerers-guide-to-elixir-processes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-09-29",
+      "label": "Workshops",
+      "spaces": [
+        {
+          "name": "Techarenan",
+          "sessions": [
+            {
+              "title": "AtomVM Is Real",
+              "start_time": "08:00",
+              "end_time": "12:00",
+              "speakers": [
+                {
+                  "name": "Davide Bettio",
+                  "url": "https://2026.goatmire.com/speaker/davide-bettio"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/atomvm-is-real"
+            },
+            {
+              "title": "Emerge & Solve - GUI and State in Elixir",
+              "start_time": "13:00",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "Damir Batinović",
+                  "url": "https://2026.goatmire.com/speaker/damir-batinovic"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/emerge-solve-gui-and-state-in-elixir"
+            }
+          ]
+        },
+        {
+          "name": "Dramasalen",
+          "sessions": [
+            {
+              "title": "Nerves as your smartphone OS",
+              "start_time": "08:00",
+              "end_time": "12:00",
+              "speakers": [
+                {
+                  "name": "Marc Lainez",
+                  "url": "https://2026.goatmire.com/speaker/marc-lainez"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/nerves-as-your-smartphone-os"
+            },
+            {
+              "title": "Achieving Balance in the Workshop",
+              "start_time": "13:00",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "James Harton",
+                  "url": "https://2026.goatmire.com/speaker/james-harton"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/achieving-balance-in-the-workshop"
+            }
+          ]
+        },
+        {
+          "name": "Large hall",
+          "sessions": [
+            {
+              "title": "Make some noise",
+              "start_time": "08:00",
+              "end_time": "12:00",
+              "speakers": [
+                {
+                  "name": "Sam Aaron",
+                  "url": "https://2026.goatmire.com/speaker/sam-aaron"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/make-some-noise"
+            },
+            {
+              "title": "Pragmatic AI engineering",
+              "start_time": "13:00",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "Oliver Mulelid-Tynes",
+                  "url": "https://2026.goatmire.com/speaker/oliver-mulelid-tynes"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/pragmatic-ai-engineering"
+            }
+          ]
+        },
+        {
+          "name": "Smaller hall",
+          "sessions": [
+            {
+              "title": "Terraform 101",
+              "start_time": "08:00",
+              "end_time": "12:00",
+              "speakers": [
+                {
+                  "name": "Josep Lluis Giralt D'Lacoste",
+                  "url": "https://2026.goatmire.com/speaker/josep-lluis-giralt-dlacoste"
+                },
+                {
+                  "name": "Ellie Fairholm",
+                  "url": "https://2026.goatmire.com/speaker/ellie-fairholm"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/terraform-101"
+            },
+            {
+              "title": "Demystifying ML and AI",
+              "start_time": "13:00",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "Alvise Susmel",
+                  "url": "https://2026.goatmire.com/speaker/alvise-susmel"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/demystifying-ml-and-ai"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-09-30",
+      "label": "NervesConf EU",
+      "spaces": [
+        {
+          "name": "Varbergs Teater",
+          "sessions": [
+            {
+              "title": "At the root of Yggdrasil",
+              "start_time": "09:00",
+              "end_time": "09:15",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Texting Lora",
+              "start_time": "09:15",
+              "end_time": "09:55",
+              "speakers": [
+                {
+                  "name": "Peter Ullrich",
+                  "url": "https://2026.goatmire.com/speaker/peter-ullrich"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/texting-lora"
+            },
+            {
+              "title": "Briefing",
+              "start_time": "09:55",
+              "end_time": "10:10",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Driving LEDs with Fledex",
+              "start_time": "10:10",
+              "end_time": "10:30",
+              "speakers": [
+                {
+                  "name": "Matthias Reik",
+                  "url": "https://2026.goatmire.com/speaker/matthias-reik"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/driving-leds-with-fledex"
+            },
+            {
+              "title": "Coffee break",
+              "start_time": "10:30",
+              "end_time": "11:00",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "A tale as old as time",
+              "start_time": "11:00",
+              "end_time": "11:10",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Controlled Noise on Nerves",
+              "start_time": "11:10",
+              "end_time": "11:30",
+              "speakers": [
+                {
+                  "name": "Marta Habdas",
+                  "url": "https://2026.goatmire.com/speaker/marta-habdas"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/controlled-noise-on-nerves"
+            },
+            {
+              "title": "We got Communist Nerves before GTA 6 lol",
+              "start_time": "11:35",
+              "end_time": "11:55",
+              "speakers": [
+                {
+                  "name": "Sahil Pohare",
+                  "url": "https://2026.goatmire.com/speaker/sahil-pohare"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/we-got-communist-nerves-before-gta-6-lol"
+            },
+            {
+              "title": "Make yourself at Home(x)",
+              "start_time": "12:00",
+              "end_time": "12:20",
+              "speakers": [
+                {
+                  "name": "Kevin Schweikert",
+                  "url": "https://2026.goatmire.com/speaker/kevin-schweikert"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/make-yourself-at-home-x"
+            },
+            {
+              "title": "Information",
+              "start_time": "12:20",
+              "end_time": "12:30",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Lunch",
+              "start_time": "12:30",
+              "end_time": "13:40",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "A concerning development",
+              "start_time": "13:40",
+              "end_time": "13:50",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "AtomVM: When Constrained Doesn’t Mean Boring",
+              "start_time": "13:50",
+              "end_time": "14:30",
+              "speakers": [
+                {
+                  "name": "Davide Bettio",
+                  "url": "https://2026.goatmire.com/speaker/davide-bettio"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/atomvm-when-constrained-doesnt-mean-boring"
+            },
+            {
+              "title": "Nerves 2.0",
+              "start_time": "14:35",
+              "end_time": "15:15",
+              "speakers": [
+                {
+                  "name": "Frank Hunleth",
+                  "url": "https://2026.goatmire.com/speaker/frank-hunleth"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/nerves-2-0"
+            },
+            {
+              "title": "Fika",
+              "start_time": "15:15",
+              "end_time": "15:50",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Move fast and die on the battlefield",
+              "start_time": "15:50",
+              "end_time": "16:00",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Zero Alert Storms: Formal Verification for IoT Automation",
+              "start_time": "16:00",
+              "end_time": "16:40",
+              "speakers": [
+                {
+                  "name": "Tobias Bohwalli",
+                  "url": "https://2026.goatmire.com/speaker/tobias-bohwalli"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/zero-alert-storms-formal-verification-for-iot-automation"
+            },
+            {
+              "title": "Closing notes",
+              "start_time": "16:40",
+              "end_time": "16:50",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Nerves, Nerves everywhere",
+              "start_time": "16:50",
+              "end_time": "17:30",
+              "speakers": [
+                {
+                  "name": "Marc Lainez",
+                  "url": "https://2026.goatmire.com/speaker/marc-lainez"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/nerves-nerves-everywhere"
+            },
+            {
+              "title": "Lightning Talks @ Bank 28",
+              "start_time": "19:30",
+              "end_time": "20:30",
+              "speakers": [],
+              "url": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-10-01",
+      "label": "Goatmire Elixir",
+      "spaces": [
+        {
+          "name": "Varbergs Teater",
+          "sessions": [
+            {
+              "title": "Supervising the Tree",
+              "start_time": "09:00",
+              "end_time": "09:15",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Safe Systems in a Chaotic World",
+              "start_time": "09:15",
+              "end_time": "09:55",
+              "speakers": [
+                {
+                  "name": "Bryan Hunter",
+                  "url": "https://2026.goatmire.com/speaker/bryan-hunter"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/safe-systems-in-a-chaotic-world"
+            },
+            {
+              "title": "Briefing",
+              "start_time": "09:55",
+              "end_time": "10:10",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Video Game Archaeology with Elixir",
+              "start_time": "10:10",
+              "end_time": "10:50",
+              "speakers": [
+                {
+                  "name": "Rebecca Le",
+                  "url": "https://2026.goatmire.com/speaker/rebecca-le"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/video-game-archaeology-with-elixir"
+            },
+            {
+              "title": "Coffee break",
+              "start_time": "10:50",
+              "end_time": "11:20",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Failing light",
+              "start_time": "11:20",
+              "end_time": "11:25",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Hear No Evil: Building a Membrane Pipeline for AI Noise Reduction",
+              "start_time": "11:25",
+              "end_time": "11:45",
+              "speakers": [
+                {
+                  "name": "Feliks Pobiedziński",
+                  "url": "https://2026.goatmire.com/speaker/feliks-pobiedzinski"
+                },
+                {
+                  "name": "Mateusz Słuszniak",
+                  "url": "https://2026.goatmire.com/speaker/mateusz-sluszniak"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/hear-no-evil-building-a-membrane-pipeline-for-ai-noise-reduction"
+            },
+            {
+              "title": "Can this be ready tomorrow ?",
+              "start_time": "11:50",
+              "end_time": "12:10",
+              "speakers": [
+                {
+                  "name": "Tim Jarratt",
+                  "url": "https://2026.goatmire.com/speaker/tim-jarratt"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/can-this-be-ready-tomorrow"
+            },
+            {
+              "title": "Lunch",
+              "start_time": "12:10",
+              "end_time": "13:00",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Watching the runes turn",
+              "start_time": "13:00",
+              "end_time": "13:05",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "The Rebirth of an Elixir-based Personal Agent",
+              "start_time": "13:05",
+              "end_time": "13:45",
+              "speakers": [
+                {
+                  "name": "Evadne Wu",
+                  "url": "https://2026.goatmire.com/speaker/evadne-wu"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/the-rebirth-of-an-elixir-based-personal-agent"
+            },
+            {
+              "title": "The BEAM is a friendly host: Building desktop applications with Elixir",
+              "start_time": "13:45",
+              "end_time": "14:05",
+              "speakers": [
+                {
+                  "name": "Daniil Popov",
+                  "url": "https://2026.goatmire.com/speaker/daniil-popov"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/the-beam-is-a-friendly-host-building-desktop-applications-with-elixir"
+            },
+            {
+              "title": "Hologram: Building Local-First Apps in Pure Elixir",
+              "start_time": "14:05",
+              "end_time": "14:25",
+              "speakers": [
+                {
+                  "name": "Bart Blast",
+                  "url": "https://2026.goatmire.com/speaker/bart-blast"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/hologram-building-local-first-apps-in-pure-elixir"
+            },
+            {
+              "title": "Taming Control Flow with Result Monads",
+              "start_time": "14:25",
+              "end_time": "14:45",
+              "speakers": [
+                {
+                  "name": "Stefan Fochler",
+                  "url": "https://2026.goatmire.com/speaker/stefan-fochler"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/taming-control-flow-with-result-monads"
+            },
+            {
+              "title": "Fika",
+              "start_time": "14:45",
+              "end_time": "15:15",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "And Then There Were Nil",
+              "start_time": "15:15",
+              "end_time": "15:55",
+              "speakers": [
+                {
+                  "name": "Parker Selbert",
+                  "url": "https://2026.goatmire.com/speaker/parker-selbert"
+                },
+                {
+                  "name": "Shannon Selbert",
+                  "url": "https://2026.goatmire.com/speaker/shannon-selbert"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/and-then-there-were-nil"
+            },
+            {
+              "title": "Break",
+              "start_time": "15:55",
+              "end_time": "16:05",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "I'm not distracting you am I?",
+              "start_time": "16:05",
+              "end_time": "16:15",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Notes on the Synthesis of Time",
+              "start_time": "16:15",
+              "end_time": "16:35",
+              "speakers": [
+                {
+                  "name": "Sam Aaron",
+                  "url": "https://2026.goatmire.com/speaker/sam-aaron"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/notes-on-the-synthesis-of-time"
+            },
+            {
+              "title": "Marketing is not a dirty word",
+              "start_time": "16:40",
+              "end_time": "17:00",
+              "speakers": [
+                {
+                  "name": "Kamila Pokój",
+                  "url": "https://2026.goatmire.com/speaker/kamila-pokoj"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/marketing-is-not-a-dirty-word"
+            },
+            {
+              "title": "Closing the day",
+              "start_time": "17:00",
+              "end_time": "17:10",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Beam Bots: Robotics on the BEAM",
+              "start_time": "17:10",
+              "end_time": "17:50",
+              "speakers": [
+                {
+                  "name": "James Harton",
+                  "url": "https://2026.goatmire.com/speaker/james-harton"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/beam-bots-robotics-on-the-beam"
+            },
+            {
+              "title": "Karaoke @ Bank 28",
+              "start_time": "19:30",
+              "end_time": "23:40",
+              "speakers": [],
+              "url": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-10-02",
+      "label": "Goatmire Elixir",
+      "spaces": [
+        {
+          "name": "Varbergs Teater",
+          "sessions": [
+            {
+              "title": "Sight and wisdom",
+              "start_time": "09:00",
+              "end_time": "09:10",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Solve state and GUI will Emerge",
+              "start_time": "09:10",
+              "end_time": "09:50",
+              "speakers": [
+                {
+                  "name": "Damir Batinović",
+                  "url": "https://2026.goatmire.com/speaker/damir-batinovic"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/solve-state-and-gui-will-emerge"
+            },
+            {
+              "title": "Elixir in the Enterprise",
+              "start_time": "09:55",
+              "end_time": "10:15",
+              "speakers": [
+                {
+                  "name": "Erik Hansen",
+                  "url": "https://2026.goatmire.com/speaker/erik-hansen"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/elixir-in-the-enterprise"
+            },
+            {
+              "title": "Coffee break",
+              "start_time": "10:15",
+              "end_time": "10:40",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Operational hazards of managing PostgreSQL DBs over 100TB",
+              "start_time": "10:40",
+              "end_time": "11:20",
+              "speakers": [
+                {
+                  "name": "Teresa Lopes",
+                  "url": "https://2026.goatmire.com/speaker/teresa-lopes"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/operational-hazards-of-managing-postgresql-dbs-over-100tb"
+            },
+            {
+              "title": "A Rebel’s Guide to Digital Independence",
+              "start_time": "11:25",
+              "end_time": "11:45",
+              "speakers": [
+                {
+                  "name": "Julian Köpke",
+                  "url": "https://2026.goatmire.com/speaker/julian-kopke"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/a-rebels-guide-to-digital-independence"
+            },
+            {
+              "title": "Millions of Packets, Zero Panic: Observability Without Killing the Patient",
+              "start_time": "11:45",
+              "end_time": "12:05",
+              "speakers": [
+                {
+                  "name": "Nelson Vides",
+                  "url": "https://2026.goatmire.com/speaker/nelson-vides"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/millions-of-packets-zero-panic-observability-without-killing-the-patient"
+            },
+            {
+              "title": "Briefing",
+              "start_time": "12:05",
+              "end_time": "12:15",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Lunch",
+              "start_time": "12:15",
+              "end_time": "13:05",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Root of Trust",
+              "start_time": "13:05",
+              "end_time": "13:15",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "A Phoenix rises from the Ashes",
+              "start_time": "13:15",
+              "end_time": "13:55",
+              "speakers": [
+                {
+                  "name": "Josh Price",
+                  "url": "https://2026.goatmire.com/speaker/josh-price"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/a-phoenix-rises-from-the-ashes"
+            },
+            {
+              "title": "Maps: Easier Than Expected!",
+              "start_time": "14:00",
+              "end_time": "14:40",
+              "speakers": [
+                {
+                  "name": "Aaron Seigo",
+                  "url": "https://2026.goatmire.com/speaker/aaron-seigo"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/maps-easier-than-expected"
+            },
+            {
+              "title": "Break",
+              "start_time": "14:40",
+              "end_time": "14:55",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Time Travel for Normies",
+              "start_time": "14:55",
+              "end_time": "15:35",
+              "speakers": [
+                {
+                  "name": "Zach Daniel",
+                  "url": "https://2026.goatmire.com/speaker/zach-daniel"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/time-travel-for-normies"
+            },
+            {
+              "title": "Break",
+              "start_time": "15:35",
+              "end_time": "15:45",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "Perceive That Which Cannot Be Seen: The Architecture of OpenRiak",
+              "start_time": "15:45",
+              "end_time": "16:25",
+              "speakers": [
+                {
+                  "name": "Robert Carbone",
+                  "url": "https://2026.goatmire.com/speaker/robert-carbone"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/perceive-that-which-cannot-be-seen-the-architecture-of-openriak"
+            },
+            {
+              "title": "Closing notes",
+              "start_time": "16:25",
+              "end_time": "16:40",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "A Hundred Eyes",
+              "start_time": "16:40",
+              "end_time": "17:20",
+              "speakers": [
+                {
+                  "name": "Quinn Wilton",
+                  "url": "https://2026.goatmire.com/speaker/quinn-wilton"
+                }
+              ],
+              "url": "https://2026.goatmire.com/talk/a-hundred-eyes"
+            },
+            {
+              "title": "Clocking out",
+              "start_time": "17:20",
+              "end_time": "17:40",
+              "speakers": [],
+              "url": null
+            },
+            {
+              "title": "After Party @ Villa Celine",
+              "start_time": "20:00",
+              "end_time": "23:35",
+              "speakers": [],
+              "url": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-10-03",
+      "label": null,
+      "spaces": [
+        {
+          "name": "Techarenan",
+          "sessions": [
+            {
+              "title": "Elixir Hackathon",
+              "start_time": "10:00",
+              "end_time": "17:00",
+              "speakers": [],
+              "url": null
+            }
+          ]
+        },
+        {
+          "name": "Large hall",
+          "sessions": [
+            {
+              "title": "AshConf 2026",
+              "start_time": "10:00",
+              "end_time": "17:00",
+              "speakers": [],
+              "url": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

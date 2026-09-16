@@ -61,6 +61,7 @@ defmodule Badge.PagesTest do
 
     test "the agent sits on the red square of the second screen" do
       assert Pages.for_key(:square, 1) == Badge.Page.Agent
+      assert Pages.for_key(:triangle, 1) == Badge.Page.Schedule
     end
 
     test "an empty slot is nil, not a crash" do
