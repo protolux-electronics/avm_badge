@@ -148,16 +148,13 @@ defmodule Badge.Sim.Display do
 
   defp frame_assets(frame, cache) do
     {_seen, assets} =
-      Enum.reduce(frame, {MapSet.new(), []}, fn command, {seen, assets} ->
-        case Map.get(command, :id) do
-          nil ->
-            {seen, assets}
+      Enum.reduce(frame, {MapSet.new(), []}, fn command, {seen, assets} = acc ->
+        id = Map.get(command, :id)
 
-          id ->
-            case MapSet.member?(seen, id) do
-              true -> {seen, assets}
-              false -> {MapSet.put(seen, id), [Map.fetch!(cache, id) | assets]}
-            end
+        if id == nil or MapSet.member?(seen, id) do
+          acc
+        else
+          {MapSet.put(seen, id), [Map.fetch!(cache, id) | assets]}
         end
       end)
 

@@ -54,18 +54,14 @@ defmodule Badge.Sim.Check do
     Badge.UI.key_event({:nav, key})
     %{page: ^page} = state = :sys.get_state(Badge.UI)
 
-    case state.dirty do
-      false ->
-        Display.snapshot()
-
-      true ->
-        sequence = Display.snapshot().sequence
-        send(Badge.UI, :render_tick)
-
-        case Display.await_frame(sequence) do
-          {:ok, snapshot} -> snapshot
-          {:error, :timeout} -> raise "timed out rendering #{inspect(page)}"
-        end
+    with true <- state.dirty,
+         sequence = Display.snapshot().sequence,
+         :render_tick <- send(Badge.UI, :render_tick),
+         {:ok, snapshot} <- Display.await_frame(sequence) do
+      snapshot
+    else
+      false -> Display.snapshot()
+      {:error, :timeout} -> raise "timed out rendering #{inspect(page)}"
     end
   end
 
