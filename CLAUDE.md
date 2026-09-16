@@ -20,7 +20,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   the hub while the agent is up. ESP-IDF's own `I (…)` lines are not seen
 - `MIX_TARGET=sim iex -S mix` is how the firmware runs on the host: the pages
   run against fake hardware processes and draw on a canvas at
-  http://localhost:4000. `MIX_TARGET=sim mix sim.check` renders every page
+  http://localhost:3240. `MIX_TARGET=sim mix sim.check` renders every page
   once without a browser, and `MIX_TARGET=sim mix test` adds `sim/test`
 - The simulator lives in `sim/lib` as `Badge.Sim.*` and is compiled only for
   the `:sim` target, so the default `:host` target still builds, checks and
