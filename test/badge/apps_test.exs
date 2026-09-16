@@ -52,18 +52,10 @@ defmodule Badge.AppsTest do
         Code.ensure_loaded!(module)
 
         assert function_exported?(module, :title, 0)
-        assert function_exported?(module, :icon, 0)
         assert function_exported?(module, :init, 0)
         assert function_exported?(module, :render, 1)
         assert function_exported?(module, :handle_key, 2)
         assert function_exported?(module, :tick, 1)
-      end
-    end
-
-    test "every icon an app asks for actually exists and is not a shape" do
-      for module <- Apps.all() do
-        assert module.icon() in Badge.Icons.names()
-        refute module.icon() in [:square, :triangle, :cross, :circle, :clover, :diamond]
       end
     end
 

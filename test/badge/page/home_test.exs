@@ -77,15 +77,14 @@ defmodule Badge.Page.HomeTest do
   end
 
   describe "render/1 on the apps" do
-    test "each app shows the shape that opens it beside its own icon, and its label" do
+    test "each app shows the shape that opens it, and its label" do
       items = Home.render(apps())
 
-      assert length(icons(items)) == 2 * Apps.count()
+      assert length(icons(items)) == Apps.count()
 
       for {module, index} <- Enum.with_index(Apps.all()) do
         assert module.title() in texts(items)
         assert Icons.binary(:lists.nth(index + 1, @shapes), Theme.glyph()) in images(items)
-        assert Icons.binary(module.icon(), Theme.glyph()) in images(items)
       end
     end
 
@@ -129,16 +128,6 @@ defmodule Badge.Page.HomeTest do
 
         assert x >= 0
         assert x + w <= Theme.width()
-      end
-    end
-
-    test "the pair of icons in a cell do not overlap" do
-      xs =
-        for {:image, x, _y, _bg, {:rgba8888, w, _h, _data}} <- Home.render(apps()),
-            do: {x, x + w}
-
-      for {a, b} <- Enum.zip(xs, tl(xs)) do
-        assert elem(a, 1) <= elem(b, 0)
       end
     end
   end

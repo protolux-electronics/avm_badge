@@ -33,8 +33,6 @@ defmodule Badge.Page.AgentTest do
   describe "identity" do
     test "announces itself for the apps grid" do
       assert Agent.title() == "Agent"
-      assert Agent.icon() == :agent
-      assert Agent.icon() in Badge.Icons.names()
     end
   end
 

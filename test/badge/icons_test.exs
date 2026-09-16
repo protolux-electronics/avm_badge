@@ -28,8 +28,6 @@ defmodule Badge.IconsTest do
     :signal_3
   ]
 
-  @apps [:agent]
-
   @white 0xFFFFFF
   @black 0x000000
 
@@ -42,8 +40,8 @@ defmodule Badge.IconsTest do
       assert Icons.names() == :lists.sort(Icons.names())
     end
 
-    test "holds every shape, every status icon and every app icon" do
-      assert Icons.names() == :lists.sort(@shapes ++ @status ++ @apps)
+    test "holds every shape and every status icon" do
+      assert Icons.names() == :lists.sort(@shapes ++ @status)
     end
 
     test "the retired dot marker is gone" do
@@ -52,8 +50,8 @@ defmodule Badge.IconsTest do
   end
 
   describe "mono?/1" do
-    test "status and app icons are monochrome and shapes are not" do
-      for name <- @status ++ @apps, do: assert(Icons.mono?(name))
+    test "status icons are monochrome and shapes are not" do
+      for name <- @status, do: assert(Icons.mono?(name))
       for name <- @shapes, do: refute(Icons.mono?(name))
     end
 
@@ -65,12 +63,6 @@ defmodule Badge.IconsTest do
   describe "size/1" do
     test "shapes are 32x32" do
       for name <- @shapes do
-        assert Icons.size(name) == {32, 32}
-      end
-    end
-
-    test "app icons are 32x32, like the shapes they sit in place of" do
-      for name <- @apps do
         assert Icons.size(name) == {32, 32}
       end
     end
@@ -112,7 +104,7 @@ defmodule Badge.IconsTest do
     end
 
     test "a monochrome icon carries its tint on every pixel" do
-      for name <- @status ++ @apps, tint <- Icons.tints() do
+      for name <- @status, tint <- Icons.tints() do
         <<r, g, b>> = <<tint::24>>
         colours = for <<r2, g2, b2, _a <- Icons.binary(name, tint)>>, do: {r2, g2, b2}
 

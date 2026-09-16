@@ -44,9 +44,6 @@ defmodule Badge.Page.Agent do
   def title, do: "Agent"
 
   @impl true
-  def icon, do: :agent
-
-  @impl true
   def init do
     %{eliza: Eliza.new(), lines: [], draft: Field.new(@limit), offset: 0}
     |> said(:eliza, Eliza.greeting())
