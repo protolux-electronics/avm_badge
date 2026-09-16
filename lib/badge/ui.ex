@@ -35,13 +35,16 @@ defmodule Badge.UI do
   alias Badge.Battery
   alias Badge.Clock
   alias Badge.Hardware
+  alias Badge.Keyboard
   alias Badge.Page.Home
   alias Badge.Page.Splash
   alias Badge.Pages
   alias Badge.Pixels
   alias Badge.Power
   alias Badge.Skin
+  alias Badge.Sleep
   alias Badge.Theme
+  alias Badge.Update
   alias Badge.Wifi
 
   # Ticker rate. A page renders at its own `refresh/0`, which must be a multiple of this.
@@ -70,6 +73,10 @@ defmodule Badge.UI do
   def key_event(event) do
     GenServer.cast(__MODULE__, {:key, event})
   end
+
+  @doc "From `Badge.Keyboard`: the CPU slept for `ms`, or the sleep was refused."
+  @spec slept({:ok, integer} | :refused) :: :ok
+  def slept(result), do: GenServer.cast(__MODULE__, {:slept, result})
 
   @doc """
   Opens the AtomGL port and loads the fonts.
@@ -106,7 +113,8 @@ defmodule Badge.UI do
       fonts: [],
       missing: [],
       idle: 0,
-      asleep: false
+      asleep: false,
+      napping: false
     }
 
     Skin.activate(Skin.load())
@@ -122,6 +130,19 @@ defmodule Badge.UI do
   @impl true
   def handle_cast({:key, _event}, %{asleep: true} = state) do
     {:noreply, wake(state)}
+  end
+
+  # The only wake source is a key, so the screen comes on without waiting for its event.
+  def handle_cast({:slept, {:ok, _ms}}, state) do
+    Wifi.resume()
+
+    {:noreply, wake(%{state | napping: false})}
+  end
+
+  def handle_cast({:slept, :refused}, state) do
+    Wifi.resume()
+
+    {:noreply, %{state | napping: false, idle: 0}}
   end
 
   # Offered to the page first so a container can back out a level; ignoring it goes Home.
@@ -240,9 +261,19 @@ defmodule Badge.UI do
     :ok
   end
 
-  # A badge set never to sleep counts on without ever reaching the timeout.
-  defp drowse(%{asleep: true} = state), do: state
+  # Screen off: count on towards the CPU sleep, unless one is already requested.
+  defp drowse(%{asleep: true, napping: true} = state), do: state
 
+  defp drowse(%{asleep: true} = state) do
+    idle = state.idle + 1
+
+    case idle >= Sleep.ticks(@base_interval) and Sleep.allowed?(holds()) do
+      true -> nap(state)
+      false -> %{state | idle: idle}
+    end
+  end
+
+  # A badge set never to sleep counts on without ever reaching the timeout.
   defp drowse(state) do
     idle = state.idle + 1
 
@@ -257,6 +288,18 @@ defmodule Badge.UI do
     Pixels.sleep()
 
     %{state | asleep: true, idle: 0}
+  end
+
+  defp holds do
+    %{usb: Power.usb_present?(), downloading: Update.Link.status().state == :downloading}
+  end
+
+  # The radio is parked before the CPU, so the disconnect is out before it stops.
+  defp nap(state) do
+    Wifi.suspend()
+    Keyboard.light_sleep()
+
+    %{state | napping: true, idle: 0}
   end
 
   # Dirty, so the panel is right the moment the light comes back.
