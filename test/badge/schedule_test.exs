@@ -3,8 +3,8 @@ defmodule Badge.ScheduleTest do
 
   alias Badge.Schedule
 
-  # Captured verbatim from https://goatmire.com/schedule.json on 2026-09-16.
-  @body File.read!(Path.expand("../fixtures/schedule.json", __DIR__))
+  # The copy compiled into the firmware, captured from goatmire.com on 2026-09-16.
+  @body File.read!(Path.expand("../../assets/schedule.json", __DIR__))
 
   @day 1_440
 

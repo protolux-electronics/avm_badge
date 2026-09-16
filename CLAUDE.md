@@ -5,7 +5,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Commands
 
-- `mix test` — 1092 tests across 60 files, no board needed. 2 are excluded as
+- `mix test` — 1097 tests across 61 files, no board needed. 2 are excluded as
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
@@ -126,7 +126,6 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   the Update tab. A badge on the home grid holds no socket. Entering chat
   therefore costs a handshake it used not to
 
-<<<<<<< HEAD
 ## Clustering
 
 - `Badge.Page.Cluster` joins the badge to an Erlang cluster over wifi, and
@@ -161,38 +160,46 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   `tools/cluster.exs` instead
 - The cookie is the only thing guarding the node, and rpc runs anything, so
   joining is a keypress on the badge rather than something it does at boot
-=======
+
 ## Schedule
 
-- `Badge.Page.Schedule` walks the programme from `https://goatmire.com/schedule.json`
-  as one timeline: the open session sits between two rules, Up and Down open
-  the neighbours, and Esc returns to now before it goes Home
-- `Badge.Schedule` is pure apart from `fetch/0`. Each session is held with
-  its panel lines already made up (`when`, `where`, `who`, `row`), so the
-  page draws what is held and never reparses. The 31 kB JSON is dropped
-  right after parsing
-- `Badge.Schedule.Link` fetches on its own ticker: once the clock is set
-  after boot, again after 30 minutes, and after a failure with a doubling
-  wait capped at 30 minutes. No page needs to be open. The held copy lives in
-  the process, not NVS: that partition is 24 kB and shared with wifi
-  credentials. `Badge.Schedule.Link.State` holds the transitions as data.
-  `status/0` carries no sessions; the page asks for them only when `version`
-  changes. Progress prints as `Schedule: fetching`, `Schedule: holding N
-  sessions` or `Schedule: fetch failed ...`
+- `Badge.Page.Schedule` walks the programme as one timeline: the open session
+  sits between two rules, Up and Down open the neighbours, and Esc returns to
+  now before it goes Home
+- The programme is **compiled in**: `assets/schedule.json` is parsed on the
+  host by `Badge.Schedule.parse/1` and packed with `term_to_binary` into
+  `Badge.Schedule.Link`, which unpacks it at start. Nothing is parsed on the
+  device. `mix badge.schedule` refreshes the file from
+  `https://goatmire.com/schedule.json`; commit it and flash. It is held as
+  the panel draws it: each session carries `when`, `where`, `who` and `row`
+  already made up, next to `day`, `weekday`, `start`, `stop` and `title`
+- The site's times are Swedish local time, so `Schedule.now/1` converts UTC
+  through `Badge.Zone` for `Europe/Stockholm`, not the badge's own zone. A
+  system clock before 2024 counts as unset
+- `Badge.Schedule.Link.State` also knows how to refresh over the air, on a
+  ticker: once the clock is set, again after 30 minutes, after a failure
+  with a doubling wait. `status/0` carries no sessions; the page asks for
+  them only when `version` changes. **The ticker is off (`@fetch false`)**
+  because this VM's `:ssl` does not survive a handshake to goatmire.com
+  (seen 2026-09-16, base image `da7333f03`): with `verify: :verify_peer` the
+  heap corrupts right after `esp-x509-crt-bundle: Certificate validated`
+  (TLSF `block_merge_prev` assert, or a StoreProhibited in the allocator)
+  and the badge reboots; with `verify_none` the handshake spins and the task
+  watchdog reports `IDLE0` starved, the fork's `ssl:handshake_loop/2` looping
+  on `want_write`. The chat's TLS is unaffected: it runs in the websocket
+  component's own task, not through `otp_ssl`. Suspects: the `want_write`
+  busy loop, and mbedtls built with `CONFIG_MBEDTLS_DYNAMIC_BUFFER`,
+  `DYNAMIC_FREE_PEER_CERT` and `DYNAMIC_FREE_CONFIG_DATA`, which esp-tls
+  expects and `otp_ssl` was never run under. Fix in the VM, then flip the
+  attribute
+- The NVS partition is 24 kB and shared with the wifi credentials, so a
+  fetched programme is held in the link process, not written to flash
 - **`ssl:recv/2` with a length blocks until exactly that many bytes have
   arrived**, so a read loop asking for 4096 hangs on the response's last
-  piece. Read with length 0, which returns whatever has arrived. This is
-  what made the page sit on "Fetching the programme"
-- The site's times are Swedish local time, so `Schedule.now/1` converts UTC
-  through `Badge.Zone` for `Europe/Stockholm`, not the badge's own zone
-- The fetch is plain `:ahttp_client` over `:ssl` with `verify: :verify_peer`,
-  which the fork's `ssl.erl` maps onto the ESP-IDF CA bundle. It waits for a
-  system clock past 2024 rather than for `Wifi.status()`, since SNTP is what
-  moves the clock. `:ssl.start/0` is called first; it is idempotent
+  piece. `Badge.Schedule.fetch/0` reads with length 0, which returns whatever
+  has arrived
 - `atomvm.check` also flags `lists:keysort/2` and `lists:flatmap/2` falsely;
   both are in the fork's `lists.erl`
-- `test/fixtures/schedule.json` is the site's answer captured on 2026-09-16
->>>>>>> 367a8c5 (Add a Schedule page that walks the programme from goatmire.com)
 
 ## Firmware updates
 

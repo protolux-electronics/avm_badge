@@ -17,10 +17,15 @@ defmodule Badge.Schedule.Link.State do
   @retry 60_000
   @max_retry 30 * 60_000
 
-  @doc "A link that holds nothing."
-  @spec new() :: map
-  def new do
-    %{state: :idle, sessions: [], reason: nil, version: 0, at: nil, failures: 0}
+  @doc """
+  A link holding the compiled-in programme, or nothing.
+
+  A held copy counts as old from the start, so the first tick with a clock
+  fetches a fresh one while the page already has something to show.
+  """
+  @spec new([map]) :: map
+  def new(sessions \\ []) do
+    %{state: :idle, sessions: sessions, reason: nil, version: 1, at: nil, failures: 0}
   end
 
   @doc "What a page reads each tick. `held` says whether `sessions/0` has anything."

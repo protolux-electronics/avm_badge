@@ -5,7 +5,7 @@ defmodule Badge.Page.ScheduleTest do
   alias Badge.Schedule
   alias Badge.Theme
 
-  @body File.read!(Path.expand("../../fixtures/schedule.json", __DIR__))
+  @body File.read!(Path.expand("../../../assets/schedule.json", __DIR__))
 
   @day 1_440
   @wednesday :calendar.date_to_gregorian_days({2026, 9, 30})

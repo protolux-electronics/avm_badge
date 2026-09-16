@@ -1,18 +1,20 @@
 defmodule Badge.Schedule.Link do
   @moduledoc """
-  Fetches the programme in the background and holds it for the page.
+  Holds the programme for the page, and refreshes it in the background.
 
-  A ticker asks `Badge.Schedule.Link.State` every few seconds whether a
-  fetch is due: once the clock is set after boot, again once the held copy
-  is old, and after a failure with a growing wait. No page has to be open
-  for any of that, so the schedule is normally in hand before it is asked
-  for.
+  A copy of the programme is compiled in: `assets/schedule.json` is parsed on
+  the host into the lines the panel draws and packed into this module, so the
+  page has it the moment the badge boots and nothing is parsed on the device.
+  `mix badge.schedule` refreshes that file from the site.
 
-  The fetch runs in a spawned process, never here: `status/0` answers the
-  render loop, and a TLS handshake behind it would stall the page. What the
-  process brings back is kept as it will be drawn.
+  With `@fetch` on, a ticker also asks `Badge.Schedule.Link.State` every few
+  seconds whether a fetch is due: once the clock is set after boot, again
+  once the held copy is old, and after a failure with a growing wait. The
+  fetch runs in a spawned process, never here: `status/0` answers the render
+  loop, and a TLS handshake behind it would stall the page.
 
-  A fetch waits for the clock: certificates cannot be checked at the epoch.
+  It is off: this VM's `ssl` does not survive the handshake to goatmire.com,
+  panicking with peer verification and spinning without it.
   """
 
   use GenServer
@@ -20,9 +22,28 @@ defmodule Badge.Schedule.Link do
   alias Badge.Schedule
   alias Badge.Schedule.Link.State
 
+  @fetch false
   @tick 5_000
 
+  @source Path.expand("../../../assets/schedule.json", __DIR__)
+  @external_resource @source
+
+  # Packed rather than a literal: a list of eighty maps strains AtomVM's
+  # literals table, a single binary does not.
+  @packed (case Schedule.parse(File.read!(@source)) do
+             {:ok, sessions} -> :erlang.term_to_binary(sessions)
+             :error -> raise "assets/schedule.json is not a programme"
+           end)
+
   def start_link(:ok), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
+
+  @doc "The programme compiled into this firmware, in timeline order."
+  @spec built_in() :: [Schedule.session()]
+  def built_in, do: :erlang.binary_to_term(@packed)
+
+  @doc "Whether the badge refreshes the programme from the site by itself."
+  @spec fetching?() :: boolean
+  def fetching?, do: @fetch
 
   @doc "Drops a failure so the next tick fetches again."
   @spec retry() :: :ok
@@ -38,9 +59,9 @@ defmodule Badge.Schedule.Link do
 
   @impl true
   def init(:ok) do
-    start_ticker()
+    if @fetch, do: start_ticker()
 
-    {:ok, State.new()}
+    {:ok, State.new(built_in())}
   end
 
   @impl true

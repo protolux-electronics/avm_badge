@@ -10,13 +10,28 @@ defmodule Badge.Schedule.Link.StateTest do
     State.fetched(loading, {:ok, @sessions}, at)
   end
 
-  describe "new/0" do
+  describe "new/1" do
     test "holds nothing and says so" do
       status = State.status(State.new())
 
       assert status.state == :idle
       assert status.held == false
-      assert status.version == 0
+    end
+
+    test "holds the compiled-in programme as a version the page will take" do
+      status = State.status(State.new(@sessions))
+
+      assert status.held == true
+      assert status.version == 1
+    end
+
+    test "a held copy counts as old, so the first tick with a clock fetches" do
+      assert {:fetch, %{state: :loading, sessions: @sessions}} =
+               State.load(State.new(@sessions), true, 0)
+    end
+
+    test "a held copy is shown while the clock is unset" do
+      assert {:wait, %{state: :waiting}} = State.load(State.new(@sessions), false, 0)
     end
   end
 
@@ -96,7 +111,7 @@ defmodule Badge.Schedule.Link.StateTest do
 
       assert status.state == :ready
       assert status.held == true
-      assert status.version == 1
+      assert status.version == 2
       assert state.sessions == @sessions
     end
 
@@ -108,7 +123,7 @@ defmodule Badge.Schedule.Link.StateTest do
       assert status.state == :failed
       assert status.reason == {:ssl, :closed}
       assert status.held == true
-      assert status.version == 1
+      assert status.version == 2
     end
   end
 
