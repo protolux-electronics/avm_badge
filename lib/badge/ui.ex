@@ -1,6 +1,6 @@
 defmodule Badge.UI do
   @moduledoc """
-  Owns the AtomGL port and decides what is on it.
+  Owns the display backend and decides what is on it.
 
   Pages are modules, not processes: this process holds the current page's
   state and calls `render/1`, `tick/1` and `handle_key/2` on it. Shape keys
@@ -34,7 +34,8 @@ defmodule Badge.UI do
   alias Badge.Backlight
   alias Badge.Battery
   alias Badge.Clock
-  alias Badge.Hardware
+  alias Badge.Display
+  alias Badge.Display.AtomGL
   alias Badge.Keyboard
   alias Badge.Page.Home
   alias Badge.Page.Splash
@@ -47,7 +48,7 @@ defmodule Badge.UI do
   alias Badge.Update
   alias Badge.Wifi
 
-  @compile {:no_warn_undefined, [:atomvm, :port]}
+  @compile {:no_warn_undefined, :atomvm}
 
   # Ticker rate. A page renders at its own `refresh/0`, which must be a multiple of this.
   @base_interval 100
@@ -62,8 +63,8 @@ defmodule Badge.UI do
   # partition rather than in this image.
   @loadable %{w95fa: ~c"fonts/w95fa.uf"}
 
-  def start_link(spi) do
-    GenServer.start_link(__MODULE__, spi, name: __MODULE__)
+  def start_link(display) do
+    GenServer.start_link(__MODULE__, display, name: __MODULE__)
   end
 
   @doc """
@@ -88,24 +89,24 @@ defmodule Badge.UI do
   framebuffer; orphaning one costs about 32 kB, which is enough to turn a
   single restart into an out-of-memory reboot on a badge running wifi.
   """
-  @spec open_display(term) :: port
+  @spec open_display(term) :: Display.t()
   def open_display(spi) do
-    port = :erlang.open_port({:spawn, "display"}, display_opts(spi))
+    display = {AtomGL, AtomGL.open(spi)}
 
-    :port.call(port, {:register_font, :dogica, @font_dogica})
-    :port.call(port, {:register_font, :pixel_operator, @font_pixel_operator})
+    :ok = Display.register_font(display, :dogica, @font_dogica)
+    :ok = Display.register_font(display, :pixel_operator, @font_pixel_operator)
 
     :io.format(~c"UI: AtomGL port open, ~p slots~n", [length(Pages.all())])
 
-    port
+    display
   end
 
   @impl true
-  def init(port) do
+  def init(display) do
     page = first_page()
 
     state = %{
-      port: port,
+      display: display,
       page: page,
       page_state: page.init(),
       dirty: false,
@@ -325,7 +326,7 @@ defmodule Badge.UI do
   defp free_fonts(state, []), do: state
 
   defp free_fonts(state, [name | rest]) do
-    :port.call(state.port, {:deregister_font, name})
+    :ok = Display.deregister_font(state.display, name)
 
     free_fonts(%{state | fonts: state.fonts -- [name]}, rest)
   end
@@ -340,7 +341,7 @@ defmodule Badge.UI do
         load_fonts(%{state | missing: [name | state.missing]}, rest)
 
       bytes ->
-        :port.call(state.port, {:register_font, name, bytes})
+        :ok = Display.register_font(state.display, name, bytes)
 
         load_fonts(%{state | fonts: [name | state.fonts]}, rest)
     end
@@ -402,10 +403,10 @@ defmodule Badge.UI do
     %{state | page: page, page_state: page.init(), dirty: true, countdown: 0}
   end
 
-  defp render(%{port: port, page: page, page_state: page_state, status: status}) do
+  defp render(%{display: display, page: page, page_state: page_state, status: status}) do
     items = page.render(page_state) ++ Theme.chrome(page.title(), status)
 
-    :port.call(port, {:update, items})
+    :ok = Display.update(display, items)
   end
 
   # Waits in a linked process, so this GenServer never sleeps in a callback and a dead ticker crashes loudly.
@@ -418,24 +419,5 @@ defmodule Badge.UI do
     Process.sleep(@base_interval)
     send(ui, :render_tick)
     tick_loop(ui)
-  end
-
-  # init_seq_type "alt_gamma_2" matches this panel; rotation 3 needs the patch noted in Badge.Hardware.
-  defp display_opts(spi) do
-    [
-      compatible: "sitronix,st7789",
-      init_seq_type: "alt_gamma_2",
-      enable_tft_invon: true,
-      width: Hardware.display_width(),
-      height: Hardware.display_height(),
-      rotation: Hardware.display_rotation(),
-      reset: Hardware.display_reset(),
-      dc: Hardware.display_dc(),
-      cs: Hardware.display_cs(),
-      backlight: Hardware.display_backlight(),
-      backlight_active: :low,
-      backlight_enabled: true,
-      spi_host: spi
-    ]
   end
 end

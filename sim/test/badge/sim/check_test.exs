@@ -3,7 +3,7 @@ defmodule Badge.Sim.CheckTest do
 
   alias Badge.Sim.Board
   alias Badge.Sim.Check
-  alias Badge.Sim.Screen
+  alias Badge.Sim.Display
 
   setup do
     start_supervised!({Badge.Log, :ok})
@@ -15,17 +15,30 @@ defmodule Badge.Sim.CheckTest do
     for page <- Check.pages() do
       assert {:ok, items, frame, _assets} = Check.render(page)
       assert items != [], "#{inspect(page)} drew nothing"
-      assert length(frame) == length(items), "#{inspect(page)} has an item the simulator cannot draw"
+
+      assert length(frame) == length(items),
+             "#{inspect(page)} has an item the simulator cannot draw"
     end
   end
 
-  test "the screen follows keys and survives a reboot" do
-    for key <- [{:nav, :diamond}, {:move, :right}, {:move, :right}], do: Screen.key(key)
-    Process.sleep(150)
-    assert Screen.frame() != []
+  test "the board runs the shared UI and survives a reboot" do
+    ui = Process.whereis(Badge.UI)
+    assert is_pid(ui)
+
+    Display.attach(self())
+    assert_receive {:frame, initial}, 200
+    assert initial != []
+
+    Badge.UI.key_event({:nav, :diamond})
+    assert %{page: Badge.Page.Settings} = :sys.get_state(Badge.UI)
+    assert_receive {:frame, navigated}, 250
+    assert navigated != []
 
     Board.reboot()
-    Process.sleep(150)
-    assert Screen.frame() != []
+    Display.attach(self())
+    assert_receive {:frame, rebooted}, 200
+    assert rebooted != []
+    assert is_pid(Process.whereis(Badge.UI))
+    refute Process.whereis(Badge.UI) == ui
   end
 end
