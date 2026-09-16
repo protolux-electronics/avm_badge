@@ -20,13 +20,15 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   the hub while the agent is up. ESP-IDF's own `I (…)` lines are not seen.
   Without `:console`, as on the host, the echo goes to the console the log
   was started under, and the simulator captures the same way
-- `MIX_TARGET=sim iex -S mix` is how the firmware runs on the host: the pages
-  run against fake hardware processes and draw on a canvas at
-  http://localhost:3240. `MIX_TARGET=sim mix sim.check` renders every page
-  once without a browser, and `MIX_TARGET=sim mix test` adds `sim/test`
-- The simulator lives in `sim/lib` as `Badge.Sim.*` and is compiled only for
-  the `:sim` target, so the default `:host` target still builds, checks and
-  flashes the badge unchanged; `phoenix_playground` is a dep of `:sim` only
+- `iex -S mix` runs the firmware on the host: the pages run against fake
+  hardware processes and draw on a canvas at http://localhost:3240, and the
+  shell says so on start. `mix sim.check` renders every page once without a
+  browser, and `mix test` includes `sim/test`
+- Two mix targets: the default `:host` is the simulator, `Badge.Sim.*` in
+  `sim/lib` plus the `phoenix_playground` dep; `:badge` is the firmware, `lib`
+  only. `mix.exs` picks `:badge` for any `atomvm.*` or `badge.*` task when
+  `MIX_TARGET` is unset, so flashing needs no env var. Anything else built for
+  the badge, such as `mix test` without the sim, wants `MIX_TARGET=badge`
 - Reflashing does not need `erase-flash`: `nvs` is unchanged by the repartition,
   so wifi credentials, profile and peers survive
 - No `flash-elixir` target in this AtomVM revision, and **`idf.py flash` does

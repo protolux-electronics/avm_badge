@@ -1,3 +1,13 @@
+# The atomvm and badge tasks build the firmware; anything else on the host
+# is the simulator, unless MIX_TARGET says otherwise.
+if System.get_env("MIX_TARGET") == nil do
+  case System.argv() do
+    ["atomvm." <> _ | _] -> Mix.target(:badge)
+    ["badge." <> _ | _] -> Mix.target(:badge)
+    _other -> :ok
+  end
+end
+
 defmodule Badge.MixProject do
   use Mix.Project
 
@@ -31,14 +41,14 @@ defmodule Badge.MixProject do
     [extra_applications: [:logger]] ++ mod(Mix.target(), Mix.env())
   end
 
-  defp mod(:sim, env) when env != :test, do: [mod: {Badge.Sim.Application, []}]
+  defp mod(:host, env) when env != :test, do: [mod: {Badge.Sim.Application, []}]
   defp mod(_target, _env), do: []
 
-  defp elixirc_paths(:sim), do: ["lib", "sim/lib"]
-  defp elixirc_paths(_target), do: ["lib"]
+  defp elixirc_paths(:badge), do: ["lib"]
+  defp elixirc_paths(_target), do: ["lib", "sim/lib"]
 
-  defp test_paths(:sim), do: ["test", "sim/test"]
-  defp test_paths(_target), do: ["test"]
+  defp test_paths(:badge), do: ["test"]
+  defp test_paths(_target), do: ["test", "sim/test"]
 
   defp deps do
     [
@@ -64,8 +74,8 @@ defmodule Badge.MixProject do
        override: true},
       # The packbeam escript, from Hex rather than an AtomVM checkout.
       {:atomvm_packbeam, "~> 0.8.2", runtime: false},
-      # The browser side of the simulator, for MIX_TARGET=sim only.
-      {:phoenix_playground, "~> 0.1.9", targets: [:sim]}
+      # The browser side of the simulator, absent from the badge build.
+      {:phoenix_playground, "~> 0.1.9", targets: [:host]}
     ]
   end
 end

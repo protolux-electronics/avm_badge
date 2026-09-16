@@ -2,8 +2,8 @@ defmodule Badge.Sim do
   @moduledoc """
   Runs the badge's pages on the host and draws them on a canvas in the browser.
 
-      MIX_TARGET=sim iex -S mix        # then open http://localhost:3240
-      MIX_TARGET=sim mix sim.check     # render every page once, no browser
+      iex -S mix          # then open http://localhost:3240
+      mix sim.check       # render every page once, no browser
 
   Pages are the real modules. Everything they call that lives on the badge
   (NVS, the radio, the ADC, the LED chain, the hub links) is stood in for by a

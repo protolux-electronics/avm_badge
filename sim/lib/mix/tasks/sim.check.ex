@@ -5,8 +5,8 @@ defmodule Mix.Tasks.Sim.Check do
   Starts the simulated board, renders every page once and reports what each
   produced, then drives the screen through a few keys and a reboot.
 
-      MIX_TARGET=sim mix sim.check
-      MIX_TARGET=sim mix sim.check --dump DIR    # also write each frame as JSON
+      mix sim.check
+      mix sim.check --dump DIR    # also write each frame as JSON
   """
 
   use Mix.Task
