@@ -214,9 +214,12 @@ defmodule Badge.Keyboard do
     :esp.sleep_enable_gpio_wakeup()
     :io.format(~c"Sleep: light sleep~n")
 
+    # Held, or the pads switch to their sleep configuration and no key can pull a column low.
+    Enum.each(@rows ++ @cols, &GPIO.hold_en/1)
     started = :erlang.monotonic_time(:millisecond)
     result = :esp.light_sleep()
     slept = :erlang.monotonic_time(:millisecond) - started
+    Enum.each(@rows ++ @cols, &GPIO.hold_dis/1)
 
     :io.format(~c"Sleep: woke after ~ps (~p)~n", [div(slept, 1000), result])
     Badge.UI.slept({:ok, slept})
