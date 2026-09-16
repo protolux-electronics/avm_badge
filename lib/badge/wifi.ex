@@ -87,6 +87,14 @@ defmodule Badge.Wifi do
     GenServer.cast(__MODULE__, :forget)
   end
 
+  @doc "Parks the radio without forgetting the network. Returns once the disconnect is issued."
+  @spec suspend() :: :ok
+  def suspend, do: GenServer.call(__MODULE__, :suspend)
+
+  @doc "Rejoins the saved network after a suspend."
+  @spec resume() :: :ok
+  def resume, do: GenServer.cast(__MODULE__, :resume)
+
   @doc "Title bar icon for a radio state."
   @spec icon(atom) :: atom
   def icon(:connected), do: :wifi
@@ -149,6 +157,15 @@ defmodule Badge.Wifi do
     {:reply, state.networks, state}
   end
 
+  def handle_call(:suspend, _from, %{radio: :disabled} = state), do: {:reply, :ok, state}
+
+  def handle_call(:suspend, _from, state) do
+    :io.format(~c"Wifi: suspended~n")
+    disconnect(state)
+
+    {:reply, :ok, %{state | radio: :disabled, pending: nil, attempts: 0}}
+  end
+
   @impl true
   def handle_cast(:scan, %{scanning: true} = state), do: {:noreply, state}
 
@@ -182,6 +199,17 @@ defmodule Badge.Wifi do
     :io.format(~c"Wifi: forgot the saved network~n")
 
     {:noreply, %{state | radio: :disabled, ssid: nil, pending: nil, attempts: 0}}
+  end
+
+  def handle_cast(:resume, %{ssid: nil} = state), do: {:noreply, state}
+  def handle_cast(:resume, %{radio: radio} = state) when radio != :disabled, do: {:noreply, state}
+
+  def handle_cast(:resume, state) do
+    :io.format(~c"Wifi: resuming~n")
+    started = ensure_started(state)
+    :network.sta_connect()
+
+    {:noreply, %{started | radio: :connecting, backoff: @first_backoff, attempts: 0}}
   end
 
   @impl true
