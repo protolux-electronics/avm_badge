@@ -1,8 +1,8 @@
 defmodule Badge.Sim.Board do
   @moduledoc """
-  The processes a page finds on a badge: NVS, the hardware fakes, the
-  simulated display and the real UI, all printing through an already running
-  `Badge.Log` as they do on the badge.
+  The processes a page finds on a badge: NVS, external-service fakes, real
+  hardware owners over simulated drivers, the display and the real UI, all
+  printing through an already running `Badge.Log` as they do on the badge.
   """
 
   use Supervisor
@@ -18,7 +18,14 @@ defmodule Badge.Sim.Board do
     # The children inherit this, so every page print lands in the Log tab.
     Badge.Log.capture()
 
-    children = [Nvs] ++ Fakes.children() ++ [Display, {Badge.UI, {Display, Display}}]
+    hardware = [
+      {Badge.Backlight, :ok},
+      {Badge.Pixels, :sim_spi},
+      {Badge.Sensors, :ok},
+      {Badge.Power, :ok}
+    ]
+
+    children = [Nvs] ++ Fakes.children() ++ hardware ++ [Display, {Badge.UI, {Display, Display}}]
     Supervisor.init(children, strategy: :one_for_one)
   end
 
@@ -26,11 +33,13 @@ defmodule Badge.Sim.Board do
   def reboot do
     Badge.Sim.log("sim: reboot")
 
-    for {id, _pid, _type, _modules} <- Enum.reverse(Supervisor.which_children(__MODULE__)),
-        id != Nvs do
-      :ok = Supervisor.terminate_child(__MODULE__, id)
-      {:ok, _} = Supervisor.restart_child(__MODULE__, id)
-    end
+    children =
+      for {id, _pid, _type, _modules} <- Supervisor.which_children(__MODULE__),
+          id != Nvs,
+          do: id
+
+    for id <- children, do: :ok = Supervisor.terminate_child(__MODULE__, id)
+    for id <- Enum.reverse(children), do: {:ok, _} = Supervisor.restart_child(__MODULE__, id)
 
     :ok
   end
