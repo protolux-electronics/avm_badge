@@ -220,6 +220,14 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   needs a human.
 - Measure on hardware before optimising — several plausible theories were wrong
   this session.
+- Light sleep (`Badge.Sleep`, 30 s after the screen blanks) is refused on USB
+  power because it kills the USB serial port: nothing prints until the badge
+  is unplugged and replugged, and `esptool` cannot reset it. To test it,
+  flip `Badge.Sleep.allowed?/1` locally, read the outcome from the Log tab,
+  and replug before the next flash. `esp_light_sleep_start` switches every
+  pad to its sleep configuration, which AtomVM never sets; the matrix pads
+  are held (`GPIO.hold_en/1`) across the sleep so a key can still pull a
+  column low
 
 ## Conventions
 
