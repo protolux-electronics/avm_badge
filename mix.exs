@@ -7,6 +7,8 @@ defmodule Badge.MixProject do
       version: "0.1.1",
       elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.target()),
+      test_paths: test_paths(Mix.target()),
       deps: deps(),
       # ExAtomVM writes no application.bin, and NervesHub cannot identify
       # firmware without one. The flash task bypasses the packbeam alias.
@@ -23,9 +25,20 @@ defmodule Badge.MixProject do
     ]
   end
 
+  # The simulator is an OTP application; the badge starts from `Badge.start/0`
+  # and the simulator's tests start the board themselves.
   def application do
-    [extra_applications: [:logger]]
+    [extra_applications: [:logger]] ++ mod(Mix.target(), Mix.env())
   end
+
+  defp mod(:sim, env) when env != :test, do: [mod: {Badge.Sim.Application, []}]
+  defp mod(_target, _env), do: []
+
+  defp elixirc_paths(:sim), do: ["lib", "sim/lib"]
+  defp elixirc_paths(_target), do: ["lib"]
+
+  defp test_paths(:sim), do: ["test", "sim/test"]
+  defp test_paths(_target), do: ["test"]
 
   defp deps do
     [
@@ -50,7 +63,9 @@ defmodule Badge.MixProject do
        manager: :rebar3,
        override: true},
       # The packbeam escript, from Hex rather than an AtomVM checkout.
-      {:atomvm_packbeam, "~> 0.8.2", runtime: false}
+      {:atomvm_packbeam, "~> 0.8.2", runtime: false},
+      # The browser side of the simulator, for MIX_TARGET=sim only.
+      {:phoenix_playground, "~> 0.1.9", targets: [:sim]}
     ]
   end
 end

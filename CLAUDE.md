@@ -18,9 +18,13 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 - `Badge.Log` is the group leader of everything the badge spawns: each
   `io:format` line is echoed, kept for the Settings Log tab, and forwarded to
   the hub while the agent is up. ESP-IDF's own `I (…)` lines are not seen
-- `mix compile && iex tools/sim.exs` runs the pages on the host with fake
-  hardware processes and draws them on a canvas at http://localhost:4000;
-  `elixir tools/sim.exs --check` renders every page once without a browser
+- `MIX_TARGET=sim iex -S mix` is how the firmware runs on the host: the pages
+  run against fake hardware processes and draw on a canvas at
+  http://localhost:4000. `MIX_TARGET=sim mix sim.check` renders every page
+  once without a browser, and `MIX_TARGET=sim mix test` adds `sim/test`
+- The simulator lives in `sim/lib` as `Badge.Sim.*` and is compiled only for
+  the `:sim` target, so the default `:host` target still builds, checks and
+  flashes the badge unchanged; `phoenix_playground` is a dep of `:sim` only
 - Reflashing does not need `erase-flash`: `nvs` is unchanged by the repartition,
   so wifi credentials, profile and peers survive
 - No `flash-elixir` target in this AtomVM revision, and **`idf.py flash` does
