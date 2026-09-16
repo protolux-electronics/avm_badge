@@ -5,6 +5,7 @@ defmodule Badge.Sim.Live do
 
   alias Badge.Sim.Board
   alias Badge.Sim.Display
+  alias Badge.Theme
 
   @shapes for {{key, _module}, n} <- Enum.with_index(Badge.Pages.all(), 1),
               into: %{},
@@ -58,11 +59,26 @@ defmodule Badge.Sim.Live do
   end
 
   def render(assigns) do
-    assigns = assign(assigns, shapes: Badge.Pages.all())
+    width = Theme.width()
+    height = Theme.height()
+
+    assigns =
+      assign(assigns,
+        shapes: Badge.Pages.all(),
+        panel_width: width,
+        panel_height: height,
+        browser_width: width * 2,
+        browser_height: height * 2
+      )
 
     ~H"""
     <div id="badge" phx-hook="Badge" phx-window-keydown="key" tabindex="0">
-      <canvas id="panel" width="320" height="240"></canvas>
+      <canvas
+        id="panel"
+        width={@panel_width}
+        height={@panel_height}
+        style={"width: #{@browser_width}px; height: #{@browser_height}px"}
+      ></canvas>
       <div class="buttons">
         <button :for={{{key, module}, n} <- Enum.with_index(@shapes, 1)} phx-click="shape" phx-value-shape={key} title={"F#{n}"}>
           {module.title()}
@@ -110,7 +126,7 @@ defmodule Badge.Sim.Live do
 
     <style type="text/css">
       body { background: #222; color: #ccc; font-family: sans-serif; padding: 1em; }
-      canvas { width: 640px; height: 480px; image-rendering: pixelated; border: 8px solid #111; border-radius: 6px; }
+      canvas { image-rendering: pixelated; border: 8px solid #111; border-radius: 6px; }
       .buttons { margin: 1em 0; display: flex; gap: 0.5em; }
       button { padding: 0.4em 0.8em; }
       .reboot { margin-left: auto; }
