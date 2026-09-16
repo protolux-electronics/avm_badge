@@ -5,7 +5,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Commands
 
-- `mix test` — 783 tests across 45 files, no board needed. 2 are excluded as
+- `mix test` — 1036 tests across 58 files, no board needed. 2 are excluded as
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
@@ -175,6 +175,8 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   `:spi.open/1` throws `{bardarg,...}`.
 - **`:erlang.get/1` returns `:undefined`**, not `nil` — `||` defaults don't
   work.
+- **`x in list` compiles to `Enum.__in__/2`** on Elixir 1.20 and
+  `atomvm.check` flags it; use `:lists.member/2` in runtime code.
 - **Charlists cost 2 machine words per character.** Large ones in messages cause
   OOM reboots; prefer binaries.
 - Use plain maps, not structs.
