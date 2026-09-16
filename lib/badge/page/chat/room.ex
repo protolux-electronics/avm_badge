@@ -146,9 +146,6 @@ defmodule Badge.Page.Chat.Room do
 
   defp focus(state), do: %{state | selected: nil, offset: 0}
 
-  # Nothing to say is not a message; let the router keep the key.
-  defp send_draft("", _state), do: :ignore
-
   # The view holds still until the selection would leave it.
   defp show(state, selected) do
     %{state | selected: selected, offset: place(state.messages, state.offset, selected)}
@@ -169,6 +166,9 @@ defmodule Badge.Page.Chat.Room do
   defp drop(list, 0), do: list
   defp drop([], _n), do: []
   defp drop([_head | rest], n), do: drop(rest, n - 1)
+
+  # Nothing to say is not a message; let the router keep the key.
+  defp send_draft("", _state), do: :ignore
 
   defp send_draft(body, state) do
     Link.say(body)

@@ -219,8 +219,9 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 - Pure modules (`Keymap`, `TextBuffer`, `KeyRepeat`) are host-tested; hardware
   modules are not.
-- Warnings that `:spi`, `:port`, `:gpio`, `GPIO` are undefined are expected on
-  host — not defects.
+- AtomVM-only modules (`:spi`, `:port`, `GPIO`, `I2C`, …) are listed in a
+  `@compile {:no_warn_undefined, ...}` in each file that calls them, so a host
+  compile is warning-free; a new caller adds the module there
 - `@impl true` goes on the **first clause only** of a multi-clause callback; a
   lint hook false-positives here.
 - Visual and interactive behaviour (panel content, typing feel, LED colour)

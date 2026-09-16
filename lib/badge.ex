@@ -19,6 +19,8 @@ defmodule Badge do
 
   alias Badge.Hardware
 
+  @compile {:no_warn_undefined, [:atomvm, :spi]}
+
   def start do
     # First, so every process below prints through the log ring.
     {:ok, _log} = Badge.Log.start_link(:ok)

@@ -47,6 +47,8 @@ defmodule Badge.UI do
   alias Badge.Update
   alias Badge.Wifi
 
+  @compile {:no_warn_undefined, [:atomvm, :port]}
+
   # Ticker rate. A page renders at its own `refresh/0`, which must be a multiple of this.
   @base_interval 100
 

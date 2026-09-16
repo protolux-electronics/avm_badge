@@ -26,7 +26,7 @@ defmodule Badge.Keyboard do
   alias Badge.KeyRepeat
   alias Badge.Keymap
 
-  @compile {:no_warn_undefined, [:esp, :gpio]}
+  @compile {:no_warn_undefined, [:esp, :gpio, GPIO]}
 
   @rows Hardware.rows()
   @cols Hardware.cols()

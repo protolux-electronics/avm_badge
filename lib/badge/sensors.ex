@@ -18,6 +18,8 @@ defmodule Badge.Sensors do
   alias Badge.Accel
   alias Badge.Hardware
 
+  @compile {:no_warn_undefined, I2C}
+
   @sc7a20_addr Hardware.sc7a20_addr()
   @tmp103_addr Hardware.tmp103_addr()
 

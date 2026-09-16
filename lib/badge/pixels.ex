@@ -22,6 +22,8 @@ defmodule Badge.Pixels do
   alias Badge.LedMode
   alias Badge.Nvs
 
+  @compile {:no_warn_undefined, :spi}
+
   @device :pixels
 
   # Expansion table, indexed by a pair of LED bits: 0b1000 / 0b1100 per bit.
