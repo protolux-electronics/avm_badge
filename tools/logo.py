@@ -7,8 +7,8 @@ cropped to its opaque bounds, box-filtered down, and composited onto black
 with every pixel opaque, which is the only path AtomGL draws without blending.
 
 Usage:
-  python3 tools/logo.py                 # assets/logo/goatmire@240xH.rgba
-  python3 tools/logo.py --width 200 --runes 150
+  python3 tools/logo.py                 # assets/logo/goatmire@120xH.rgba, drawn at 2x
+  python3 tools/logo.py --width 100 --runes 75 --gap 5
 """
 
 import argparse
@@ -23,7 +23,7 @@ RUNES = os.path.join(SRC, "futhark.png")
 OUT = os.path.join(ROOT, "assets", "logo")
 
 # Space between the wordmark and the runes, in output pixels.
-GAP = 12
+GAP = 6
 
 
 def opaque_bounds(width, height, pixels):
@@ -93,12 +93,13 @@ def stack(parts, gap):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--width", type=int, default=240, help="wordmark width in pixels")
-    parser.add_argument("--runes", type=int, default=180, help="rune line width in pixels")
+    parser.add_argument("--width", type=int, default=120, help="wordmark width in pixels")
+    parser.add_argument("--runes", type=int, default=90, help="rune line width in pixels")
+    parser.add_argument("--gap", type=int, default=GAP, help="pixels between wordmark and runes")
     parser.add_argument("--out", default=OUT)
     args = parser.parse_args()
 
-    target_w, target_h, data = stack([scaled(WORDMARK, args.width), scaled(RUNES, args.runes)], GAP)
+    target_w, target_h, data = stack([scaled(WORDMARK, args.width), scaled(RUNES, args.runes)], args.gap)
 
     os.makedirs(args.out, exist_ok=True)
     for stale in os.listdir(args.out):

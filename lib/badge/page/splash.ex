@@ -34,15 +34,16 @@ defmodule Badge.Page.Splash do
   # The UI is up within a few seconds of the chip; anything later is a restart.
   @boot_ms 10_000
 
+  # The cut is in logo pixels; the logo is drawn scaled, so the origin is not.
   @logo_w elem(Logo.size(), 0)
   @logo_h elem(Logo.size(), 1)
-  @x div(@width - @logo_w, 2)
-  @y div(@height - @logo_h, 2)
+  @x div(@width - @logo_w * Logo.scale(), 2)
+  @y div(@height - @logo_h * Logo.scale(), 2)
 
-  @band_min 6
-  @band_max 14
-  @column_min 40
-  @column_max 100
+  @band_min 3
+  @band_max 7
+  @column_min 20
+  @column_max 50
 
   # Jitter on the frame a piece lands, then the frame after, in pixels.
   @jitter [10, 3]

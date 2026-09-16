@@ -8,10 +8,13 @@ defmodule Badge.Page.SplashTest do
 
   @seed 12_345
 
+  # Pieces are cut in logo pixels and drawn at twice the size.
   defp pieces(items) do
-    for {:scaled_cropped_image, x, y, w, h, _bg, cx, cy, 1, 1, [], _img} <- items,
+    for {:scaled_cropped_image, x, y, w, h, _bg, cx, cy, 2, 2, [], _img} <- items,
         do: {x, y, w, h, cx, cy}
   end
+
+  defp home_x, do: div(Theme.width() - elem(Logo.size(), 0) * Logo.scale(), 2)
 
   describe "the cut" do
     test "covers the logo exactly once" do
@@ -49,9 +52,15 @@ defmodule Badge.Page.SplashTest do
       assert Splash.step(1_200) == Splash.step(2_500)
     end
 
-    test "holding shows the whole logo and nothing else but the bar cover" do
-      assert [{:rect, 0, 0, _w, _h, _bg}, {:image, _x, _y, _bg2, _img}] =
-               Splash.frame({:hold, 0}, @seed)
+    test "holding shows the whole logo at twice its size and nothing else but the bar cover" do
+      {logo_w, logo_h} = Logo.size()
+
+      assert [{:rect, 0, 0, _w, _h, _bg}, {x, y, w, h, 0, 0}] =
+               [hd(Splash.frame({:hold, 0}, @seed)) | pieces(Splash.frame({:hold, 0}, @seed))]
+
+      assert {w, h} == {logo_w * 2, logo_h * 2}
+      assert x == home_x()
+      assert y > Theme.bar_h()
     end
 
     test "pieces accumulate on the way in and are all there at the end" do
@@ -69,25 +78,22 @@ defmodule Badge.Page.SplashTest do
     end
 
     test "a piece that landed two frames ago is at rest" do
-      {logo_w, _} = Logo.size()
-      home_x = div(Theme.width() - logo_w, 2)
-
       earlier =
         for {_x, _y, _w, _h, cx, cy} <- pieces(Splash.frame({:in, 7}, @seed)), do: {cx, cy}
 
       rested =
         for {x, _y, _w, _h, cx, cy} <- pieces(Splash.frame({:in, 9}, @seed)),
             {cx, cy} in earlier,
-            do: x - cx
+            do: x - cx * 2
 
       assert rested != []
-      assert Enum.all?(rested, &(&1 == home_x))
+      assert Enum.all?(rested, &(&1 == home_x()))
     end
 
     test "a landing piece is jittered sideways, then still" do
       moved =
         for n <- 0..9, {x, _y, _w, _h, cx, _cy} <- pieces(Splash.frame({:in, n}, @seed)) do
-          x - cx - div(Theme.width() - elem(Logo.size(), 0), 2)
+          x - cx * 2 - home_x()
         end
 
       assert Enum.any?(moved, &(&1 != 0))
