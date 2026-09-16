@@ -17,14 +17,14 @@ defmodule Badge.ScheduleTest do
     Map.merge(
       %{
         day: @wednesday,
-        date: {2026, 9, 30},
         weekday: 3,
-        label: "NervesConf EU",
-        space: "Varbergs Teater",
         start: at(@wednesday, 9, 15),
         stop: at(@wednesday, 9, 55),
         title: "Texting Lora",
-        speakers: ["Peter Ullrich"]
+        when: "Wed 30 Sep 09:15-09:55",
+        where: "Varbergs Teater, NervesConf EU",
+        who: "Peter Ullrich",
+        row: "09:15 Texting Lora"
       },
       overrides
     )
@@ -48,28 +48,29 @@ defmodule Badge.ScheduleTest do
 
       [first, second | _rest] = sessions
       assert first.start == second.start
-      assert first.space == "Techarenan"
-      assert second.space == "Dramasalen"
+      assert first.where == "Techarenan, Workshops"
+      assert second.where == "Dramasalen, Workshops"
     end
 
-    test "carries the day, the space and the speakers", %{sessions: sessions} do
+    test "holds every line as the panel draws it", %{sessions: sessions} do
       [first | _rest] = sessions
 
       assert first.title == "Multimedia with Membrane 101"
-      assert first.date == {2026, 9, 28}
       assert first.weekday == 1
-      assert first.label == "Workshops"
-      assert first.space == "Techarenan"
-      assert first.speakers == ["Łukasz Kita", "Feliks Pobiedziński", "Kuba Pryc"]
+      assert first.day == :calendar.date_to_gregorian_days({2026, 9, 28})
       assert first.stop - first.start == 4 * 60
+      assert first.when == "Mon 28 Sep 08:00-12:00"
+      assert first.where == "Techarenan, Workshops"
+      assert first.who == "Łukasz Kita, Feliks Pobiedziński, Kuba Pryc"
+      assert first.row == "08:00 Multimedia with Membrane 101"
     end
 
-    test "a day without a label gives nil", %{sessions: sessions} do
+    test "a day without a label and a session without speakers", %{sessions: sessions} do
       ashconf = :lists.last(sessions)
 
       assert ashconf.title == "AshConf 2026"
-      assert ashconf.label == nil
-      assert ashconf.speakers == []
+      assert ashconf.where == "Large hall"
+      assert ashconf.who == ""
     end
 
     test "a session's day and its start agree", %{sessions: sessions} do
@@ -102,8 +103,9 @@ defmodule Badge.ScheduleTest do
 
       assert {:ok, [only]} = Schedule.parse(body)
       assert only.title == "Kept"
-      assert only.speakers == []
-      assert only.label == nil
+      assert only.who == ""
+      assert only.where == "Hall"
+      assert only.when == "Sat 3 Oct 10:00-11:00"
     end
 
     test "a day with a bad date is left out" do
@@ -202,12 +204,9 @@ defmodule Badge.ScheduleTest do
       assert Schedule.span(3 * @day + 5) == "3d"
     end
 
-    test "clock_face/1 and date_face/1 read like the printed programme" do
-      talk = session(%{})
-
-      assert Schedule.clock_face(talk.start) == "09:15"
+    test "clock_face/1 and weekday_face/1 read like the printed programme" do
+      assert Schedule.clock_face(at(@wednesday, 9, 15)) == "09:15"
       assert Schedule.clock_face(at(@wednesday, 17, 5)) == "17:05"
-      assert Schedule.date_face(talk) == "Wed 30 Sep"
       assert Schedule.weekday_face(7) == "Sun"
     end
   end

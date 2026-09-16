@@ -278,7 +278,7 @@ defmodule Badge.Page.ScheduleTest do
 
   describe "a long line" do
     test "is clipped between characters, never inside one" do
-      wide = Map.merge(hd(programme()), %{speakers: ["Łukasz Kita, Feliks Pobiedziński, Kśx"]})
+      wide = Map.merge(hd(programme()), %{who: "Łukasz Kita, Feliks Pobiedziński, Kśx"})
 
       [who] = row(Page.render(shown(nil, [wide])), @card_y + 4 * @pitch)
 

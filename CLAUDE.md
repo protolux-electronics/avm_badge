@@ -5,7 +5,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Commands
 
-- `mix test` — 1090 tests across 60 files, no board needed. 2 are excluded as
+- `mix test` — 1092 tests across 60 files, no board needed. 2 are excluded as
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
@@ -167,10 +167,22 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 - `Badge.Page.Schedule` walks the programme from `https://goatmire.com/schedule.json`
   as one timeline: the open session sits between two rules, Up and Down open
   the neighbours, and Esc returns to now before it goes Home
-- `Badge.Schedule` is pure apart from `fetch/0`; `Badge.Schedule.Link` keeps the
-  fetched programme across page entries and refetches after 30 minutes, with
-  `Badge.Schedule.Link.State` holding the transitions as data. `status/0`
-  carries no sessions; the page asks for them only when `version` changes
+- `Badge.Schedule` is pure apart from `fetch/0`. Each session is held with
+  its panel lines already made up (`when`, `where`, `who`, `row`), so the
+  page draws what is held and never reparses. The 31 kB JSON is dropped
+  right after parsing
+- `Badge.Schedule.Link` fetches on its own ticker: once the clock is set
+  after boot, again after 30 minutes, and after a failure with a doubling
+  wait capped at 30 minutes. No page needs to be open. The held copy lives in
+  the process, not NVS: that partition is 24 kB and shared with wifi
+  credentials. `Badge.Schedule.Link.State` holds the transitions as data.
+  `status/0` carries no sessions; the page asks for them only when `version`
+  changes. Progress prints as `Schedule: fetching`, `Schedule: holding N
+  sessions` or `Schedule: fetch failed ...`
+- **`ssl:recv/2` with a length blocks until exactly that many bytes have
+  arrived**, so a read loop asking for 4096 hangs on the response's last
+  piece. Read with length 0, which returns whatever has arrived. This is
+  what made the page sit on "Fetching the programme"
 - The site's times are Swedish local time, so `Schedule.now/1` converts UTC
   through `Badge.Zone` for `Europe/Stockholm`, not the badge's own zone
 - The fetch is plain `:ahttp_client` over `:ssl` with `verify: :verify_peer`,

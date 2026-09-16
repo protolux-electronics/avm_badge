@@ -3,9 +3,10 @@ defmodule Badge.Schedule do
   The conference programme from goatmire.com, flattened into one timeline.
 
   The site publishes days, each holding spaces, each holding sessions.
-  `parse/1` turns that into a single list ordered by start, so a page can
-  walk it with two keys. Times are minutes on one axis that spans days, in
-  the event's own zone, which is what the site's clock times are in.
+  `parse/1` turns that into a single list ordered by start, with every line
+  the panel shows already made up, so what is held is what is drawn. Times
+  are minutes on one axis that spans days, in the event's own zone, which
+  is what the site's clock times are in.
 
   `fetch/0` blocks on the network and belongs in a process of its own;
   everything else is pure.
@@ -19,9 +20,10 @@ defmodule Badge.Schedule do
   @port 443
   @path "/schedule.json"
 
-  # The whole programme is about 31 kB; a bigger read is fewer round trips.
-  @chunk 4096
-  @reads 64
+  # A read of zero returns whatever has arrived; asking for a length would
+  # block until exactly that much had, which the last piece never does.
+  @chunk 0
+  @reads 256
 
   @zone "Europe/Stockholm"
   @fallback_offset 120
@@ -32,16 +34,19 @@ defmodule Badge.Schedule do
   # 2024-01-01T00:00:00Z: a clock reading before this has not been synced.
   @floor 1_704_067_200
 
+  @weekdays ~w(Mon Tue Wed Thu Fri Sat Sun)
+  @months ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
+
   @type session :: %{
           day: integer,
-          date: {integer, integer, integer},
           weekday: 1..7,
-          label: binary | nil,
-          space: binary,
           start: integer,
           stop: integer,
           title: binary,
-          speakers: [binary]
+          when: binary,
+          where: binary,
+          who: binary,
+          row: binary
         }
 
   @doc "The programme, or an error when the site cannot be reached or read."
@@ -156,16 +161,18 @@ defmodule Badge.Schedule do
   defp session(%{"title" => title} = session, days, ymd, label, space) when is_binary(title) do
     with start when is_integer(start) <- clock(text(session, "start_time")),
          stop when is_integer(stop) <- clock(text(session, "end_time")) do
+      weekday = :calendar.day_of_the_week(ymd)
+
       entry = %{
         day: days,
-        date: ymd,
-        weekday: :calendar.day_of_the_week(ymd),
-        label: label,
-        space: space,
+        weekday: weekday,
         start: days * @minutes_per_day + start,
         stop: days * @minutes_per_day + stop,
         title: title,
-        speakers: speakers(Map.get(session, "speakers"))
+        when: date_face(weekday, ymd) <> " " <> clock_face(start) <> "-" <> clock_face(stop),
+        where: where(space, label),
+        who: who(Map.get(session, "speakers")),
+        row: clock_face(start) <> " " <> title
       }
 
       [{entry.start, entry}]
@@ -176,8 +183,14 @@ defmodule Badge.Schedule do
 
   defp session(_session, _days, _ymd, _label, _space), do: []
 
-  defp speakers(list) when is_list(list), do: :lists.flatmap(&speaker/1, list)
-  defp speakers(_other), do: []
+  defp where(space, nil), do: space
+  defp where(space, label), do: space <> ", " <> label
+
+  defp who(list) when is_list(list) do
+    :erlang.iolist_to_binary(:lists.join(", ", :lists.flatmap(&speaker/1, list)))
+  end
+
+  defp who(_other), do: ""
 
   defp speaker(%{"name" => name}) when is_binary(name), do: [name]
   defp speaker(_other), do: []
@@ -314,18 +327,14 @@ defmodule Badge.Schedule do
     pad(div(within, 60)) <> ":" <> pad(rem(within, 60))
   end
 
-  @doc "A session's day as `Wed 30 Sep`."
-  @spec date_face(session) :: binary
-  def date_face(%{weekday: weekday, date: {_year, month, day}}) do
-    weekday_face(weekday) <> " " <> :erlang.integer_to_binary(day) <> " " <> month_face(month)
-  end
-
   @doc "A weekday number as its three-letter name."
   @spec weekday_face(1..7) :: binary
-  def weekday_face(weekday), do: :lists.nth(weekday, ~w(Mon Tue Wed Thu Fri Sat Sun))
+  def weekday_face(weekday), do: :lists.nth(weekday, @weekdays)
 
-  defp month_face(month),
-    do: :lists.nth(month, ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec))
+  defp date_face(weekday, {_year, month, day}) do
+    weekday_face(weekday) <>
+      " " <> :erlang.integer_to_binary(day) <> " " <> :lists.nth(month, @months)
+  end
 
   defp pad(value) when value < 10, do: "0" <> :erlang.integer_to_binary(value)
   defp pad(value), do: :erlang.integer_to_binary(value)

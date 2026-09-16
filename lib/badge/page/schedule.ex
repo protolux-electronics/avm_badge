@@ -11,9 +11,9 @@ defmodule Badge.Page.Schedule do
   nothing is on, and follows the clock. Once the arrows have moved it, Esc
   brings it back to now; on now, Esc is left for the router and goes Home.
 
-  The programme itself lives in `Badge.Schedule.Link`, which is asked for it
-  on every tick and answers from what it holds. The one `status/0` call per
-  tick is here.
+  The programme itself lives in `Badge.Schedule.Link`, which fetches it by
+  itself and answers from what it holds; every line here is drawn as held.
+  The one `status/0` call per tick is here.
   """
 
   use Badge.Page
@@ -56,11 +56,9 @@ defmodule Badge.Page.Schedule do
     %{sessions: [], status: :idle, reason: nil, version: 0, cursor: nil, now: nil}
   end
 
-  # Hardware is only touched here, never from a key handler.
+  # The link is only read here, never from a key handler.
   @impl true
   def tick(state) do
-    Link.load()
-
     status = Link.status()
 
     state
@@ -170,10 +168,7 @@ defmodule Badge.Page.Schedule do
   end
 
   defp summary(session, open, %{now: now}) do
-    text =
-      clip(
-        day_prefix(session, open) <> Schedule.clock_face(session.start) <> " " <> session.title
-      )
+    text = clip(day_prefix(session, open) <> session.row)
 
     case Schedule.phase(session, now) do
       :now -> {Theme.ok(), text}
@@ -188,27 +183,15 @@ defmodule Badge.Page.Schedule do
   defp card(session, index, state) do
     titles = :lists.sublist(Text.wrap(session.title, @columns), @title_lines)
 
-    [line(@card_y, Theme.accent(), when_face(session))] ++
+    [line(@card_y, Theme.accent(), session.when)] ++
       tag(session, index, state) ++
       items(titles, @card_y + @pitch, fn title -> {Theme.fg(), title} end) ++
-      unless_blank(@card_y + (1 + @title_lines) * @pitch, where(session)) ++
-      unless_blank(@card_y + (2 + @title_lines) * @pitch, who(session))
+      unless_blank(@card_y + (1 + @title_lines) * @pitch, session.where) ++
+      unless_blank(@card_y + (2 + @title_lines) * @pitch, session.who)
   end
 
   defp unless_blank(_y, ""), do: []
   defp unless_blank(y, text), do: [line(y, Theme.muted(), clip(text))]
-
-  defp when_face(session) do
-    Schedule.date_face(session) <>
-      " " <> Schedule.clock_face(session.start) <> "-" <> Schedule.clock_face(session.stop)
-  end
-
-  defp where(%{space: space, label: nil}), do: space
-  defp where(%{space: space, label: label}), do: space <> ", " <> label
-
-  defp who(%{speakers: speakers}) do
-    :erlang.iolist_to_binary(:lists.join(", ", speakers))
-  end
 
   # Right-aligned in the corner of the card: what the clock says about this session.
   defp tag(_session, _index, %{now: nil}), do: []

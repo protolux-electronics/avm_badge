@@ -58,6 +58,35 @@ defmodule Badge.Schedule.Link.StateTest do
       assert State.load(failed, true, 30_000) == {:wait, failed}
       assert {:fetch, %{state: :loading}} = State.load(failed, true, 61_000)
     end
+
+    test "each failure in a row doubles the wait, up to half an hour" do
+      failed =
+        :lists.foldl(
+          fn at, state ->
+            {:fetch, loading} = State.load(state, true, at)
+            State.fetched(loading, {:error, :timeout}, at)
+          end,
+          State.new(),
+          [0, 60_001, 180_002]
+        )
+
+      assert failed.failures == 3
+      assert State.load(failed, true, 180_002 + 239_000) == {:wait, failed}
+      assert {:fetch, _loading} = State.load(failed, true, 180_002 + 240_001)
+
+      many = %{failed | failures: 20, at: 0}
+
+      assert State.load(many, true, 29 * 60_000) == {:wait, many}
+      assert {:fetch, _loading} = State.load(many, true, 31 * 60_000)
+    end
+
+    test "a success resets the wait" do
+      {:fetch, loading} = State.load(State.new(), true, 0)
+      failed = State.fetched(loading, {:error, :timeout}, 0)
+      fine = State.fetched(%{failed | state: :loading}, {:ok, @sessions}, 1)
+
+      assert fine.failures == 0
+    end
   end
 
   describe "fetched/3" do
