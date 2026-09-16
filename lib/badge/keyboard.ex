@@ -26,6 +26,8 @@ defmodule Badge.Keyboard do
   alias Badge.KeyRepeat
   alias Badge.Keymap
 
+  @compile {:no_warn_undefined, [:esp, :gpio]}
+
   @rows Hardware.rows()
   @cols Hardware.cols()
 
@@ -137,10 +139,17 @@ defmodule Badge.Keyboard do
     GenServer.call(__MODULE__, {:holding?, label})
   end
 
+  @doc "Stops the CPU on the next scan until a key is pressed, unless one is held."
+  @spec light_sleep() :: :ok
+  def light_sleep, do: GenServer.cast(__MODULE__, :light_sleep)
+
   @impl true
   def handle_call({:holding?, label}, _from, state) do
     {:reply, :lists.member(label, state.held), state}
   end
+
+  @impl true
+  def handle_cast(:light_sleep, state), do: {:noreply, %{state | sleep: true}}
 
   @impl true
   def init(:ok) do
@@ -153,10 +162,17 @@ defmodule Badge.Keyboard do
 
     send(self(), :scan)
 
-    {:ok, %{candidate: [], count: 0, held: [], repeat: KeyRepeat.new()}}
+    {:ok, %{candidate: [], count: 0, held: [], repeat: KeyRepeat.new(), sleep: false}}
   end
 
   @impl true
+  def handle_info(:scan, %{sleep: true} = state) do
+    Process.sleep(@scan_interval)
+    send(self(), :scan)
+
+    {:noreply, nap(%{state | sleep: false})}
+  end
+
   def handle_info(:scan, state) do
     state =
       state
@@ -183,6 +199,33 @@ defmodule Badge.Keyboard do
 
   defp route_event(event) do
     Badge.UI.key_event(event)
+  end
+
+  # A level wake on a held key returns at once, so a held key refuses rather than loops.
+  defp nap(%{held: held} = state) when held != [] do
+    :io.format(~c"Sleep: refused, key held~n")
+    Badge.UI.slept(:refused)
+
+    state
+  end
+
+  defp nap(state) do
+    Enum.each(@cols, fn pin -> :gpio.wakeup_enable(pin, :low) end)
+    :esp.sleep_enable_gpio_wakeup()
+    :io.format(~c"Sleep: light sleep~n")
+
+    started = :erlang.monotonic_time(:millisecond)
+    result = :esp.light_sleep()
+    slept = :erlang.monotonic_time(:millisecond) - started
+
+    :io.format(~c"Sleep: woke after ~ps (~p)~n", [div(slept, 1000), result])
+    Badge.UI.slept({:ok, slept})
+
+    # Whatever is down now is the wake key; it must not arrive as a press.
+    pressed = full_scan()
+    labels = Enum.map(label_once(pressed), fn {label, _pos} -> label end)
+
+    %{state | candidate: pressed, count: @debounce, held: labels, repeat: KeyRepeat.new()}
   end
 
   defp setup do
