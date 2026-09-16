@@ -125,6 +125,20 @@ defmodule Badge.Page.SplashTest do
     end
   end
 
+  describe "whether a start wants the splash" do
+    test "a fresh boot does" do
+      assert Splash.wanted?(:esp_rst_poweron, 2_000)
+    end
+
+    test "waking from deep sleep does not" do
+      refute Splash.wanted?(:esp_rst_deepsleep, 2_000)
+    end
+
+    test "a UI restart minutes into the boot does not, whatever the reset was" do
+      refute Splash.wanted?(:esp_rst_poweron, 180_000)
+    end
+  end
+
   test "the bar cover sits on top of everything" do
     [{:rect, 0, 0, w, h, _bg} | _rest] = Splash.frame({:in, 3}, @seed)
 

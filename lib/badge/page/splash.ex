@@ -31,6 +31,9 @@ defmodule Badge.Page.Splash do
   @out_frames 6
   @total_ms (@in_frames + @out_frames) * @frame_ms + @hold_ms
 
+  # The UI is up within a few seconds of the chip; anything later is a restart.
+  @boot_ms 10_000
+
   @logo_w elem(Logo.size(), 0)
   @logo_h elem(Logo.size(), 1)
   @x div(@width - @logo_w, 2)
@@ -57,12 +60,24 @@ defmodule Badge.Page.Splash do
     %{started: now, seed: rem(abs(now), 1_000_003) + 1, step: {:in, 0}, done: false}
   end
 
-  @doc "Whether this boot should show the splash: every reset except waking from deep sleep."
+  @doc "Whether this start should show the splash: see `wanted?/2`."
   @spec wanted?() :: boolean
-  def wanted? do
-    :esp.reset_reason() != :esp_rst_deepsleep
+  def wanted?, do: wanted?(reset_reason(), :erlang.monotonic_time(:millisecond))
+
+  @doc """
+  Whether a start of the UI should show the splash, given the chip's reset
+  reason and how long it has been up. A boot does, unless it is a wake from
+  deep sleep; a UI restart later in the same boot does not.
+  """
+  @spec wanted?(atom, integer) :: boolean
+  def wanted?(reason, uptime_ms) do
+    reason != :esp_rst_deepsleep and uptime_ms < @boot_ms
+  end
+
+  defp reset_reason do
+    :esp.reset_reason()
   catch
-    _kind, _error -> true
+    _kind, _error -> :esp_rst_unknown
   end
 
   @impl true
