@@ -65,6 +65,12 @@ defmodule Badge.PagesTest do
       end
     end
 
+    test "no page traps a shape key, since the router only sees what a page ignores" do
+      for {_key, module} <- Pages.all(), module != nil, {key, _m} <- Pages.all() do
+        assert module.handle_key({:nav, key}, module.init()) == :ignore
+      end
+    end
+
     test "home itself does not trap escape either" do
       assert Badge.Page.Home.handle_key({:nav, :home}, Badge.Page.Home.init()) == :ignore
     end

@@ -145,25 +145,19 @@ defmodule Badge.UI do
     {:noreply, %{state | napping: false, idle: 0}}
   end
 
-  # Offered to the page first so a container can back out a level; ignoring it goes Home.
-  def handle_cast({:key, {:nav, :home}}, state) do
+  # Offered to the page first, so a container can back out a level and the
+  # home grid can lend the shape keys to its second screen; ignored, it navigates.
+  def handle_cast({:key, {:nav, key}}, state) do
     state = %{state | idle: 0}
 
-    case state.page.handle_key({:nav, :home}, state.page_state) do
+    case state.page.handle_key({:nav, key}, state.page_state) do
       {:ok, page_state} ->
         dirty = state.dirty or page_state != state.page_state
 
         {:noreply, %{state | page_state: page_state, dirty: dirty}}
 
       :ignore ->
-        {:noreply, goto(state, Home)}
-    end
-  end
-
-  def handle_cast({:key, {:nav, key}}, state) do
-    case Pages.for_key(key) do
-      nil -> {:noreply, %{state | idle: 0}}
-      module -> {:noreply, goto(%{state | idle: 0}, module)}
+        {:noreply, navigate(key, state)}
     end
   end
 
@@ -389,6 +383,15 @@ defmodule Badge.UI do
   # Badge.Power and Badge.Wifi start after this process, so the first real reading waits for the first tick.
   defp placeholder_status do
     %{battery: :battery_0, wifi: Wifi.icon(:disabled), clock: Clock.format(0)}
+  end
+
+  defp navigate(:home, state), do: goto(state, Home)
+
+  defp navigate(key, state) do
+    case Pages.for_key(key) do
+      nil -> state
+      module -> goto(state, module)
+    end
   end
 
   # Re-entering the current page would reset it, and key repeat fires a held key 8 times a second.

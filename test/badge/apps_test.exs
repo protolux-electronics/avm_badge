@@ -27,6 +27,25 @@ defmodule Badge.AppsTest do
     end
   end
 
+  describe "for_key/1" do
+    test "the first shape key opens the first app" do
+      assert Apps.for_key(:square) == hd(Apps.all())
+    end
+
+    test "follows the button order of the shape keys" do
+      keys = for {key, _module} <- Badge.Pages.all(), do: key
+
+      for {key, index} <- Enum.with_index(keys) do
+        assert Apps.for_key(key) == Apps.at(index)
+      end
+    end
+
+    test "escape and unknown keys open nothing" do
+      assert Apps.for_key(:home) == nil
+      assert Apps.for_key(:nonesuch) == nil
+    end
+  end
+
   describe "registered apps" do
     test "every app implements the whole behaviour" do
       for module <- Apps.all() do
@@ -54,11 +73,12 @@ defmodule Badge.AppsTest do
       end
     end
 
-    test "no app traps escape, so the home grid is always reachable" do
-      for module <- Apps.all() do
+    test "no app traps escape or a shape key, so navigation always works" do
+      for module <- Apps.all(),
+          key <- [:home, :square, :triangle, :cross, :circle, :clover, :diamond] do
         Code.ensure_loaded!(module)
 
-        assert module.handle_key({:nav, :home}, module.init()) == :ignore
+        assert module.handle_key({:nav, key}, module.init()) == :ignore
       end
     end
   end

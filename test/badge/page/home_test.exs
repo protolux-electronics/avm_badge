@@ -2,9 +2,12 @@ defmodule Badge.Page.HomeTest do
   use ExUnit.Case, async: true
 
   alias Badge.Apps
+  alias Badge.Icons
   alias Badge.Page.Home
   alias Badge.Pages
   alias Badge.Theme
+
+  @shapes [:square, :triangle, :cross, :circle, :clover, :diamond]
 
   defp assigned, do: for({_key, module} <- Pages.all(), module != nil, do: module)
 
@@ -12,12 +15,12 @@ defmodule Badge.Page.HomeTest do
     for {:image, _x, _y, _bg, {:rgba8888, _w, _h, _data}} <- items, do: :icon
   end
 
-  defp texts(items) do
-    for {:text, _x, _y, _font, _fg, _bg, body} <- items, do: body
+  defp images(items) do
+    for {:image, _x, _y, _bg, {:rgba8888, _w, _h, data}} <- items, do: data
   end
 
-  defp frame(items) do
-    for {:rect, x, y, w, h, colour} <- items, colour == Theme.select(), do: {x, y, w, h}
+  defp texts(items) do
+    for {:text, _x, _y, _font, _fg, _bg, body} <- items, do: body
   end
 
   defp apps do
@@ -56,14 +59,13 @@ defmodule Badge.Page.HomeTest do
       end
     end
 
-    test "draws the dividing rules and no cursor frame" do
+    test "draws the dividing rules" do
       rules =
         for {:rect, _x, _y, _w, _h, colour} <- Home.render(Home.init()),
             colour == Theme.dim(),
             do: :rule
 
       assert length(rules) == 3
-      assert frame(Home.render(Home.init())) == []
     end
 
     test "emits no background rect, since the router supplies it" do
@@ -75,31 +77,29 @@ defmodule Badge.Page.HomeTest do
   end
 
   describe "render/1 on the apps" do
-    test "one icon and one label per app" do
+    test "each app shows the shape that opens it beside its own icon, and its label" do
       items = Home.render(apps())
 
-      assert length(icons(items)) == Apps.count()
+      assert length(icons(items)) == 2 * Apps.count()
 
-      for module <- Apps.all() do
+      for {module, index} <- Enum.with_index(Apps.all()) do
         assert module.title() in texts(items)
+        assert Icons.binary(:lists.nth(index + 1, @shapes), Theme.glyph()) in images(items)
+        assert Icons.binary(module.icon(), Theme.glyph()) in images(items)
       end
     end
 
-    test "frames the cell the cursor is on, drawn first so it sits on top" do
-      items = Home.render(apps())
-
-      assert [{:rect, _x, _y, _w, _h, colour} | _rest] = items
-      assert colour == Theme.select()
-      assert length(frame(items)) == 4
+    test "leaves the unused slots empty" do
+      refute "Chat" in texts(Home.render(apps()))
     end
 
-    test "the frame moves with the cursor" do
-      before = frame(Home.render(apps()))
+    test "keeps the dividing rules" do
+      rules =
+        for {:rect, _x, _y, _w, _h, colour} <- Home.render(apps()),
+            colour == Theme.dim(),
+            do: :rule
 
-      case Apps.count() > 1 do
-        true -> assert frame(Home.render(press(apps(), {:move, :right}))) != before
-        false -> assert frame(Home.render(press(apps(), {:move, :right}))) == before
-      end
+      assert length(rules) == 3
     end
   end
 
@@ -131,54 +131,71 @@ defmodule Badge.Page.HomeTest do
         assert x + w <= Theme.width()
       end
     end
+
+    test "the pair of icons in a cell do not overlap" do
+      xs =
+        for {:image, x, _y, _bg, {:rgba8888, w, _h, _data}} <- Home.render(apps()),
+            do: {x, x + w}
+
+      for {a, b} <- Enum.zip(xs, tl(xs)) do
+        assert elem(a, 1) <= elem(b, 0)
+      end
+    end
   end
 
   describe "keys on the shapes" do
-    test "any arrow turns to the apps with the cursor on the first" do
-      for direction <- [:up, :down, :left, :right] do
+    test "right or down turns to the apps" do
+      for direction <- [:right, :down] do
         {:ok, state} = Home.handle_key({:move, direction}, Home.init())
 
         assert Home.grid(state) == :apps
-        assert Home.cursor(state) == 0
       end
+    end
+
+    test "left or up has nowhere to go and is left for the router" do
+      assert Home.handle_key({:move, :left}, Home.init()) == :ignore
+      assert Home.handle_key({:move, :up}, Home.init()) == :ignore
     end
 
     test "ignores everything else, since navigation is the router's job" do
       assert Home.handle_key({:char, ?a}, Home.init()) == :ignore
       assert Home.handle_key({:edit, :newline}, Home.init()) == :ignore
       assert Home.handle_key({:nav, :home}, Home.init()) == :ignore
+
+      for key <- @shapes do
+        assert Home.handle_key({:nav, key}, Home.init()) == :ignore
+      end
     end
   end
 
   describe "keys on the apps" do
-    test "escape turns back to the shapes" do
-      assert Home.grid(press(apps(), {:nav, :home})) == :shapes
+    test "left, up or escape turn back to the shapes" do
+      for event <- [{:move, :left}, {:move, :up}, {:nav, :home}] do
+        assert Home.grid(press(apps(), event)) == :shapes
+      end
     end
 
-    test "left off the first column turns back to the shapes" do
-      assert Home.grid(press(apps(), {:move, :left})) == :shapes
+    test "right or down stay put, and are left for the router" do
+      assert Home.handle_key({:move, :right}, apps()) == :ignore
+      assert Home.handle_key({:move, :down}, apps()) == :ignore
     end
 
-    test "the cursor never leaves the apps" do
-      state =
-        :lists.foldl(
-          fn direction, acc -> press(acc, {:move, direction}) end,
-          apps(),
-          [:right, :right, :right, :down, :down, :up, :up, :up]
-        )
-
-      assert Home.grid(state) == :apps
-      assert Home.cursor(state) < Apps.count()
-    end
-
-    test "enter chooses the app under the cursor and the next tick opens it" do
-      chosen = press(apps(), {:edit, :newline})
+    test "the first shape key chooses the first app and the next tick opens it" do
+      chosen = press(apps(), {:nav, :square})
 
       assert Home.tick(chosen) == {:goto, Badge.Page.Agent}
     end
 
-    test "characters are ignored" do
+    test "a shape key over an empty slot is swallowed rather than navigating" do
+      for key <- Enum.drop(@shapes, Apps.count()) do
+        assert {:ok, state} = Home.handle_key({:nav, key}, apps())
+        assert Home.tick(state) == state
+      end
+    end
+
+    test "characters and enter are ignored" do
       assert Home.handle_key({:char, ?a}, apps()) == :ignore
+      assert Home.handle_key({:edit, :newline}, apps()) == :ignore
     end
 
     test "nothing opens by itself" do
