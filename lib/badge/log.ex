@@ -6,7 +6,9 @@ defmodule Badge.Log do
   spawns afterwards, so `Badge.start/0` calls it first. Every line printed is
   echoed to the console, kept for `tail/1`, and sent to the NervesHub agent
   named by `forward/1`. ESP-IDF's own `I (…)` lines are written from C and
-  never pass through here.
+  never pass through here. Off the badge, where there is no `:console`, the
+  echo goes to whatever this process was started under, so a host sees the
+  lines too.
   """
 
   use GenServer
@@ -39,10 +41,12 @@ defmodule Badge.Log do
 
   @impl true
   def init(:ok) do
+    console = :erlang.group_leader()
+
     # Its own leader, so a print from here cannot queue behind itself.
     :erlang.group_leader(self(), self())
 
-    {:ok, %{lines: [], agent: nil}}
+    {:ok, %{lines: [], agent: nil, console: console}}
   end
 
   @impl true
@@ -97,7 +101,7 @@ defmodule Badge.Log do
   defp handle(_unknown, _from, state), do: {{:error, :request}, state}
 
   defp write(chars, from, state) do
-    echo(chars)
+    echo(chars, state.console)
 
     lines = lines(chars)
     send_lines(lines, from, state.agent)
@@ -105,10 +109,15 @@ defmodule Badge.Log do
     {:ok, %{state | lines: :lists.sublist(:lists.reverse(lines) ++ state.lines, @keep)}}
   end
 
-  defp echo(chars) do
+  defp echo(chars, console) do
     :console.print(chars)
   catch
-    # No console off a badge, which is where the tests run.
+    _kind, _error -> echo_host(chars, console)
+  end
+
+  defp echo_host(chars, console) do
+    :io.put_chars(console, chars)
+  catch
     _kind, _error -> :ok
   end
 

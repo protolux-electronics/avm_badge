@@ -6,6 +6,7 @@ defmodule Badge.Sim.CheckTest do
   alias Badge.Sim.Screen
 
   setup do
+    start_supervised!({Badge.Log, :ok})
     start_supervised!(Board)
     :ok
   end

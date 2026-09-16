@@ -11,6 +11,7 @@ defmodule Badge.Sim.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      %{id: Badge.Log, start: {Badge.Log, :start_link, [:ok]}},
       Badge.Sim.Board,
       {PhoenixPlayground, live: Badge.Sim.Live, file: nil, live_reload: false, open_browser: false, port: @port}
     ]

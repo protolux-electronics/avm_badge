@@ -4,7 +4,12 @@ defmodule Badge.LogTest do
   alias Badge.Log
 
   setup do
+    # The log echoes to the leader it starts under; give it a silent one.
+    {:ok, quiet} = StringIO.open("")
+    leader = Process.group_leader()
+    Process.group_leader(self(), quiet)
     log = start_supervised!({Log, :ok})
+    Process.group_leader(self(), leader)
 
     %{log: log}
   end

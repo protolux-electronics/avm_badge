@@ -1,7 +1,8 @@
 defmodule Badge.Sim.Board do
   @moduledoc """
   The processes a page finds on a badge: NVS, the fakes for the hardware
-  processes, the real `Badge.Log`, and the screen.
+  processes and the screen, all printing through an already running
+  `Badge.Log` as they do on the badge.
   """
 
   use Supervisor
@@ -14,8 +15,10 @@ defmodule Badge.Sim.Board do
 
   @impl true
   def init(:ok) do
-    children = [Nvs] ++ Fakes.children() ++ [%{id: Badge.Log, start: {Badge.Log, :start_link, [:ok]}}, Screen]
-    Supervisor.init(children, strategy: :one_for_one)
+    # The children inherit this, so every page print lands in the Log tab.
+    Badge.Log.capture()
+
+    Supervisor.init([Nvs] ++ Fakes.children() ++ [Screen], strategy: :one_for_one)
   end
 
   @doc "Restarts everything except NVS, which is what a reboot keeps."

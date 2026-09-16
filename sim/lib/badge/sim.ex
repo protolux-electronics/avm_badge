@@ -23,12 +23,10 @@ defmodule Badge.Sim do
   @doc "The `assets/` directory, standing in for the assets partition."
   def assets, do: Path.join(@root, "assets")
 
-  @doc "Prints a line on the console and into `Badge.Log`, so the Log tab has it too."
+  @doc "Prints a line through `Badge.Log`, which echoes it to the console and keeps it for the Log tab."
   def log(line) do
-    IO.puts(line)
-
     case Process.whereis(Badge.Log) do
-      nil -> :ok
+      nil -> IO.puts(line)
       log -> IO.puts(log, line)
     end
   end

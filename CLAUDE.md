@@ -17,7 +17,9 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 - Never run unbounded `cat`/`screen` on the port — it blocks the next flash
 - `Badge.Log` is the group leader of everything the badge spawns: each
   `io:format` line is echoed, kept for the Settings Log tab, and forwarded to
-  the hub while the agent is up. ESP-IDF's own `I (…)` lines are not seen
+  the hub while the agent is up. ESP-IDF's own `I (…)` lines are not seen.
+  Without `:console`, as on the host, the echo goes to the console the log
+  was started under, and the simulator captures the same way
 - `MIX_TARGET=sim iex -S mix` is how the firmware runs on the host: the pages
   run against fake hardware processes and draw on a canvas at
   http://localhost:3240. `MIX_TARGET=sim mix sim.check` renders every page

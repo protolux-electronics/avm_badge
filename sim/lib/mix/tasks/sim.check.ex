@@ -18,6 +18,7 @@ defmodule Mix.Tasks.Sim.Check do
   @impl true
   def run(args) do
     Mix.Task.run("app.config")
+    {:ok, _log} = Badge.Log.start_link(:ok)
     {:ok, _board} = Board.start_link(:ok)
 
     for page <- Check.pages() do
