@@ -4,35 +4,39 @@ defmodule Badge.Sim.Live do
   use Phoenix.LiveView
 
   alias Badge.Sim.Board
-  alias Badge.Sim.Screen
+  alias Badge.Sim.Display
 
-  @shapes for {{key, _module}, n} <- Enum.with_index(Badge.Pages.all(), 1), into: %{}, do: {"F#{n}", key}
+  @shapes for {{key, _module}, n} <- Enum.with_index(Badge.Pages.all(), 1),
+              into: %{},
+              do: {"F#{n}", key}
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Screen.attach(self())
+    if connected?(socket), do: Display.attach(self())
     {:ok, socket}
   end
 
   def handle_info({:asset, asset}, socket), do: {:noreply, push_event(socket, "asset", asset)}
-  def handle_info({:frame, frame}, socket), do: {:noreply, push_event(socket, "frame", %{items: frame})}
+
+  def handle_info({:frame, frame}, socket),
+    do: {:noreply, push_event(socket, "frame", %{items: frame})}
 
   def handle_event("key", %{"key" => key}, socket) do
     case event(key) do
       nil -> :ok
-      event -> Screen.key(event)
+      event -> Badge.UI.key_event(event)
     end
 
     {:noreply, socket}
   end
 
   def handle_event("shape", %{"shape" => shape}, socket) do
-    Screen.key({:nav, String.to_existing_atom(shape)})
+    Badge.UI.key_event({:nav, String.to_existing_atom(shape)})
     {:noreply, socket}
   end
 
   def handle_event("reboot", _params, socket) do
     Board.reboot()
-    Screen.attach(self())
+    Display.attach(self())
     {:noreply, socket}
   end
 

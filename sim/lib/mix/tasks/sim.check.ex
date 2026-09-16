@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Sim.Check do
 
   @moduledoc """
   Starts the simulated board, renders every page once and reports what each
-  produced, then drives the screen through a few keys and a reboot.
+  produced, then drives the shared UI through a few keys and a reboot.
 
       mix sim.check
       mix sim.check --dump DIR    # also write each frame as JSON
@@ -13,7 +13,7 @@ defmodule Mix.Tasks.Sim.Check do
 
   alias Badge.Sim.Board
   alias Badge.Sim.Check
-  alias Badge.Sim.Screen
+  alias Badge.Sim.Display
 
   @impl true
   def run(args) do
@@ -24,7 +24,9 @@ defmodule Mix.Tasks.Sim.Check do
     for page <- Check.pages() do
       case Check.render(page) do
         {:ok, items, frame, assets} ->
-          Mix.shell().info("#{inspect(page)}: #{length(items)} items, #{length(assets)} bitmaps, #{length(frame)} commands")
+          Mix.shell().info(
+            "#{inspect(page)}: #{length(items)} items, #{length(assets)} bitmaps, #{length(frame)} commands"
+          )
 
         {:error, error} ->
           Mix.shell().error("#{inspect(page)}: FAILED " <> Exception.message(error))
@@ -32,15 +34,15 @@ defmodule Mix.Tasks.Sim.Check do
     end
 
     for key <- [{:nav, :diamond}, {:move, :right}, {:move, :right}, {:move, :right}] do
-      Screen.key(key)
+      Badge.UI.key_event(key)
       Process.sleep(150)
     end
 
-    Mix.shell().info("screen frame: #{length(Screen.frame())} commands")
+    Mix.shell().info("screen frame: #{length(Display.frame())} commands")
 
     Board.reboot()
     Process.sleep(150)
-    Mix.shell().info("after reboot: #{length(Screen.frame())} commands")
+    Mix.shell().info("after reboot: #{length(Display.frame())} commands")
 
     case OptionParser.parse!(args, strict: [dump: :string]) do
       {[dump: dir], _} -> Check.dump(dir)
