@@ -1,21 +1,17 @@
 defmodule Badge.Sim.Check do
-  @moduledoc "Renders every page without a browser, for `mix sim.check` and the tests."
+  @moduledoc "Renders every page through the shared UI, without a browser."
 
-  alias Badge.Sim.Encode
+  alias Badge.Page.Splash
+  alias Badge.Sim.Board
+  alias Badge.Sim.Display
 
   @doc "Every page, the splash first."
-  def pages, do: [Badge.Page.Splash] ++ for({_key, module} <- Badge.Pages.all(), module != nil, do: module)
+  def pages, do: [Splash] ++ for({_key, module} <- Badge.Pages.all(), module != nil, do: module)
 
-  @doc """
-  Renders `page` a few ticks in: `{:ok, items, frame, assets}` with the display
-  items, the draw commands and the bitmaps, or `{:error, exception}`.
-  """
+  @doc "Renders `page` through `Badge.UI` and returns its complete display snapshot."
   def render(page) do
-    state = settle(page)
-    items = page.render(state)
-    {frame, assets, _sent} = Encode.encode(items, MapSet.new())
-    page.leave(state)
-    {:ok, items, frame, assets}
+    snapshot = show(page)
+    {:ok, snapshot.items, snapshot.frame, snapshot.assets}
   rescue
     error -> {:error, error}
   end
@@ -25,23 +21,56 @@ defmodule Badge.Sim.Check do
     File.mkdir_p!(dir)
 
     for page <- pages() do
-      state = settle(page)
-      items = page.render(state) ++ [{:rect, 0, 0, 320, 240, 0}]
-      {frame, assets, _sent} = Encode.encode(items, MapSet.new())
+      {:ok, _items, frame, assets} = render(page)
       name = page |> inspect() |> String.replace(".", "_")
       File.write!(Path.join(dir, name <> ".json"), JSON.encode!(%{items: frame, assets: assets}))
-      page.leave(state)
     end
 
     :ok
   end
 
-  defp settle(page) do
-    Enum.reduce(1..3, page.init(), fn _, state ->
-      case page.tick(state) do
-        {:goto, _} -> state
-        next -> next
-      end
-    end)
+  defp show(Splash) do
+    case current_page() do
+      Splash -> :ok
+      _other -> Board.reboot()
+    end
+
+    %{page: Splash} = :sys.get_state(Badge.UI)
+    Display.snapshot()
+  end
+
+  defp show(page) do
+    case current_page() do
+      ^page ->
+        Display.snapshot()
+
+      _other ->
+        navigate(page)
+    end
+  end
+
+  defp navigate(page) do
+    key = key_for(page)
+    Badge.UI.key_event({:nav, key})
+    %{page: ^page} = state = :sys.get_state(Badge.UI)
+
+    with true <- state.dirty,
+         sequence = Display.snapshot().sequence,
+         :render_tick <- send(Badge.UI, :render_tick),
+         {:ok, snapshot} <- Display.await_frame(sequence) do
+      snapshot
+    else
+      false -> Display.snapshot()
+      {:error, :timeout} -> raise "timed out rendering #{inspect(page)}"
+    end
+  end
+
+  defp current_page, do: :sys.get_state(Badge.UI).page
+
+  defp key_for(page) do
+    case :lists.keyfind(page, 2, Badge.Pages.all()) do
+      {key, ^page} -> key
+      false -> raise "#{inspect(page)} is not a top-level page"
+    end
   end
 end

@@ -2,8 +2,8 @@ defmodule Mix.Tasks.Sim.Check do
   @shortdoc "Renders every page of the simulator without a browser"
 
   @moduledoc """
-  Starts the simulated board, renders every page once and reports what each
-  produced, then drives the shared UI through a few keys and a reboot.
+  Starts the simulated board, renders every page through the shared UI and
+  reports what each produced, then checks a simulated reboot.
 
       mix sim.check
       mix sim.check --dump DIR    # also write each frame as JSON
@@ -33,16 +33,15 @@ defmodule Mix.Tasks.Sim.Check do
       end
     end
 
-    for key <- [{:nav, :diamond}, {:move, :right}, {:move, :right}, {:move, :right}] do
-      Badge.UI.key_event(key)
-      Process.sleep(150)
-    end
-
-    Mix.shell().info("screen frame: #{length(Display.frame())} commands")
+    snapshot = Display.snapshot()
+    Mix.shell().info("screen frame #{snapshot.sequence}: #{length(snapshot.frame)} commands")
 
     Board.reboot()
-    Process.sleep(150)
-    Mix.shell().info("after reboot: #{length(Display.frame())} commands")
+    rebooted = Display.snapshot()
+
+    Mix.shell().info(
+      "after reboot frame #{rebooted.sequence}: #{length(rebooted.frame)} commands"
+    )
 
     case OptionParser.parse!(args, strict: [dump: :string]) do
       {[dump: dir], _} -> Check.dump(dir)
