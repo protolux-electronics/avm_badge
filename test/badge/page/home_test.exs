@@ -1,19 +1,15 @@
 defmodule Badge.Page.HomeTest do
   use ExUnit.Case, async: true
 
-  alias Badge.Apps
   alias Badge.Icons
   alias Badge.Page.Home
   alias Badge.Pages
   alias Badge.Theme
 
-  @shapes [:square, :triangle, :cross, :circle, :clover, :diamond]
+  @keys [:square, :triangle, :cross, :circle, :clover, :diamond]
 
-  defp assigned, do: for({_key, module} <- Pages.all(), module != nil, do: module)
-
-  defp icons(items) do
-    for {:image, _x, _y, _bg, {:rgba8888, _w, _h, _data}} <- items, do: :icon
-  end
+  defp assigned(screen),
+    do: for({_key, module} <- Pages.screen(screen), module != nil, do: module)
 
   defp images(items) do
     for {:image, _x, _y, _bg, {:rgba8888, _w, _h, data}} <- items, do: data
@@ -23,10 +19,19 @@ defmodule Badge.Page.HomeTest do
     for {:text, _x, _y, _font, _fg, _bg, body} <- items, do: body
   end
 
-  defp apps do
-    {:ok, state} = Home.handle_key({:move, :right}, Home.init())
-    state
+  defp chevrons(items) do
+    for {:text, _x, y, _font, _fg, _bg, body} <- items, y > 200, do: body
   end
+
+  defp on(screen) do
+    :lists.foldl(
+      fn _n, acc -> press(acc, {:move, :right}) end,
+      Home.init(),
+      :lists.seq(1, screen)
+    )
+  end
+
+  defp last, do: on(Pages.screens() - 1)
 
   defp press(state, event) do
     {:ok, next} = Home.handle_key(event, state)
@@ -38,34 +43,40 @@ defmodule Badge.Page.HomeTest do
       assert Home.title() == "Badge"
     end
 
-    test "opens on the shapes with nothing chosen" do
-      assert Home.grid(Home.init()) == :shapes
+    test "opens on the first screen with nothing chosen" do
+      assert Home.screen(Home.init()) == 0
       assert Home.tick(Home.init()) == Home.init()
     end
   end
 
-  describe "render/1 on the shapes" do
-    test "one icon per assigned page" do
-      items = Home.render(Home.init())
+  describe "render/1" do
+    test "one shape icon and one label per assigned slot, on every screen" do
+      for screen <- 0..(Pages.screens() - 1) do
+        items = Home.render(on(screen))
 
-      assert length(icons(items)) == length(assigned())
-    end
+        assert length(images(items)) == length(assigned(screen))
 
-    test "one label per assigned page, and it is the page's own title" do
-      items = Home.render(Home.init())
-
-      for module <- assigned() do
-        assert module.title() in texts(items)
+        for {key, module} <- Pages.screen(screen), module != nil do
+          assert module.title() in texts(items)
+          assert Icons.binary(key, Theme.glyph()) in images(items)
+        end
       end
     end
 
-    test "draws the dividing rules" do
-      rules =
-        for {:rect, _x, _y, _w, _h, colour} <- Home.render(Home.init()),
-            colour == Theme.dim(),
-            do: :rule
+    test "the label under a cell is the page in that slot, not the first screen's" do
+      assert "Agent" in texts(Home.render(on(1)))
+      refute "Name" in texts(Home.render(on(1)))
+    end
 
-      assert length(rules) == 3
+    test "draws the dividing rules on every screen" do
+      for screen <- 0..(Pages.screens() - 1) do
+        rules =
+          for {:rect, _x, _y, _w, _h, colour} <- Home.render(on(screen)),
+              colour == Theme.dim(),
+              do: :rule
+
+        assert length(rules) == 3
+      end
     end
 
     test "emits no background rect, since the router supplies it" do
@@ -74,37 +85,19 @@ defmodule Badge.Page.HomeTest do
                _item -> false
              end)
     end
-  end
 
-  describe "render/1 on the apps" do
-    test "each app shows the shape that opens it, and its label" do
-      items = Home.render(apps())
-
-      assert length(icons(items)) == Apps.count()
-
-      for {module, index} <- Enum.with_index(Apps.all()) do
-        assert module.title() in texts(items)
-        assert Icons.binary(:lists.nth(index + 1, @shapes), Theme.glyph()) in images(items)
-      end
+    test "a right chevron says there is more, and only then" do
+      assert chevrons(Home.render(Home.init())) == [">"]
+      refute ">" in chevrons(Home.render(last()))
     end
 
-    test "leaves the unused slots empty" do
-      refute "Chat" in texts(Home.render(apps()))
+    test "a left chevron says there is a way back, and only then" do
+      refute "<" in chevrons(Home.render(Home.init()))
+      assert "<" in chevrons(Home.render(on(1)))
     end
 
-    test "keeps the dividing rules" do
-      rules =
-        for {:rect, _x, _y, _w, _h, colour} <- Home.render(apps()),
-            colour == Theme.dim(),
-            do: :rule
-
-      assert length(rules) == 3
-    end
-  end
-
-  describe "every item on either grid" do
-    test "sits inside the content area" do
-      for state <- [Home.init(), apps()], item <- Home.render(state) do
+    test "every item sits inside the content area" do
+      for screen <- 0..(Pages.screens() - 1), item <- Home.render(on(screen)) do
         y =
           case item do
             {:rect, _x, y, _w, _h, _c} -> y
@@ -117,8 +110,8 @@ defmodule Badge.Page.HomeTest do
       end
     end
 
-    test "sits inside the panel horizontally" do
-      for state <- [Home.init(), apps()], item <- Home.render(state) do
+    test "every item sits inside the panel horizontally" do
+      for screen <- 0..(Pages.screens() - 1), item <- Home.render(on(screen)) do
         {x, w} =
           case item do
             {:rect, x, _y, w, _h, _c} -> {x, w}
@@ -132,63 +125,67 @@ defmodule Badge.Page.HomeTest do
     end
   end
 
-  describe "keys on the shapes" do
-    test "right or down turns to the apps" do
+  describe "turning" do
+    test "right or down turns to the next screen" do
       for direction <- [:right, :down] do
         {:ok, state} = Home.handle_key({:move, direction}, Home.init())
 
-        assert Home.grid(state) == :apps
+        assert Home.screen(state) == 1
       end
     end
 
-    test "left or up has nowhere to go and is left for the router" do
+    test "left or up turns back" do
+      for direction <- [:left, :up] do
+        {:ok, state} = Home.handle_key({:move, direction}, on(1))
+
+        assert Home.screen(state) == 0
+      end
+    end
+
+    test "off either end is left for the router" do
       assert Home.handle_key({:move, :left}, Home.init()) == :ignore
       assert Home.handle_key({:move, :up}, Home.init()) == :ignore
+      assert Home.handle_key({:move, :right}, last()) == :ignore
+      assert Home.handle_key({:move, :down}, last()) == :ignore
     end
 
-    test "ignores everything else, since navigation is the router's job" do
-      assert Home.handle_key({:char, ?a}, Home.init()) == :ignore
-      assert Home.handle_key({:edit, :newline}, Home.init()) == :ignore
+    test "escape returns to the first screen, and is ignored there" do
+      assert Home.screen(press(on(1), {:nav, :home})) == 0
       assert Home.handle_key({:nav, :home}, Home.init()) == :ignore
-
-      for key <- @shapes do
-        assert Home.handle_key({:nav, key}, Home.init()) == :ignore
-      end
     end
   end
 
-  describe "keys on the apps" do
-    test "left, up or escape turn back to the shapes" do
-      for event <- [{:move, :left}, {:move, :up}, {:nav, :home}] do
-        assert Home.grid(press(apps(), event)) == :shapes
+  describe "shape keys" do
+    test "on the first screen are left for the router" do
+      for key <- @keys do
+        assert Home.handle_key({:nav, key}, Home.init()) == :ignore
       end
     end
 
-    test "right or down stay put, and are left for the router" do
-      assert Home.handle_key({:move, :right}, apps()) == :ignore
-      assert Home.handle_key({:move, :down}, apps()) == :ignore
-    end
-
-    test "the first shape key chooses the first app and the next tick opens it" do
-      chosen = press(apps(), {:nav, :square})
+    test "on a later screen choose that screen's page and the next tick opens it" do
+      chosen = press(on(1), {:nav, :square})
 
       assert Home.tick(chosen) == {:goto, Badge.Page.Agent}
     end
 
-    test "a shape key over an empty slot is swallowed rather than navigating" do
-      for key <- Enum.drop(@shapes, Apps.count()) do
-        assert {:ok, state} = Home.handle_key({:nav, key}, apps())
+    test "over an empty slot are swallowed rather than opening the first screen's page" do
+      for {key, nil} <- Pages.screen(1) do
+        assert {:ok, state} = Home.handle_key({:nav, key}, on(1))
         assert Home.tick(state) == state
       end
     end
+  end
 
-    test "characters and enter are ignored" do
-      assert Home.handle_key({:char, ?a}, apps()) == :ignore
-      assert Home.handle_key({:edit, :newline}, apps()) == :ignore
+  describe "inertness" do
+    test "characters and enter are ignored on every screen" do
+      for screen <- 0..(Pages.screens() - 1) do
+        assert Home.handle_key({:char, ?a}, on(screen)) == :ignore
+        assert Home.handle_key({:edit, :newline}, on(screen)) == :ignore
+      end
     end
 
     test "nothing opens by itself" do
-      assert Home.tick(apps()) == apps()
+      assert Home.tick(on(1)) == on(1)
     end
   end
 end

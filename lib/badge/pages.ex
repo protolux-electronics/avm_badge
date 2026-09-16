@@ -1,29 +1,57 @@
 defmodule Badge.Pages do
   @moduledoc """
-  Which shape key opens which page.
+  Every page, in the order the home grid shows them.
 
-  Ordered to match the physical button row on the badge, so `all/0` is also
-  the reading order of the home grid. A slot may be `nil`: its button does
-  nothing and the home grid leaves its cell empty.
+  The grid has six cells, one per shape key in button order, so the list is
+  read in screens of six. The first screen's pages open from anywhere on
+  their key; the later ones need the home grid turned to their screen first,
+  where the same six keys open them. A slot may be `nil`: its button does
+  nothing and its cell stays empty.
   """
 
+  @keys [:square, :triangle, :cross, :circle, :clover, :diamond]
+
   @pages [
-    {:square, Badge.Page.Name},
-    {:triangle, Badge.Page.Chat},
-    {:cross, Badge.Page.Text},
-    {:circle, Badge.Page.Led},
-    {:clover, Badge.Page.Sensors},
-    {:diamond, Badge.Page.Settings}
+    Badge.Page.Name,
+    Badge.Page.Chat,
+    Badge.Page.Text,
+    Badge.Page.Led,
+    Badge.Page.Sensors,
+    Badge.Page.Settings,
+    Badge.Page.Agent
   ]
 
-  @doc "Every slot, in button order."
+  @per_screen length(@keys)
+  @screens div(length(@pages) + @per_screen - 1, @per_screen)
+
+  @doc "Every page, in grid order."
   def all, do: @pages
 
-  @doc "The page module for a shape key, or nil when the slot is unassigned."
-  def for_key(key) do
-    case :lists.keyfind(key, 1, @pages) do
+  @doc "The shape keys, in button order."
+  def keys, do: @keys
+
+  @doc "How many screens of six the grid needs."
+  def screens, do: @screens
+
+  @doc "One screen as `{key, module}` pairs, one per key, `nil` where the slot is empty."
+  def screen(n), do: pair(@keys, drop(@pages, n * @per_screen), [])
+
+  @doc "The page a shape key opens from anywhere, or nil when the slot is unassigned."
+  def for_key(key), do: for_key(key, 0)
+
+  @doc "The page a shape key opens while the home grid shows screen `n`."
+  def for_key(key, n) do
+    case :lists.keyfind(key, 1, screen(n)) do
       {_key, module} -> module
       false -> nil
     end
   end
+
+  defp pair([], _pages, acc), do: :lists.reverse(acc)
+  defp pair([key | keys], [], acc), do: pair(keys, [], [{key, nil} | acc])
+  defp pair([key | keys], [page | pages], acc), do: pair(keys, pages, [{key, page} | acc])
+
+  defp drop(list, 0), do: list
+  defp drop([], _n), do: []
+  defp drop([_head | rest], n), do: drop(rest, n - 1)
 end

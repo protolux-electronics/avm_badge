@@ -93,7 +93,7 @@ defmodule Badge.UI do
     :port.call(port, {:register_font, :dogica, @font_dogica})
     :port.call(port, {:register_font, :pixel_operator, @font_pixel_operator})
 
-    :io.format(~c"UI: AtomGL port open, ~p slots~n", [length(Pages.all())])
+    :io.format(~c"UI: AtomGL port open, ~p pages~n", [length(Pages.all())])
 
     port
   end

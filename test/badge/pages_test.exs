@@ -5,22 +5,44 @@ defmodule Badge.PagesTest do
 
   @keys [:square, :triangle, :cross, :circle, :clover, :diamond]
 
-  describe "all/0" do
-    test "one slot per shape key, in button order" do
-      assert for({key, _module} <- Pages.all(), do: key) == @keys
+  defp assigned, do: for(module <- Pages.all(), module != nil, do: module)
+
+  describe "keys/0" do
+    test "is the six shape keys in button order" do
+      assert Pages.keys() == @keys
+    end
+  end
+
+  describe "screens/0" do
+    test "is however many sixes the list needs" do
+      assert Pages.screens() == div(length(Pages.all()) + 5, 6)
+      assert Pages.screens() >= 2
+    end
+  end
+
+  describe "screen/1" do
+    test "every screen has one slot per key, in button order" do
+      for n <- 0..(Pages.screens() - 1) do
+        assert for({key, _module} <- Pages.screen(n), do: key) == @keys
+      end
+    end
+
+    test "the screens walk the list in order and pad the last with nil" do
+      modules = for n <- 0..(Pages.screens() - 1), {_key, module} <- Pages.screen(n), do: module
+
+      assert Enum.take(modules, length(Pages.all())) == Pages.all()
+      assert Enum.drop(modules, length(Pages.all())) |> Enum.all?(&is_nil/1)
+    end
+
+    test "a screen past the end is all empty" do
+      assert Pages.screen(Pages.screens()) == for(key <- @keys, do: {key, nil})
     end
   end
 
   describe "for_key/1" do
-    test "resolves every assigned slot to its module" do
-      for {key, module} <- Pages.all(), module != nil do
+    test "resolves the first screen, which is what the router opens from anywhere" do
+      for {key, module} <- Pages.screen(0) do
         assert Pages.for_key(key) == module
-      end
-    end
-
-    test "an unassigned slot is nil, not a crash" do
-      for {key, module} <- Pages.all(), module == nil do
-        assert Pages.for_key(key) == nil
       end
     end
 
@@ -30,14 +52,30 @@ defmodule Badge.PagesTest do
     end
   end
 
+  describe "for_key/2" do
+    test "resolves every slot of every screen" do
+      for n <- 0..(Pages.screens() - 1), {key, module} <- Pages.screen(n) do
+        assert Pages.for_key(key, n) == module
+      end
+    end
+
+    test "the agent sits on the red square of the second screen" do
+      assert Pages.for_key(:square, 1) == Badge.Page.Agent
+    end
+
+    test "an empty slot is nil, not a crash" do
+      assert Pages.for_key(:diamond, 1) == nil
+      assert Pages.for_key(:square, 99) == nil
+    end
+  end
+
   describe "registered pages" do
-    test "every assigned module implements the whole behaviour" do
-      for {_key, module} <- Pages.all(), module != nil do
+    test "every module implements the whole behaviour" do
+      for module <- assigned() do
         # function_exported?/3 only sees loaded modules.
         Code.ensure_loaded!(module)
 
         assert function_exported?(module, :title, 0)
-        assert function_exported?(module, :icon, 0)
         assert function_exported?(module, :init, 0)
         assert function_exported?(module, :render, 1)
         assert function_exported?(module, :handle_key, 2)
@@ -45,20 +83,14 @@ defmodule Badge.PagesTest do
       end
     end
 
-    test "every icon a page asks for actually exists" do
-      for {_key, module} <- Pages.all(), module != nil do
-        assert module.icon() in Badge.Icons.names()
-      end
-    end
-
     test "titles are short enough to fit a grid cell" do
-      for {_key, module} <- Pages.all(), module != nil do
+      for module <- assigned() do
         assert byte_size(module.title()) <= 13
       end
     end
 
     test "no page traps escape, so the home grid is always reachable" do
-      for {_key, module} <- Pages.all(), module != nil do
+      for module <- assigned() do
         Code.ensure_loaded!(module)
 
         assert module.handle_key({:nav, :home}, module.init()) == :ignore
@@ -66,19 +98,13 @@ defmodule Badge.PagesTest do
     end
 
     test "no page traps a shape key, since the router only sees what a page ignores" do
-      for {_key, module} <- Pages.all(), module != nil, {key, _m} <- Pages.all() do
+      for module <- assigned(), key <- @keys do
         assert module.handle_key({:nav, key}, module.init()) == :ignore
       end
     end
 
     test "home itself does not trap escape either" do
       assert Badge.Page.Home.handle_key({:nav, :home}, Badge.Page.Home.init()) == :ignore
-    end
-
-    test "a page's icon matches the key that opens it" do
-      for {key, module} <- Pages.all(), module != nil do
-        assert module.icon() == key
-      end
     end
   end
 end
