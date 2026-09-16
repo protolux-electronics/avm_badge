@@ -11,33 +11,43 @@ defmodule Badge.Sim.CheckTest do
     :ok
   end
 
-  test "every page renders to draw commands" do
-    for page <- Check.pages() do
-      assert {:ok, items, frame, _assets} = Check.render(page)
-      assert items != [], "#{inspect(page)} drew nothing"
+  test "every page renders through the shared UI" do
+    _sequence =
+      Enum.reduce(Check.pages(), 0, fn page, sequence ->
+        assert {:ok, items, frame, assets} = Check.render(page)
+        assert items != [], "#{inspect(page)} drew nothing"
+        assert length(frame) == length(items), "#{inspect(page)} has an unsupported display item"
+        assert %{page: ^page} = :sys.get_state(Badge.UI)
 
-      assert length(frame) == length(items),
-             "#{inspect(page)} has an item the simulator cannot draw"
-    end
+        snapshot = Display.snapshot()
+        assert snapshot.sequence > sequence
+        assert snapshot.items == items
+        assert snapshot.frame == frame
+        assert snapshot.assets == assets
+
+        snapshot.sequence
+      end)
   end
 
   test "the board runs the shared UI and survives a reboot" do
     ui = Process.whereis(Badge.UI)
     assert is_pid(ui)
 
-    Display.attach(self())
-    assert_receive {:frame, initial}, 200
-    assert initial != []
+    initial = Display.snapshot()
+    assert initial.frame != []
 
     Badge.UI.key_event({:nav, :diamond})
     assert %{page: Badge.Page.Settings} = :sys.get_state(Badge.UI)
-    assert_receive {:frame, navigated}, 250
-    assert navigated != []
+    sequence = Display.snapshot().sequence
+    send(Badge.UI, :render_tick)
+    assert {:ok, navigated} = Display.await_frame(sequence, 200)
+    assert navigated.sequence > sequence
+    assert navigated.frame != []
 
     Board.reboot()
-    Display.attach(self())
-    assert_receive {:frame, rebooted}, 200
-    assert rebooted != []
+    rebooted = Display.snapshot()
+    assert rebooted.sequence > 0
+    assert rebooted.frame != []
     assert is_pid(Process.whereis(Badge.UI))
     refute Process.whereis(Badge.UI) == ui
   end
