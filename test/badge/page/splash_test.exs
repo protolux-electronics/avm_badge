@@ -15,6 +15,11 @@ defmodule Badge.Page.SplashTest do
         do: {x, y, w, h, cx, cy}
   end
 
+  defp pieces_items(items) do
+    for {:scaled_cropped_image, _x, _y, _w, _h, _bg, _cx, _cy, 2, 2, [], _img} = item <- items,
+        do: item
+  end
+
   defp home_x, do: div(Theme.width() - elem(Logo.size(), 0) * Logo.scale(), 2)
 
   describe "the cut" do
@@ -53,11 +58,13 @@ defmodule Badge.Page.SplashTest do
       assert Splash.step(1_200) == Splash.step(2_500)
     end
 
-    test "holding shows the whole logo at twice its size and nothing else but the bar cover" do
+    test "holding shows the whole logo at twice its size and nothing else but the cover" do
       {logo_w, logo_h} = Logo.size()
 
-      assert [{:rect, 0, 0, _w, _h, _bg}, {x, y, w, h, 0, 0}] =
-               [hd(Splash.frame({:hold, 0}, @seed, @image)) | pieces(Splash.frame({:hold, 0}, @seed, @image))]
+      frame = Splash.frame({:hold, 0}, @seed, @image)
+
+      assert [{x, y, w, h, 0, 0}] = pieces(frame)
+      assert [{:rect, 0, 0, _w, _h, _bg}] = frame -- pieces_items(frame)
 
       assert {w, h} == {logo_w * 2, logo_h * 2}
       assert x == home_x()
@@ -138,7 +145,7 @@ defmodule Badge.Page.SplashTest do
       assert Splash.wanted?(:esp_rst_poweron, 2_000, @image)
     end
 
-    test "a frame is just the bar cover, should the page be reached anyway" do
+    test "a frame is just the cover, should the page be reached anyway" do
       assert [{:rect, 0, 0, _w, _h, _bg}] = Splash.render(%{Splash.init() | image: nil})
     end
   end
@@ -157,10 +164,26 @@ defmodule Badge.Page.SplashTest do
     end
   end
 
-  test "the bar cover sits on top of everything" do
-    [{:rect, 0, 0, w, h, _bg} | _rest] = Splash.frame({:in, 3}, @seed, @image)
+  describe "the cover" do
+    test "blacks out the whole panel, bar included, whatever the skin" do
+      for skin <- [Badge.Skin.Dark, Badge.Skin.Win95] do
+        Badge.Skin.activate(skin)
 
-    assert w == Theme.width()
-    assert h > Theme.bar_h()
+        assert {:rect, 0, 0, w, h, 0x000000} = List.last(Splash.frame({:in, 3}, @seed, @image))
+        assert {w, h} == {Theme.width(), Theme.height()}
+      end
+    end
+
+    test "is drawn under the pieces, which AtomGL paints tail to head" do
+      frame = Splash.frame({:in, 9}, @seed, @image)
+
+      assert pieces(frame) != []
+      assert [{:rect, _x, _y, _w, _h, _bg}] = frame -- pieces_items(frame)
+      assert match?({:rect, _, _, _, _, _}, List.last(frame))
+    end
+
+    test "is all there is without a logo" do
+      assert [{:rect, 0, 0, _w, _h, 0x000000}] = Splash.frame({:in, 3}, @seed, nil)
+    end
   end
 end

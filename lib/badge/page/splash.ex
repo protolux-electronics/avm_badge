@@ -23,7 +23,9 @@ defmodule Badge.Page.Splash do
 
   @width Theme.width()
   @height Theme.height()
-  @cover_h Theme.bar_h() + 1
+
+  # The logo is composited onto black, so the panel behind it is black on every skin.
+  @black 0x000000
 
   @frame_ms 100
   @in_frames 10
@@ -138,7 +140,7 @@ defmodule Badge.Page.Splash do
   @spec frame({atom, non_neg_integer}, pos_integer, tuple | nil) :: [tuple]
   def frame(_step, _seed, nil), do: [cover()]
 
-  def frame({:hold, _n}, _seed, image), do: [cover(), Logo.item(@x, @y, image)]
+  def frame({:hold, _n}, _seed, image), do: [Logo.item(@x, @y, image), cover()]
 
   def frame({:in, n}, seed, image) do
     pieces = pieces(seed)
@@ -150,7 +152,7 @@ defmodule Badge.Page.Splash do
           landed <= n,
           do: item(piece, jitter(n - landed, seed, index), image)
 
-    [cover() | items]
+    items ++ [cover()]
   end
 
   def frame({:out, n}, seed, image) do
@@ -163,7 +165,7 @@ defmodule Badge.Page.Splash do
           gone > n,
           do: item(piece, jitter(gone - 1 - n, seed, index), image)
 
-    [cover() | items]
+    items ++ [cover()]
   end
 
   @doc "How long the whole sequence runs, in milliseconds."
@@ -183,8 +185,8 @@ defmodule Badge.Page.Splash do
     |> index(0, [])
   end
 
-  # The title bar is drawn under page items, and the splash has no use for it.
-  defp cover, do: {:rect, 0, 0, @width, @cover_h, Theme.bg()}
+  # Last, so it is painted first: under the pieces, over the skin's bar and background.
+  defp cover, do: {:rect, 0, 0, @width, @height, @black}
 
   defp item({left, top, width, height}, slide, image) do
     Logo.piece(@x, @y, left, top, width, height, slide, image)
