@@ -3,8 +3,9 @@ defmodule Badge.Page.About do
   The Goatmire badge story, credits and repository QR code.
 
   Left and right move through the three static screens. The repository code is
-  encoded once on entry and uses the same AtomGL item on hardware and in the
-  simulator.
+  encoded in the background when the page opens, so a slow encode on AtomVM
+  never holds up the panel, and uses the same AtomGL item on hardware and in
+  the simulator.
   """
 
   use Badge.Page
@@ -28,7 +29,25 @@ defmodule Badge.Page.About do
   def icon, do: :triangle
 
   @impl true
-  def init, do: %{index: 0, qr: QR.encode(@repository)}
+  def init do
+    parent = self()
+    ref = make_ref()
+
+    pid = spawn(fn -> send(parent, {ref, QR.encode(@repository)}) end)
+
+    %{index: 0, ref: ref, pid: pid, qr: :pending}
+  end
+
+  @impl true
+  def handle_info({ref, result}, %{ref: ref} = state), do: {:ok, %{state | qr: result}}
+  def handle_info(_message, _state), do: :ignore
+
+  @impl true
+  def leave(%{pid: pid}) do
+    Process.exit(pid, :kill)
+
+    :ok
+  end
 
   @impl true
   def handle_key({:move, :right}, state) do
@@ -72,6 +91,10 @@ defmodule Badge.Page.About do
 
     [heading("Getting started"), QR.item(code, div(Theme.width() - width, 2), 54, scale)] ++
       repository_label(190)
+  end
+
+  defp screen(2, %{qr: :pending}) do
+    [heading("Getting started"), centered("Generating...", 104)] ++ repository_label(190)
   end
 
   defp screen(2, %{qr: {:error, _reason}}) do

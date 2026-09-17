@@ -11,11 +11,11 @@ defmodule Badge.Sim.QRTest do
     assert command.t == "img"
     assert command.x == 78
     assert command.y == 28
-    assert command.w == 164
-    assert command.h == 164
+    assert command.w == 148
+    assert command.h == 148
     assert command.xs == 4
     assert command.ys == 4
-    assert asset.w == 41
-    assert asset.h == 41
+    assert asset.w == 37
+    assert asset.h == 37
   end
 end

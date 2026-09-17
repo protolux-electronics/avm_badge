@@ -61,6 +61,7 @@
               beam.elixir_1_20
               beam.erlang
               beam.rebar3
+              pkgs.screen
               espIdf
             ];
 

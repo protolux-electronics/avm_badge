@@ -2,31 +2,45 @@ defmodule Badge.QR do
   @moduledoc """
   QR byte-mode encoding and AtomGL rendering shared by the badge and simulator.
 
-  Error-correction level M and versions 1 through 5 are supported. `encode/1`
+  Error-correction level L and versions 1 through 10 are supported. `encode/1`
   chooses the smallest version that fits; `item/4` scales its one-pixel modules
   by an integer without rebuilding the code.
+
+  Every code carries the same mask, chosen when `Badge.QR.Geometry` is
+  generated. Scoring the eight candidates costs more than the rest of the
+  encode put together on AtomVM, and any mask is a valid, decodable code.
   """
 
   import Bitwise
 
+  alias Badge.QR.Geometry
+
   @versions [
-    %{version: 1, size: 21, capacity: 14, data: 16, blocks: 1, ecc: 10, alignment: []},
-    %{version: 2, size: 25, capacity: 26, data: 28, blocks: 1, ecc: 16, alignment: [6, 18]},
-    %{version: 3, size: 29, capacity: 42, data: 44, blocks: 1, ecc: 26, alignment: [6, 22]},
-    %{version: 4, size: 33, capacity: 62, data: 64, blocks: 2, ecc: 18, alignment: [6, 26]},
-    %{version: 5, size: 37, capacity: 84, data: 86, blocks: 2, ecc: 24, alignment: [6, 30]}
+    %{version: 1, capacity: 17, data: 19, blocks: 1, ecc: 7},
+    %{version: 2, capacity: 32, data: 34, blocks: 1, ecc: 10},
+    %{version: 3, capacity: 53, data: 55, blocks: 1, ecc: 15},
+    %{version: 4, capacity: 78, data: 80, blocks: 1, ecc: 20},
+    %{version: 5, capacity: 106, data: 108, blocks: 1, ecc: 26},
+    %{version: 6, capacity: 134, data: 136, blocks: 2, ecc: 18},
+    %{version: 7, capacity: 154, data: 156, blocks: 2, ecc: 20},
+    %{version: 8, capacity: 192, data: 194, blocks: 2, ecc: 24},
+    %{version: 9, capacity: 230, data: 232, blocks: 2, ecc: 30},
+    %{version: 10, capacity: 271, data: 274, blocks: 4, ecc: 18}
   ]
+
+  @fixed_light Geometry.fixed_light()
+  @fixed_dark Geometry.fixed_dark()
+  @data_position Geometry.data_position()
 
   @quiet 4
   @white <<255, 255, 255, 255>>
   @black <<0, 0, 0, 255>>
-
-  @doc "Encodes a binary in QR byte mode at error-correction level M, up to version 5."
+  @doc "Encodes a binary in QR byte mode at error-correction level L, up to version 10."
   @spec encode(binary) :: {:ok, map} | {:error, :too_long}
   def encode(payload) when is_binary(payload) do
     case version_for(byte_size(payload), @versions) do
       nil -> {:error, :too_long}
-      spec -> {:ok, build(payload, spec)}
+      spec -> {:ok, build(payload, spec, Geometry.for_version(spec.version))}
     end
   end
 
@@ -45,31 +59,38 @@ defmodule Badge.QR do
 
   defp version_for(length, [_spec | rest]), do: version_for(length, rest)
 
-  defp build(payload, spec) do
-    codewords = payload |> data_codewords(spec) |> add_error_correction(spec)
-    {modules, functions} = function_patterns(spec)
-    modules = draw_codewords(modules, functions, spec.size, codewords)
-    {modules, _mask} = best_mask(modules, functions, spec.size)
-    binary = module_binary(modules, spec.size)
-    outer = spec.size + 2 * @quiet
+  defp build(payload, spec, %{size: size, template: template}) do
+    codewords =
+      payload |> data_codewords(spec) |> add_error_correction(spec) |> :binary.list_to_bin()
+
+    modules = matrix(template, size, codewords)
+    outer = size + 2 * @quiet
+    pixels = rgba(modules, size)
 
     %{
       version: spec.version,
-      size: spec.size,
-      modules: binary,
-      image: {:rgba8888, outer, outer, rgba(binary, spec.size)}
+      size: size,
+      modules: modules,
+      image: {:rgba8888, outer, outer, pixels}
     }
   end
 
   defp data_codewords(payload, spec) do
     capacity = spec.data * 8
-    bits = integer_bits(4, 4) ++ integer_bits(byte_size(payload), 8) ++ byte_bits(payload)
+
+    bits =
+      integer_bits(4, 4) ++
+        integer_bits(byte_size(payload), count_width(spec.version)) ++ byte_bits(payload)
+
     bits = bits ++ :lists.duplicate(min(4, capacity - length(bits)), 0)
     bits = bits ++ :lists.duplicate(rem(8 - rem(length(bits), 8), 8), 0)
     bytes = pack_bits(bits, [])
 
     pad_bytes(bytes, spec.data, 0xEC)
   end
+
+  defp count_width(version) when version < 10, do: 8
+  defp count_width(_version), do: 16
 
   defp integer_bits(_value, 0), do: []
 
@@ -96,20 +117,28 @@ defmodule Badge.QR do
 
   defp add_error_correction(data, spec) do
     divisor = divisor(spec.ecc)
-    block_size = div(spec.data, spec.blocks)
-    blocks = blocks(data, spec.blocks, block_size, divisor, [])
+    raw = spec.data + spec.blocks * spec.ecc
+    short_blocks = spec.blocks - rem(raw, spec.blocks)
+    short_length = div(raw, spec.blocks) - spec.ecc
+    blocks = blocks(data, 0, spec.blocks, short_blocks, short_length, divisor, [])
+    longest = short_length + if(short_blocks < spec.blocks, do: 1, else: 0)
 
-    interleave(blocks, 0, block_size, :data, []) ++
+    interleave(blocks, 0, longest, :data, []) ++
       interleave(blocks, 0, spec.ecc, :ecc, [])
   end
 
-  defp blocks(_data, 0, _size, _divisor, acc), do: :lists.reverse(acc)
+  defp blocks(_data, index, count, _short_blocks, _short_length, _divisor, acc)
+       when index == count,
+       do: :lists.reverse(acc)
 
-  defp blocks(data, count, size, divisor, acc) do
-    {block, rest} = :lists.split(size, data)
+  defp blocks(data, index, count, short_blocks, short_length, divisor, acc) do
+    length = short_length + if(index < short_blocks, do: 0, else: 1)
+    {block, rest} = :lists.split(length, data)
     parity = remainder(block, divisor)
 
-    blocks(rest, count - 1, size, divisor, [%{data: block, ecc: parity} | acc])
+    blocks(rest, index + 1, count, short_blocks, short_length, divisor, [
+      %{data: block, ecc: parity} | acc
+    ])
   end
 
   defp interleave(_blocks, position, length, _part, acc) when position == length,
@@ -123,8 +152,12 @@ defmodule Badge.QR do
   defp interleaved_at([], _part, _position, acc), do: acc
 
   defp interleaved_at([block | rest], part, position, acc) do
-    byte = :lists.nth(position + 1, Map.get(block, part))
-    interleaved_at(rest, part, position, [byte | acc])
+    bytes = Map.get(block, part)
+
+    case position < length(bytes) do
+      true -> interleaved_at(rest, part, position, [:lists.nth(position + 1, bytes) | acc])
+      false -> interleaved_at(rest, part, position, acc)
+    end
   end
 
   defp divisor(degree), do: divisor(degree, :lists.duplicate(degree - 1, 0) ++ [1], 1)
@@ -178,349 +211,81 @@ defmodule Badge.QR do
     multiply(x, y, bit - 1, next)
   end
 
-  defp function_patterns(spec) do
-    state = {%{}, %{}}
+  defp matrix(template, _size, codewords) do
+    bit_count = byte_size(codewords) * 8
 
-    state =
-      :lists.foldl(
-        fn i, acc ->
-          acc
-          |> set_function(6, i, rem(i + 1, 2), spec.size)
-          |> set_function(i, 6, rem(i + 1, 2), spec.size)
-        end,
-        state,
-        :lists.seq(0, spec.size - 1)
-      )
-
-    state =
-      state
-      |> finder(3, 3, spec.size)
-      |> finder(spec.size - 4, 3, spec.size)
-      |> finder(3, spec.size - 4, spec.size)
-      |> alignment(spec.alignment, spec.size)
-
-    draw_format(state, spec.size, 0)
+    template
+    |> matrix(codewords, bit_count, [])
+    |> :lists.reverse()
+    |> :erlang.iolist_to_binary()
   end
 
-  defp finder(state, center_x, center_y, size) do
-    :lists.foldl(
-      fn dy, outer ->
-        :lists.foldl(
-          fn dx, inner ->
-            distance = max(abs(dx), abs(dy))
-            value = if distance == 2 or distance == 4, do: 0, else: 1
-            set_function(inner, center_x + dx, center_y + dy, value, size)
-          end,
-          outer,
-          :lists.seq(-4, 4)
-        )
-      end,
-      state,
-      :lists.seq(-4, 4)
-    )
+  defp matrix(<<>>, _codewords, _bit_count, acc), do: acc
+
+  defp matrix(
+         <<a::big-16, b::big-16, c::big-16, d::big-16, e::big-16, f::big-16, g::big-16, h::big-16,
+           rest::binary>>,
+         codewords,
+         bit_count,
+         acc
+       ) do
+    chunk =
+      <<matrix_value(a, codewords, bit_count), matrix_value(b, codewords, bit_count),
+        matrix_value(c, codewords, bit_count), matrix_value(d, codewords, bit_count),
+        matrix_value(e, codewords, bit_count), matrix_value(f, codewords, bit_count),
+        matrix_value(g, codewords, bit_count), matrix_value(h, codewords, bit_count)>>
+
+    matrix(rest, codewords, bit_count, [chunk | acc])
   end
 
-  defp alignment(state, [], _size), do: state
-
-  defp alignment(state, [_first, center], size) do
-    :lists.foldl(
-      fn dy, outer ->
-        :lists.foldl(
-          fn dx, inner ->
-            value = if max(abs(dx), abs(dy)) == 1, do: 0, else: 1
-            set_function(inner, center + dx, center + dy, value, size)
-          end,
-          outer,
-          :lists.seq(-2, 2)
-        )
-      end,
-      state,
-      :lists.seq(-2, 2)
-    )
+  defp matrix(<<token::big-16, rest::binary>>, codewords, bit_count, acc) do
+    matrix(rest, codewords, bit_count, [<<matrix_value(token, codewords, bit_count)>> | acc])
   end
 
-  defp set_function(state, x, y, _value, size)
-       when x < 0 or y < 0 or x >= size or y >= size,
-       do: state
-
-  defp set_function({modules, functions}, x, y, value, size) do
-    index = y * size + x
-    {Map.put(modules, index, value), Map.put(functions, index, true)}
+  defp matrix_value(token, codewords, bit_count) when token < @fixed_light do
+    position = token &&& @data_position
+    value = if position < bit_count, do: codeword_bit(codewords, position), else: 0
+    bxor(value, token >>> 12 &&& 1)
   end
 
-  defp draw_format(state, size, mask) do
-    bits = format_bits(mask)
+  defp matrix_value(@fixed_light, _codewords, _bit_count), do: 0
+  defp matrix_value(@fixed_dark, _codewords, _bit_count), do: 1
 
-    state =
-      :lists.foldl(
-        fn i, acc -> set_function(acc, 8, i, bit(bits, i), size) end,
-        state,
-        :lists.seq(0, 5)
-      )
-
-    state =
-      state
-      |> set_function(8, 7, bit(bits, 6), size)
-      |> set_function(8, 8, bit(bits, 7), size)
-      |> set_function(7, 8, bit(bits, 8), size)
-
-    state =
-      :lists.foldl(
-        fn i, acc -> set_function(acc, 14 - i, 8, bit(bits, i), size) end,
-        state,
-        :lists.seq(9, 14)
-      )
-
-    state =
-      :lists.foldl(
-        fn i, acc -> set_function(acc, size - 1 - i, 8, bit(bits, i), size) end,
-        state,
-        :lists.seq(0, 7)
-      )
-
-    state =
-      :lists.foldl(
-        fn i, acc -> set_function(acc, 8, size - 15 + i, bit(bits, i), size) end,
-        state,
-        :lists.seq(8, 14)
-      )
-
-    set_function(state, 8, size - 8, 1, size)
-  end
-
-  defp format_bits(mask) do
-    remainder = format_remainder(mask, 10)
-    bxor(mask <<< 10 ||| remainder, 0x5412)
-  end
-
-  defp format_remainder(value, 0), do: value
-
-  defp format_remainder(value, left) do
-    next = bxor(value <<< 1, (value >>> 9) * 0x537)
-    format_remainder(next, left - 1)
-  end
-
-  defp bit(value, position), do: value >>> position &&& 1
-
-  defp draw_codewords(modules, functions, size, codewords) do
-    bits = codeword_bits(codewords)
-    {result, []} = place_pairs(size - 1, modules, functions, size, bits)
-    result
-  end
-
-  defp codeword_bits([]), do: []
-  defp codeword_bits([byte | rest]), do: integer_bits(byte, 8) ++ codeword_bits(rest)
-
-  defp place_pairs(right, modules, _functions, _size, bits) when right <= 0,
-    do: {modules, bits}
-
-  defp place_pairs(right, modules, functions, size, bits) do
-    column = if right <= 6, do: right - 1, else: right
-    upward = (column + 1 &&& 2) == 0
-    coordinates = pair_coordinates(column, size, upward)
-    {modules, bits} = place_coordinates(coordinates, modules, functions, size, bits)
-
-    place_pairs(right - 2, modules, functions, size, bits)
-  end
-
-  defp pair_coordinates(right, size, upward) do
-    :lists.append(
-      for vertical <- 0..(size - 1) do
-        y = if upward, do: size - 1 - vertical, else: vertical
-        [{right, y}, {right - 1, y}]
-      end
-    )
-  end
-
-  defp place_coordinates([], modules, _functions, _size, bits), do: {modules, bits}
-
-  defp place_coordinates([{x, y} | rest], modules, functions, size, bits) do
-    index = y * size + x
-
-    case {Map.has_key?(functions, index), bits} do
-      {true, _bits} ->
-        place_coordinates(rest, modules, functions, size, bits)
-
-      {false, [value | remaining]} ->
-        place_coordinates(rest, Map.put(modules, index, value), functions, size, remaining)
-
-      {false, []} ->
-        place_coordinates(rest, Map.put(modules, index, 0), functions, size, [])
-    end
-  end
-
-  defp best_mask(modules, functions, size) do
-    {best, best_mask, _score} =
-      :lists.foldl(
-        fn mask, {winner, winner_mask, score} ->
-          candidate = masked(modules, functions, size, mask)
-          candidate = elem(draw_format({candidate, functions}, size, mask), 0)
-          candidate_score = penalty(candidate, size)
-
-          case winner == nil or candidate_score < score do
-            true -> {candidate, mask, candidate_score}
-            false -> {winner, winner_mask, score}
-          end
-        end,
-        {nil, nil, 0},
-        :lists.seq(0, 7)
-      )
-
-    {best, best_mask}
-  end
-
-  defp masked(modules, functions, size, mask) do
-    :lists.foldl(
-      fn index, acc ->
-        case Map.has_key?(functions, index) do
-          true ->
-            acc
-
-          false ->
-            x = rem(index, size)
-            y = div(index, size)
-
-            case mask?(mask, x, y) do
-              true -> Map.put(acc, index, bxor(Map.get(acc, index, 0), 1))
-              false -> acc
-            end
-        end
-      end,
-      modules,
-      :lists.seq(0, size * size - 1)
-    )
-  end
-
-  defp mask?(0, x, y), do: rem(x + y, 2) == 0
-  defp mask?(1, _x, y), do: rem(y, 2) == 0
-  defp mask?(2, x, _y), do: rem(x, 3) == 0
-  defp mask?(3, x, y), do: rem(x + y, 3) == 0
-  defp mask?(4, x, y), do: rem(div(x, 3) + div(y, 2), 2) == 0
-  defp mask?(5, x, y), do: rem(x * y, 2) + rem(x * y, 3) == 0
-  defp mask?(6, x, y), do: rem(rem(x * y, 2) + rem(x * y, 3), 2) == 0
-  defp mask?(7, x, y), do: rem(rem(x + y, 2) + rem(x * y, 3), 2) == 0
-
-  defp penalty(modules, size) do
-    run_penalty(modules, size) + block_penalty(modules, size) +
-      pattern_penalty(modules, size) + balance_penalty(modules, size)
-  end
-
-  defp run_penalty(modules, size) do
-    rows =
-      :lists.foldl(
-        fn y, total -> total + line_runs(row(modules, size, y)) end,
-        0,
-        :lists.seq(0, size - 1)
-      )
-
-    :lists.foldl(
-      fn x, total -> total + line_runs(column(modules, size, x)) end,
-      rows,
-      :lists.seq(0, size - 1)
-    )
-  end
-
-  defp line_runs([first | rest]), do: line_runs(rest, first, 1, 0)
-  defp line_runs([], _colour, run, total), do: total + run_cost(run)
-
-  defp line_runs([colour | rest], colour, run, total),
-    do: line_runs(rest, colour, run + 1, total)
-
-  defp line_runs([colour | rest], _previous, run, total),
-    do: line_runs(rest, colour, 1, total + run_cost(run))
-
-  defp run_cost(run) when run < 5, do: 0
-  defp run_cost(run), do: run - 2
-
-  defp block_penalty(modules, size) do
-    :lists.foldl(
-      fn y, outer ->
-        :lists.foldl(
-          fn x, inner ->
-            value = module(modules, size, x, y)
-
-            case module(modules, size, x + 1, y) == value and
-                   module(modules, size, x, y + 1) == value and
-                   module(modules, size, x + 1, y + 1) == value do
-              true -> inner + 3
-              false -> inner
-            end
-          end,
-          outer,
-          :lists.seq(0, size - 2)
-        )
-      end,
-      0,
-      :lists.seq(0, size - 2)
-    )
-  end
-
-  defp pattern_penalty(modules, size) do
-    rows =
-      :lists.foldl(
-        fn y, total -> total + line_patterns(row(modules, size, y)) * 40 end,
-        0,
-        :lists.seq(0, size - 1)
-      )
-
-    :lists.foldl(
-      fn x, total -> total + line_patterns(column(modules, size, x)) * 40 end,
-      rows,
-      :lists.seq(0, size - 1)
-    )
-  end
-
-  defp line_patterns([a, b, c, d, e, f, g, h, i, j, k | rest]) do
-    found =
-      case [a, b, c, d, e, f, g, h, i, j, k] do
-        [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0] -> 1
-        [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1] -> 1
-        _other -> 0
-      end
-
-    found + line_patterns([b, c, d, e, f, g, h, i, j, k | rest])
-  end
-
-  defp line_patterns(_short), do: 0
-
-  defp balance_penalty(modules, size) do
-    total = size * size
-
-    dark =
-      :lists.foldl(
-        fn index, count -> count + Map.get(modules, index, 0) end,
-        0,
-        :lists.seq(0, total - 1)
-      )
-
-    div(abs(dark * 100 - total * 50), total * 5) * 10
-  end
-
-  defp row(modules, size, y) do
-    for x <- 0..(size - 1), do: module(modules, size, x, y)
-  end
-
-  defp column(modules, size, x) do
-    for y <- 0..(size - 1), do: module(modules, size, x, y)
-  end
-
-  defp module(modules, size, x, y), do: Map.get(modules, y * size + x, 0)
-
-  defp module_binary(modules, size) do
-    for index <- 0..(size * size - 1), into: <<>>, do: <<Map.get(modules, index, 0)>>
+  defp codeword_bit(codewords, position) do
+    byte = :binary.at(codewords, div(position, 8))
+    byte >>> (7 - rem(position, 8)) &&& 1
   end
 
   defp rgba(modules, size) do
-    for y <- -@quiet..(size + @quiet - 1),
-        x <- -@quiet..(size + @quiet - 1),
-        into: <<>> do
-      case x >= 0 and x < size and y >= 0 and y < size do
-        true -> pixel(:binary.at(modules, y * size + x))
-        false -> @white
-      end
+    outer = size + @quiet * 2
+    white_row = :binary.copy(@white, outer)
+    quiet_rows = :lists.duplicate(@quiet, white_row)
+    quiet = :binary.copy(@white, @quiet)
+    rows = rgba_rows(modules, size, quiet, [])
+
+    :erlang.iolist_to_binary([quiet_rows, rows, quiet_rows])
+  end
+
+  defp rgba_rows(<<>>, _size, _quiet, acc), do: :lists.reverse(acc)
+
+  defp rgba_rows(modules, size, quiet, acc) do
+    row = :binary.part(modules, 0, size)
+    rest = :binary.part(modules, size, byte_size(modules) - size)
+
+    rgba_rows(rest, size, quiet, [
+      :erlang.iolist_to_binary([quiet, runs(row, 0, 0, []), quiet]) | acc
+    ])
+  end
+
+  defp runs(<<>>, colour, run, acc), do: :lists.reverse([pixels(colour, run) | acc])
+
+  defp runs(<<next, rest::binary>>, colour, run, acc) do
+    case next == colour do
+      true -> runs(rest, colour, run + 1, acc)
+      false -> runs(rest, next, 1, [pixels(colour, run) | acc])
     end
   end
 
-  defp pixel(0), do: @white
-  defp pixel(1), do: @black
+  defp pixels(1, run), do: :binary.copy(@black, run)
+  defp pixels(0, run), do: :binary.copy(@white, run)
 end
