@@ -7,7 +7,7 @@ defmodule Badge.Sim.Live do
   alias Badge.Sim.Display
   alias Badge.Theme
 
-  @shapes for {{key, _module}, n} <- Enum.with_index(Badge.Pages.all(), 1),
+  @shapes for {key, n} <- Enum.with_index(Badge.Pages.keys(), 1),
               into: %{},
               do: {"F#{n}", key}
 
@@ -58,13 +58,38 @@ defmodule Badge.Sim.Live do
     end
   end
 
+  # The shape keys as drawn on the badge; what each one does is the page's business.
+  defp shape(%{key: :square} = assigns),
+    do: ~H|<rect x="5" y="5" width="22" height="22" fill="#d30808" />|
+
+  defp shape(%{key: :triangle} = assigns),
+    do: ~H|<polygon points="16,4 29,27 3,27" fill="#ffb200" />|
+
+  defp shape(%{key: :cross} = assigns),
+    do: ~H|<path d="M6 6 L26 26 M26 6 L6 26" stroke="#fff200" stroke-width="7" />|
+
+  defp shape(%{key: :circle} = assigns),
+    do: ~H|<circle cx="16" cy="16" r="12" fill="#01a30e" />|
+
+  defp shape(%{key: :clover} = assigns) do
+    ~H"""
+    <g fill="#0081ea">
+      <circle cx="16" cy="9" r="6.5" /><circle cx="16" cy="23" r="6.5" />
+      <circle cx="9" cy="16" r="6.5" /><circle cx="23" cy="16" r="6.5" />
+    </g>
+    """
+  end
+
+  defp shape(%{key: :diamond} = assigns),
+    do: ~H|<polygon points="16,3 29,16 16,29 3,16" fill="#b603ca" />|
+
   def render(assigns) do
     width = Theme.width()
     height = Theme.height()
 
     assigns =
       assign(assigns,
-        shapes: Badge.Pages.all(),
+        shapes: Enum.with_index(Badge.Pages.keys(), 1),
         panel_width: width,
         panel_height: height,
         browser_width: width * 2,
@@ -80,8 +105,8 @@ defmodule Badge.Sim.Live do
         style={"width: #{@browser_width}px; height: #{@browser_height}px"}
       ></canvas>
       <div class="buttons">
-        <button :for={{{key, module}, n} <- Enum.with_index(@shapes, 1)} phx-click="shape" phx-value-shape={key} title={"F#{n}"}>
-          {module.title()}
+        <button :for={{key, n} <- @shapes} phx-click="shape" phx-value-shape={key} title={"#{key}, F#{n}"}>
+          <svg viewBox="0 0 32 32" width="32" height="32" aria-label={key}><.shape key={key} /></svg>
         </button>
         <button phx-click="reboot" class="reboot">Reboot</button>
       </div>
@@ -129,6 +154,7 @@ defmodule Badge.Sim.Live do
       canvas { image-rendering: pixelated; border: 8px solid #111; border-radius: 6px; }
       .buttons { margin: 1em 0; display: flex; gap: 0.5em; }
       button { padding: 0.4em 0.8em; }
+      button svg { display: block; }
       .reboot { margin-left: auto; }
     </style>
     """
