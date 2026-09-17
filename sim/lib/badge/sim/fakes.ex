@@ -12,6 +12,7 @@ defmodule Badge.Sim.Fakes do
           :status, d ->
             %{
               radio: Map.get(d, :radio, :connected),
+              ip: Map.get(d, :ip, "192.168.1.42"),
               ssid: Map.get(d, :ssid, "SimNet"),
               synced: true,
               offset: 120,
@@ -49,6 +50,26 @@ defmodule Badge.Sim.Fakes do
         }
       end),
       fake(Badge.Chat.Link, fn :status, _ -> State.status(State.new("ws://sim")) end),
+      fake(
+        Badge.Cluster.Link,
+        fn :status, d ->
+          %{
+            state: Map.get(d, :state, :off),
+            node: Map.get(d, :node),
+            cookie: Map.get(d, :cookie, "goatmire"),
+            ip: "192.168.1.42",
+            peers: Map.get(d, :peers, []),
+            reason: nil
+          }
+        end,
+        fn
+          :open, d -> Map.merge(d, %{state: :up, node: "badge@192.168.1.42", peers: ["host@sim"]})
+          :close, d -> Map.merge(d, %{state: :off, node: nil, peers: []})
+          {:cookie, ""}, d -> Map.put(d, :cookie, "goatmire")
+          {:cookie, value}, d -> Map.put(d, :cookie, value)
+          _, d -> d
+        end
+      ),
       fake(Badge.Ir.Link, fn _, _ -> :ok end)
     ]
   end

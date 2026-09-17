@@ -77,6 +77,15 @@ defmodule Badge.UI do
     GenServer.cast(__MODULE__, {:key, event})
   end
 
+  @doc """
+  Switches to a page, as opening it from the home grid would.
+
+  Navigation by key can only reach the screen the grid is turned to, so a
+  clustered host asks for the module instead.
+  """
+  @spec goto(module) :: :ok
+  def goto(page), do: GenServer.cast(__MODULE__, {:goto, page})
+
   @doc "From `Badge.Keyboard`: the CPU slept for `ms`, or the sleep was refused."
   @spec slept({:ok, integer} | :refused) :: :ok
   def slept(result), do: GenServer.cast(__MODULE__, {:slept, result})
@@ -131,6 +140,10 @@ defmodule Badge.UI do
   end
 
   @impl true
+  def handle_cast({:goto, page}, state) do
+    {:noreply, goto(%{state | idle: 0}, page)}
+  end
+
   def handle_cast({:key, _event}, %{asleep: true} = state) do
     {:noreply, wake(state)}
   end

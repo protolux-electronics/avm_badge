@@ -15,6 +15,10 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   use `stty -f <port>` on macOS or `stty -F <port>` on Linux:
   `( mix atomvm.esp32.flash >/dev/null 2>&1; stty -F <port> 115200 raw -echo; timeout 25 cat <port> )`
 - Never run unbounded `cat`/`screen` on the port — it blocks the next flash
+- **Opening the port resets the badge.** The S3's USB-serial-JTAG bridge
+  resets the chip when the host asserts DTR/RTS, which pyserial does on open
+  and clearing them first does not avoid. A reader cannot watch a running
+  badge; it has to hold the port open from boot
 - `Badge.Log` is the group leader of everything the badge spawns: each
   `io:format` line is echoed, kept for the Settings Log tab, and forwarded to
   the hub while the agent is up. ESP-IDF's own `I (…)` lines are not seen.
@@ -122,6 +126,41 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   the Update tab. A badge on the home grid holds no socket. Entering chat
   therefore costs a handshake it used not to
 
+## Clustering
+
+- `Badge.Page.Cluster` joins the badge to an Erlang cluster over wifi, and
+  `Badge.Cluster.Link` owns it. S joins, S again leaves, Enter edits the
+  cookie. Unlike the chat and update links it is **not page-scoped**: the node
+  stays up after the page is left, since a badge that only clustered while its
+  own page showed could not be driven from anywhere
+- The node is `badge@<ip>`, a long name, because nothing resolves a badge by
+  name. A new lease renames it and the host reconnects
+- The cookie is the `dist_cookie` NVS key, falling back to `goatmire` compiled
+  into `Badge.Cluster.Link`. The page shows it, so a host can read it off the
+  panel, and editing it to empty forgets the key rather than clustering on no
+  secret. The link holds it in state: `status/0` runs in the render loop and
+  must not read flash
+- The app starts `epmd` itself. `net_kernel_sup` starts **`erl_epmd`, the
+  client**, not the local epmd server, so without `epmd:start_link/1` there is
+  nothing for a host to ask which port the node is on
+- **`Badge.Cluster.Link` must trap exits.** `epmd:start_link/1` links epmd to
+  whoever called it, so epmd dying takes the Link with it, and the Link dying
+  fails the `status/0` call the render loop makes, which kills `Badge.UI`. The
+  badge silently drops back to Home and nothing is printed: AtomVM reports no
+  crash for a dying GenServer
+- Peers on the page are hosts that called `Badge.Cluster.Remote.hello/1`, not
+  a live connection list, because there is no `:erlang.nodes/0`
+- `Badge.Cluster.Remote` is the control surface a host drives over
+  `:rpc.call/4`: keys go in through `Badge.UI.key_event/1`, the same door the
+  matrix uses. `tools/cluster.exs` is the host side of it
+- `rpc` from OTP into AtomVM works, as do message passing, monitors and group
+  leader IO. There is no TLS, no `global` and no `pg`
+- `iex --remsh` does **not** work: it starts the shell over `erpc`, and the
+  badge has neither `erpc` nor `IEx`. Drive it from a local `iex` holding
+  `tools/cluster.exs` instead
+- The cookie is the only thing guarding the node, and rpc runs anything, so
+  joining is a keypress on the badge rather than something it does at boot
+
 ## Firmware updates
 
 - `Badge.Update.Link` owns the NervesHub agent; `Badge.Page.Settings.Update`
@@ -186,6 +225,10 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   `:spi.open/1` throws `{bardarg,...}`.
 - **`:erlang.get/1` returns `:undefined`**, not `nil` — `||` defaults don't
   work.
+- **No `:erlang.nodes/0`.** It is not a BIF here and calling it only logs
+  `function erlang:nodes/0 cannot be resolved` before the caller dies. A node
+  cannot list its own connections: `net_kernel:get_state/0` reports the name
+  and nothing else, and its `connections` map never leaves the process.
 - **`x in list` compiles to `Enum.__in__/2`** on Elixir 1.20 and
   `atomvm.check` flags it; use `:lists.member/2` in runtime code.
 - **Charlists cost 2 machine words per character.** Large ones in messages cause

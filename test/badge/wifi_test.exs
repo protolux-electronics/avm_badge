@@ -60,4 +60,21 @@ defmodule Badge.WifiTest do
       end
     end
   end
+
+  describe "address/1" do
+    test "reads the dotted quad out of a got_ip payload" do
+      info = {{192, 168, 1, 42}, {255, 255, 255, 0}, {192, 168, 1, 1}}
+
+      assert Wifi.address(info) == "192.168.1.42"
+    end
+
+    test "takes a bare address too" do
+      assert Wifi.address({10, 0, 0, 7}) == "10.0.0.7"
+    end
+
+    test "has no address for a payload it does not recognise" do
+      assert Wifi.address(:undefined) == nil
+      assert Wifi.address({}) == nil
+    end
+  end
 end

@@ -41,7 +41,13 @@ defmodule Badge.Wifi do
   end
 
   @doc "Radio state, whether the clock has synced, and the UTC offset if it is known."
-  @spec status() :: %{radio: atom, synced: boolean, offset: integer | nil, zone: binary | nil}
+  @spec status() :: %{
+          radio: atom,
+          ip: binary | nil,
+          synced: boolean,
+          offset: integer | nil,
+          zone: binary | nil
+        }
   def status do
     GenServer.call(__MODULE__, :status)
   end
@@ -100,10 +106,30 @@ defmodule Badge.Wifi do
   def icon(:connected), do: :wifi
   def icon(_radio), do: :wifi_slash
 
+  @doc """
+  The dotted-quad address carried by a `got_ip` callback, or `nil`.
+
+  The driver reports `{address, netmask, gateway}`, each an octet tuple.
+  """
+  @spec address(term) :: binary | nil
+  def address({{a, b, c, d}, _netmask, _gateway}), do: dotted(a, b, c, d)
+  def address({a, b, c, d}) when is_integer(a), do: dotted(a, b, c, d)
+  def address(_other), do: nil
+
+  defp dotted(a, b, c, d)
+       when is_integer(a) and is_integer(b) and is_integer(c) and is_integer(d) do
+    octet(a) <> "." <> octet(b) <> "." <> octet(c) <> "." <> octet(d)
+  end
+
+  defp dotted(_a, _b, _c, _d), do: nil
+
+  defp octet(value), do: :erlang.integer_to_binary(value)
+
   @impl true
   def init(:ok) do
     state = %{
       radio: :disabled,
+      ip: nil,
       synced: false,
       zone: Nvs.get(:time_zone),
       offset: nil,
@@ -142,6 +168,7 @@ defmodule Badge.Wifi do
   def handle_call(:status, _from, state) do
     status = %{
       radio: state.radio,
+      ip: state.ip,
       ssid: state.ssid,
       synced: state.synced,
       offset: state.offset,
@@ -198,7 +225,7 @@ defmodule Badge.Wifi do
     disconnect(state)
     :io.format(~c"Wifi: forgot the saved network~n")
 
-    {:noreply, %{state | radio: :disabled, ssid: nil, pending: nil, attempts: 0}}
+    {:noreply, %{state | radio: :disabled, ip: nil, ssid: nil, pending: nil, attempts: 0}}
   end
 
   def handle_cast(:resume, %{ssid: nil} = state), do: {:noreply, state}
@@ -224,7 +251,7 @@ defmodule Badge.Wifi do
 
     place()
 
-    {:noreply, %{save(state) | radio: :connected}}
+    {:noreply, %{save(state) | radio: :connected, ip: address(info)}}
   end
 
   def handle_info({:whenwhere, {:ok, place}}, state) do
@@ -267,7 +294,7 @@ defmodule Badge.Wifi do
       ) do
     :io.format(~c"Wifi: ~s did not answer, giving up~n", [ssid])
 
-    {:noreply, %{state | radio: :failed, pending: nil, attempts: 0}}
+    {:noreply, %{state | radio: :failed, ip: nil, pending: nil, attempts: 0}}
   end
 
   def handle_info({:join_timeout, _ssid}, state), do: {:noreply, state}
@@ -386,7 +413,7 @@ defmodule Badge.Wifi do
   defp dropped(:give_up, %{pending: {ssid, _psk}} = state) do
     :io.format(~c"Wifi: could not join ~s, giving up~n", [ssid])
 
-    {:noreply, %{state | radio: :failed, pending: nil, attempts: 0}}
+    {:noreply, %{state | radio: :failed, ip: nil, pending: nil, attempts: 0}}
   end
 
   defp dropped(:retry_join, state) do
