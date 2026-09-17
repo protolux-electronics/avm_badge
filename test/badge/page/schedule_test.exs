@@ -3,11 +3,13 @@ defmodule Badge.Page.ScheduleTest do
 
   alias Badge.Page.Schedule, as: Page
   alias Badge.Schedule
+  alias Badge.Schedule.Link
   alias Badge.Theme
 
   @body File.read!(Path.expand("../../../assets/schedule.json", __DIR__))
 
   @day 1_440
+  @axis :calendar.date_to_gregorian_days({2020, 1, 1})
   @wednesday :calendar.date_to_gregorian_days({2026, 9, 30})
   @thursday @wednesday + 1
 
@@ -17,20 +19,20 @@ defmodule Badge.Page.ScheduleTest do
   @lower_rule_y 174
   @below_y 180
 
-  defp at(days, hour, minute), do: days * @day + hour * 60 + minute
+  defp at(days, hour, minute), do: (days - @axis) * @day + hour * 60 + minute
 
   defp status(overrides \\ %{}) do
     Map.merge(%{state: :ready, reason: nil, version: 1, held: true}, overrides)
   end
 
   defp programme do
-    {:ok, sessions} = Schedule.parse(@body)
+    {:ok, sessions} = Schedule.parse(@body, Page.columns())
     sessions
   end
 
   # The page as it stands after one tick with the whole programme in hand.
   defp shown(now, sessions \\ programme()) do
-    Page.apply_sessions(sessions, 1, Page.init())
+    Page.apply_entries(Schedule.pack(sessions), 1, Page.init())
     |> Page.apply_status(status(), now)
   end
 
@@ -266,13 +268,32 @@ defmodule Badge.Page.ScheduleTest do
     end
   end
 
+  describe "tick/1" do
+    setup do
+      case Link.start_link(:ok) do
+        {:ok, _pid} -> :ok
+        {:error, {:already_started, _pid}} -> :ok
+      end
+    end
+
+    test "reads the link and the clock once a minute, then leaves the state alone" do
+      first = Page.tick(Page.init())
+
+      assert length(first.entries) == length(programme())
+      assert is_integer(first.minute)
+      assert first.version == 1
+
+      assert Page.tick(first) == first
+    end
+  end
+
   describe "a fresh programme" do
     test "keeps the cursor within the new list" do
       state = shown(nil) |> press({:move, :down}) |> press({:move, :down})
-      shorter = Page.apply_sessions(:lists.sublist(programme(), 2), 2, state)
+      shorter = Page.apply_entries(Schedule.pack(:lists.sublist(programme(), 2)), 2, state)
 
       assert Page.current(shorter) == 1
-      assert Page.current(Page.apply_sessions([], 3, state)) == nil
+      assert Page.current(Page.apply_entries([], 3, state)) == nil
     end
   end
 
@@ -287,10 +308,10 @@ defmodule Badge.Page.ScheduleTest do
     end
 
     test "wraps to two lines and stops there" do
+      title = "Perceive That Which Cannot Be Seen: The Architecture of Something Longer Still"
+
       long =
-        Map.merge(hd(programme()), %{
-          title: "Perceive That Which Cannot Be Seen: The Architecture of Something Longer Still"
-        })
+        Map.merge(hd(programme()), %{title: title, lines: Badge.Text.wrap(title, Page.columns())})
 
       items = Page.render(shown(nil, [long]))
 

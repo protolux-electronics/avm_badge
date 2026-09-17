@@ -3,15 +3,24 @@ defmodule Badge.Schedule do
   The conference programme from goatmire.com, flattened into one timeline.
 
   The site publishes days, each holding spaces, each holding sessions.
-  `parse/1` turns that into a single list ordered by start, with every line
+  `parse/2` turns that into a single list ordered by start, with every line
   the panel shows already made up, so what is held is what is drawn. Times
   are minutes on one axis that spans days, in the event's own zone, which
-  is what the site's clock times are in.
+  is what the site's clock times are in. The axis starts in 2020 so a minute
+  fits AtomVM's small integer on a 32-bit chip; anything past 2^27 is boxed
+  and every compare on it allocates.
+
+  What a process holds is `pack/1`'s entries, `{start, stop, packed}`, one
+  session each as a binary. AtomVM collects a process's whole live heap on
+  nearly every allocation once the heap is mostly live, so eighty maps kept
+  in the page's state made every tuple cost a copy of all of them. Binaries
+  sit outside the heap; a frame unpacks only the sessions it draws.
 
   `fetch/0` blocks on the network and belongs in a process of its own;
   everything else is pure.
   """
 
+  alias Badge.Text
   alias Badge.Zone
 
   @compile {:no_warn_undefined, [:ahttp_client, :ssl]}
@@ -29,7 +38,10 @@ defmodule Badge.Schedule do
   @fallback_offset 120
 
   @minutes_per_day 1_440
-  @epoch_days 719_528
+
+  # 2020-01-01 as gregorian days, and the 1970 epoch's distance from it in minutes.
+  @axis_days 737_790
+  @epoch_minutes (737_790 - 719_528) * @minutes_per_day
 
   # 2024-01-01T00:00:00Z: a clock reading before this has not been synced.
   @floor 1_704_067_200
@@ -43,52 +55,55 @@ defmodule Badge.Schedule do
           start: integer,
           stop: integer,
           title: binary,
+          lines: [binary],
           when: binary,
           where: binary,
           who: binary,
           row: binary
         }
 
-  @doc "The programme, or an error when the site cannot be reached or read."
-  @spec fetch() :: {:ok, [session]} | {:error, term}
-  def fetch do
+  @type entry :: {integer, integer, binary}
+
+  @doc "The programme wrapped to `columns`, or an error when the site cannot be reached or read."
+  @spec fetch(pos_integer) :: {:ok, [session]} | {:error, term}
+  def fetch(columns) do
     :ssl.start()
 
     case :ahttp_client.connect(:https, @host, @port, active: false, verify: :verify_peer) do
-      {:ok, conn} -> request(conn)
+      {:ok, conn} -> request(conn, columns)
       {:error, reason} -> {:error, reason}
     end
   catch
     kind, error -> {:error, {kind, error}}
   end
 
-  defp request(conn) do
+  defp request(conn, columns) do
     case :ahttp_client.request(conn, "GET", @path, [], nil) do
-      {:ok, conn, ref} -> collect(conn, ref, [], @reads)
+      {:ok, conn, _ref} -> collect(conn, columns, [], @reads)
       {:error, reason} -> close(conn, {:error, reason})
     end
   end
 
   # Chunks are kept as a list until the end, since appending binaries copies.
-  defp collect(conn, _ref, _chunks, 0), do: close(conn, {:error, :too_many_reads})
+  defp collect(conn, _columns, _chunks, 0), do: close(conn, {:error, :too_many_reads})
 
-  defp collect(conn, ref, chunks, left) do
+  defp collect(conn, columns, chunks, left) do
     case :ahttp_client.recv(conn, @chunk) do
       {:ok, conn, responses} ->
         {chunks, done} = harvest(responses, chunks, false)
 
-        continue(conn, ref, chunks, done, left)
+        continue(conn, columns, chunks, done, left)
 
       {:error, reason} ->
         close(conn, {:error, reason})
     end
   end
 
-  defp continue(conn, _ref, chunks, true, _left) do
-    close(conn, parsed(:erlang.iolist_to_binary(:lists.reverse(chunks))))
+  defp continue(conn, columns, chunks, true, _left) do
+    close(conn, parsed(:erlang.iolist_to_binary(:lists.reverse(chunks)), columns))
   end
 
-  defp continue(conn, ref, chunks, false, left), do: collect(conn, ref, chunks, left - 1)
+  defp continue(conn, columns, chunks, false, left), do: collect(conn, columns, chunks, left - 1)
 
   defp harvest([], chunks, done), do: {chunks, done}
 
@@ -99,8 +114,8 @@ defmodule Badge.Schedule do
   defp harvest([:done | rest], chunks, _done), do: harvest(rest, chunks, true)
   defp harvest([_other | rest], chunks, done), do: harvest(rest, chunks, done)
 
-  defp parsed(body) do
-    case parse(body) do
+  defp parsed(body, columns) do
+    case parse(body, columns) do
       {:ok, sessions} -> {:ok, sessions}
       :error -> {:error, :unreadable}
     end
@@ -112,11 +127,15 @@ defmodule Badge.Schedule do
     result
   end
 
-  @doc "Reads the site's JSON into a timeline, or `:error` when it is not one."
-  @spec parse(binary) :: {:ok, [session]} | :error
-  def parse(body) do
+  @doc """
+  Reads the site's JSON into a timeline, or `:error` when it is not one.
+
+  Titles are wrapped to `columns` here, once, rather than on every frame.
+  """
+  @spec parse(binary, pos_integer) :: {:ok, [session]} | :error
+  def parse(body, columns) do
     case decode(body) do
-      {:ok, %{"days" => days}} when is_list(days) -> {:ok, timeline(days)}
+      {:ok, %{"days" => days}} when is_list(days) -> {:ok, timeline(days, columns)}
       _other -> :error
     end
   end
@@ -128,13 +147,14 @@ defmodule Badge.Schedule do
   end
 
   # Stable, so sessions that start together keep the site's space order.
-  defp timeline(days) do
-    keyed = :lists.flatmap(&day_sessions/1, days)
+  defp timeline(days, columns) do
+    keyed = :lists.flatmap(fn day -> day_sessions(day, columns) end, days)
 
     for {_start, session} <- :lists.keysort(1, keyed), do: session
   end
 
-  defp day_sessions(%{"date" => date, "spaces" => spaces} = day) when is_list(spaces) do
+  defp day_sessions(%{"date" => date, "spaces" => spaces} = day, columns)
+       when is_list(spaces) do
     case date(date) do
       nil ->
         []
@@ -142,23 +162,26 @@ defmodule Badge.Schedule do
       {days, ymd} ->
         label = text(day, "label")
 
-        :lists.flatmap(fn space -> space_sessions(space, days, ymd, label) end, spaces)
+        :lists.flatmap(
+          fn space -> space_sessions(space, {days, ymd, label, columns}) end,
+          spaces
+        )
     end
   end
 
-  defp day_sessions(_day), do: []
+  defp day_sessions(_day, _columns), do: []
 
-  defp space_sessions(%{"sessions" => sessions} = space, days, ymd, label)
-       when is_list(sessions) do
+  defp space_sessions(%{"sessions" => sessions} = space, day) when is_list(sessions) do
     name = text(space, "name") || ""
 
-    :lists.flatmap(fn session -> session(session, days, ymd, label, name) end, sessions)
+    :lists.flatmap(fn session -> session(session, day, name) end, sessions)
   end
 
-  defp space_sessions(_space, _days, _ymd, _label), do: []
+  defp space_sessions(_space, _day), do: []
 
   # A session missing a title or a time cannot be placed, so it is left out.
-  defp session(%{"title" => title} = session, days, ymd, label, space) when is_binary(title) do
+  defp session(%{"title" => title} = session, {days, ymd, label, columns}, space)
+       when is_binary(title) do
     with start when is_integer(start) <- clock(text(session, "start_time")),
          stop when is_integer(stop) <- clock(text(session, "end_time")) do
       weekday = :calendar.day_of_the_week(ymd)
@@ -166,9 +189,10 @@ defmodule Badge.Schedule do
       entry = %{
         day: days,
         weekday: weekday,
-        start: days * @minutes_per_day + start,
-        stop: days * @minutes_per_day + stop,
+        start: (days - @axis_days) * @minutes_per_day + start,
+        stop: (days - @axis_days) * @minutes_per_day + stop,
         title: title,
+        lines: Text.wrap(title, columns),
         when: date_face(weekday, ymd) <> " " <> clock_face(start) <> "-" <> clock_face(stop),
         where: where(space, label),
         who: who(Map.get(session, "speakers")),
@@ -181,7 +205,7 @@ defmodule Badge.Schedule do
     end
   end
 
-  defp session(_session, _days, _ymd, _label, _space), do: []
+  defp session(_session, _day, _space), do: []
 
   defp where(space, nil), do: space
   defp where(space, label), do: space <> ", " <> label
@@ -237,6 +261,17 @@ defmodule Badge.Schedule do
 
   defp digits(_binary, _acc), do: nil
 
+  @doc "Sessions as entries, each packed into a binary of its own."
+  @spec pack([session]) :: [entry]
+  def pack(sessions) do
+    for %{start: start, stop: stop} = session <- sessions,
+        do: {start, stop, :erlang.term_to_binary(session)}
+  end
+
+  @doc "The session an entry holds."
+  @spec unpack(entry) :: session
+  def unpack({_start, _stop, packed}), do: :erlang.binary_to_term(packed)
+
   @doc """
   Whether a UTC clock reading is a real one.
 
@@ -259,7 +294,7 @@ defmodule Badge.Schedule do
   def now(utc_seconds) do
     offset = Zone.offset_minutes(@zone, utc_seconds) || @fallback_offset
 
-    div(utc_seconds, 60) + offset + @epoch_days * @minutes_per_day
+    div(utc_seconds, 60) + offset - @epoch_minutes
   end
 
   @doc """
@@ -268,30 +303,30 @@ defmodule Badge.Schedule do
 
   Nil for an empty timeline, or when the clock is not known.
   """
-  @spec focus([session], integer | nil) :: non_neg_integer | nil
+  @spec focus([entry], integer | nil) :: non_neg_integer | nil
   def focus([], _now), do: nil
-  def focus(_sessions, nil), do: nil
+  def focus(_entries, nil), do: nil
 
-  def focus(sessions, now) do
-    running(sessions, now, 0) || upcoming(sessions, now, 0) || length(sessions) - 1
+  def focus(entries, now) do
+    running(entries, now, 0) || upcoming(entries, now, 0) || length(entries) - 1
   end
 
   defp running([], _now, _index), do: nil
 
-  defp running([%{start: start, stop: stop} | _rest], now, index)
+  defp running([{start, stop, _packed} | _rest], now, index)
        when start <= now and now < stop,
        do: index
 
-  defp running([_session | rest], now, index), do: running(rest, now, index + 1)
+  defp running([_entry | rest], now, index), do: running(rest, now, index + 1)
 
   @doc "The first session still to start at `now`, or nil once none is."
-  @spec upcoming([session], integer | nil) :: non_neg_integer | nil
-  def upcoming(_sessions, nil), do: nil
-  def upcoming(sessions, now), do: upcoming(sessions, now, 0)
+  @spec upcoming([entry], integer | nil) :: non_neg_integer | nil
+  def upcoming(_entries, nil), do: nil
+  def upcoming(entries, now), do: upcoming(entries, now, 0)
 
   defp upcoming([], _now, _index), do: nil
-  defp upcoming([%{start: start} | _rest], now, index) when start > now, do: index
-  defp upcoming([_session | rest], now, index), do: upcoming(rest, now, index + 1)
+  defp upcoming([{start, _stop, _packed} | _rest], now, index) when start > now, do: index
+  defp upcoming([_entry | rest], now, index), do: upcoming(rest, now, index + 1)
 
   @doc "Whether a session is running, still to come, or done at `now`."
   @spec phase(session, integer | nil) :: :now | :next | :done | :unknown

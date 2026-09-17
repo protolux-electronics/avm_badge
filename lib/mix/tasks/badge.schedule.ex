@@ -22,7 +22,7 @@ defmodule Mix.Tasks.Badge.Schedule do
   end
 
   defp keep(body) do
-    case Badge.Schedule.parse(body) do
+    case Badge.Schedule.parse(body, Badge.Page.Schedule.columns()) do
       {:ok, sessions} ->
         File.write!(@out, body)
         Mix.shell().info("#{@out}: #{length(sessions)} sessions")

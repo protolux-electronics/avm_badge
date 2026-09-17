@@ -13,14 +13,18 @@ defmodule Badge.Page.Schedule do
 
   The programme itself lives in `Badge.Schedule.Link`, which fetches it by
   itself and answers from what it holds; every line here is drawn as held.
-  The one `status/0` call per tick is here.
+  The link and the clock are read once a minute, not on every tick: a call
+  from the render loop costs a round of every other process, nothing here
+  changes faster than the countdowns, and where now falls is worked out then
+  rather than on each frame. The state holds the
+  programme as packed entries and a frame unpacks the six it draws, which
+  keeps this process's heap small enough to collect cheaply.
   """
 
   use Badge.Page
 
   alias Badge.Schedule
   alias Badge.Schedule.Link
-  alias Badge.Text
   alias Badge.Theme
 
   @char_w 8
@@ -51,43 +55,83 @@ defmodule Badge.Page.Schedule do
   @impl true
   def icon, do: :triangle
 
+  @doc "How many characters fit on a line, which is what titles are wrapped to."
+  @spec columns() :: pos_integer
+  def columns, do: @columns
+
   @impl true
   def init do
-    %{sessions: [], status: :idle, reason: nil, version: 0, cursor: nil, now: nil}
+    %{
+      entries: [],
+      status: :idle,
+      reason: nil,
+      version: 0,
+      cursor: nil,
+      now: nil,
+      minute: nil,
+      focus: nil,
+      next_start: nil
+    }
   end
 
-  # The link is only read here, never from a key handler.
+  # The link is only read here, never from a key handler, and only once a minute.
   @impl true
   def tick(state) do
+    seconds = :erlang.system_time(:second)
+    minute = div(seconds, 60)
+
+    case minute == state.minute do
+      true -> state
+      false -> poll(%{state | minute: minute}, seconds)
+    end
+  end
+
+  defp poll(state, seconds) do
     status = Link.status()
 
     state
-    |> refresh_sessions(status)
-    |> apply_status(status, Schedule.now(:erlang.system_time(:second)))
+    |> refresh_entries(status)
+    |> apply_status(status, Schedule.now(seconds))
   end
 
-  defp refresh_sessions(%{version: version} = state, %{version: version}), do: state
+  defp refresh_entries(%{version: version} = state, %{version: version}), do: state
 
-  defp refresh_sessions(state, status),
-    do: apply_sessions(Link.sessions(), status.version, state)
+  defp refresh_entries(state, status),
+    do: apply_entries(Link.entries(), status.version, state)
 
   @doc "Takes a fresh programme from the link, tagged with its version."
-  @spec apply_sessions([map], integer, map) :: map
-  def apply_sessions(sessions, version, state) do
-    %{state | sessions: sessions, version: version, cursor: clamp(state.cursor, sessions)}
+  @spec apply_entries([Schedule.entry()], integer, map) :: map
+  def apply_entries(entries, version, state) do
+    placed(%{state | entries: entries, version: version, cursor: clamp(state.cursor, entries)})
   end
 
   @doc "Takes one reading of the link and of the clock. Called instead of `tick/1`."
   @spec apply_status(map, map, integer | nil) :: map
   def apply_status(state, status, now) do
-    %{state | status: status.state, reason: status.reason, now: now}
+    placed(%{state | status: status.state, reason: status.reason, now: now})
+  end
+
+  # Where now falls is settled here so no frame walks the timeline for it.
+  defp placed(%{entries: entries, now: now} = state) do
+    %{state | focus: Schedule.focus(entries, now), next_start: next_start(entries, now)}
+  end
+
+  defp next_start(entries, now) do
+    case Schedule.upcoming(entries, now) do
+      nil ->
+        nil
+
+      index ->
+        {start, _stop, _packed} = :lists.nth(index + 1, entries)
+        start
+    end
   end
 
   @doc "Which session is opened out, as an index into the timeline, or nil for none."
   @spec current(map) :: non_neg_integer | nil
-  def current(%{sessions: []}), do: nil
+  def current(%{entries: []}), do: nil
   def current(%{cursor: cursor}) when is_integer(cursor), do: cursor
-  def current(%{sessions: sessions, now: now}), do: Schedule.focus(sessions, now) || 0
+  def current(%{focus: focus}), do: focus || 0
 
   @impl true
   def handle_key({:move, :up}, state), do: move(state, -1)
@@ -106,42 +150,40 @@ defmodule Badge.Page.Schedule do
   def handle_key(_event, _state), do: :ignore
 
   # Off either end there is nothing to open; let the router keep the key.
-  defp move(%{sessions: []}, _step), do: :ignore
+  defp move(%{entries: []}, _step), do: :ignore
 
   defp move(state, step) do
     index = current(state) + step
 
-    case index >= 0 and index < length(state.sessions) do
+    case index >= 0 and index < length(state.entries) do
       true -> {:ok, %{state | cursor: settle(index, state)}}
       false -> :ignore
     end
   end
 
   # Landing back on now is the same as never having left it, so Esc goes Home again.
-  defp settle(index, %{sessions: sessions, now: now}) do
-    case Schedule.focus(sessions, now) do
-      ^index -> nil
-      _elsewhere -> index
-    end
-  end
+  defp settle(index, %{focus: index}), do: nil
+  defp settle(index, _state), do: index
 
-  defp clamp(nil, _sessions), do: nil
+  defp clamp(nil, _entries), do: nil
   defp clamp(_cursor, []), do: nil
-  defp clamp(cursor, sessions), do: min(max(cursor, 0), length(sessions) - 1)
+  defp clamp(cursor, entries), do: min(max(cursor, 0), length(entries) - 1)
 
   @impl true
-  def render(%{sessions: []} = state), do: rules() ++ notice(state)
+  def render(%{entries: []} = state), do: rules() ++ notice(state)
 
   def render(state) do
-    index = current(state)
-    {before, [session | later]} = :lists.split(index, state.sessions)
-    above = last(before, @above)
+    {before, [open | later]} = :lists.split(current(state), state.entries)
+    above = unpacked(last(before, @above))
+    session = Schedule.unpack(open)
 
     rules() ++
       summaries(above, session, state, @upper_rule_y - length(above) * @pitch) ++
-      card(session, index, state) ++
-      summaries(:lists.sublist(later, @below), session, state, @below_y)
+      card(session, state) ++
+      summaries(unpacked(:lists.sublist(later, @below)), session, state, @below_y)
   end
+
+  defp unpacked(entries), do: :lists.map(&Schedule.unpack/1, entries)
 
   defp rules do
     Theme.rule(@margin, @upper_rule_y, Theme.width() - 2 * @margin) ++
@@ -180,11 +222,11 @@ defmodule Badge.Page.Schedule do
   defp day_prefix(%{day: day}, %{day: day}), do: ""
   defp day_prefix(session, _open), do: Schedule.weekday_face(session.weekday) <> " "
 
-  defp card(session, index, state) do
-    titles = :lists.sublist(Text.wrap(session.title, @columns), @title_lines)
+  defp card(session, state) do
+    titles = :lists.sublist(session.lines, @title_lines)
 
     [line(@card_y, Theme.accent(), session.when)] ++
-      tag(session, index, state) ++
+      tag(session, state) ++
       items(titles, @card_y + @pitch, fn title -> {Theme.fg(), title} end) ++
       unless_blank(@card_y + (1 + @title_lines) * @pitch, session.where) ++
       unless_blank(@card_y + (2 + @title_lines) * @pitch, session.who)
@@ -194,30 +236,29 @@ defmodule Badge.Page.Schedule do
   defp unless_blank(y, text), do: [line(y, Theme.muted(), clip(text))]
 
   # Right-aligned in the corner of the card: what the clock says about this session.
-  defp tag(_session, _index, %{now: nil}), do: []
+  defp tag(_session, %{now: nil}), do: []
 
-  defp tag(session, index, %{now: now, sessions: sessions}) do
-    {colour, text} = tag_text(Schedule.phase(session, now), session, now, index, sessions)
+  defp tag(session, state) do
+    {colour, text} = tag_text(Schedule.phase(session, state.now), session, state)
     x = Theme.width() - @margin - @char_w * byte_size(text)
 
     [{:text, x, @card_y, :default16px, colour, Theme.bg(), text}]
   end
 
-  defp tag_text(:now, session, now, _index, _sessions),
+  defp tag_text(:now, session, %{now: now}),
     do: {Theme.ok(), "NOW " <> Schedule.span(Schedule.countdown(session, now)) <> " left"}
 
   # Sessions that start together are all next, which is what the workshop days are.
-  defp tag_text(:next, session, now, _index, sessions) do
+  defp tag_text(:next, session, %{now: now, next_start: next_start}) do
     left = "in " <> Schedule.span(Schedule.countdown(session, now))
-    soonest = :lists.nth(Schedule.upcoming(sessions, now) + 1, sessions)
 
-    case soonest.start == session.start do
+    case session.start == next_start do
       true -> {Theme.accent(), "NEXT " <> left}
       false -> {Theme.muted(), left}
     end
   end
 
-  defp tag_text(:done, _session, _now, _index, _sessions), do: {Theme.dim(), "ended"}
+  defp tag_text(:done, _session, _state), do: {Theme.dim(), "ended"}
 
   defp items(list, y, fun), do: items(list, y, fun, [])
 

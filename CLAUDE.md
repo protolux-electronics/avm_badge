@@ -5,7 +5,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Commands
 
-- `mix test` — 1097 tests across 61 files, no board needed. 2 are excluded as
+- `mix test` — 1100 tests across 61 files, no board needed. 2 are excluded as
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
@@ -194,6 +194,23 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   attribute
 - The NVS partition is 24 kB and shared with the wifi credentials, so a
   fetched programme is held in the link process, not written to flash
+- **A process whose heap is mostly live collects on nearly every
+  allocation.** AtomVM's default heap growth leaves only the requested size
+  plus 16 words free after a collection, and each collection copies the
+  whole live heap. With eighty session maps (~30 kB) in the page state a
+  tuple cost 2.7 ms and a frame 170-230 ms; measured 2026-09-17 with a
+  micro-benchmark on the badge. So the programme is held as `pack/1`
+  entries, `{start, stop, packed}` with a `term_to_binary` per session:
+  binaries live off-heap, a frame unpacks the six it draws, and the same
+  frame is 60-80 ms. Keep large terms out of `Badge.UI`'s page state and out
+  of any GenServer that answers the render loop
+- A `GenServer.call` from `Badge.UI` costs 20-40 ms on the badge, since the
+  reply waits for a round of every other process. The schedule page polls
+  its link once a minute, never per tick. `Badge.Page.Chat` still calls per
+  tick
+- Integers past 2^27 are boxed on this 32-bit VM and every compare on them
+  allocates, so the timeline's minute axis starts in 2020 rather than at
+  year zero
 - **`ssl:recv/2` with a length blocks until exactly that many bytes have
   arrived**, so a read loop asking for 4096 hangs on the response's last
   piece. `Badge.Schedule.fetch/0` reads with length 0, which returns whatever

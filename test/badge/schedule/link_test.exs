@@ -1,6 +1,7 @@
 defmodule Badge.Schedule.LinkTest do
   use ExUnit.Case, async: true
 
+  alias Badge.Page
   alias Badge.Schedule
   alias Badge.Schedule.Link
 
@@ -8,9 +9,9 @@ defmodule Badge.Schedule.LinkTest do
 
   describe "built_in/0" do
     test "is the checked-in programme, parsed on the host" do
-      {:ok, sessions} = Schedule.parse(@body)
+      {:ok, sessions} = Schedule.parse(@body, Page.Schedule.columns())
 
-      assert Link.built_in() == sessions
+      assert Link.built_in() == Schedule.pack(sessions)
       assert length(sessions) > 0
     end
   end

@@ -7,6 +7,10 @@ defmodule Badge.Schedule.Link do
   page has it the moment the badge boots and nothing is parsed on the device.
   `mix badge.schedule` refreshes that file from the site.
 
+  What is held and handed out are `Badge.Schedule.pack/1` entries, a binary
+  per session, so neither this process nor the page keeps eighty maps live
+  on its heap.
+
   With `@fetch` on, a ticker also asks `Badge.Schedule.Link.State` every few
   seconds whether a fetch is due: once the clock is set after boot, again
   once the held copy is old, and after a failure with a growing wait. The
@@ -19,6 +23,7 @@ defmodule Badge.Schedule.Link do
 
   use GenServer
 
+  alias Badge.Page
   alias Badge.Schedule
   alias Badge.Schedule.Link.State
 
@@ -28,17 +33,17 @@ defmodule Badge.Schedule.Link do
   @source Path.expand("../../../assets/schedule.json", __DIR__)
   @external_resource @source
 
-  # Packed rather than a literal: a list of eighty maps strains AtomVM's
-  # literals table, a single binary does not.
-  @packed (case Schedule.parse(File.read!(@source)) do
-             {:ok, sessions} -> :erlang.term_to_binary(sessions)
+  # One binary rather than a literal list: eighty tuples would strain
+  # AtomVM's literals table, a single binary does not.
+  @packed (case Schedule.parse(File.read!(@source), Page.Schedule.columns()) do
+             {:ok, sessions} -> :erlang.term_to_binary(Schedule.pack(sessions))
              :error -> raise "assets/schedule.json is not a programme"
            end)
 
   def start_link(:ok), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
-  @doc "The programme compiled into this firmware, in timeline order."
-  @spec built_in() :: [Schedule.session()]
+  @doc "The programme compiled into this firmware, as entries in timeline order."
+  @spec built_in() :: [Schedule.entry()]
   def built_in, do: :erlang.binary_to_term(@packed)
 
   @doc "Whether the badge refreshes the programme from the site by itself."
@@ -49,13 +54,13 @@ defmodule Badge.Schedule.Link do
   @spec retry() :: :ok
   def retry, do: GenServer.cast(__MODULE__, :retry)
 
-  @doc "Where the fetch stands. Cheap: the sessions are not in it."
+  @doc "Where the fetch stands. Cheap: the entries are not in it."
   @spec status() :: map
   def status, do: GenServer.call(__MODULE__, :status)
 
-  @doc "The held programme, in timeline order."
-  @spec sessions() :: [Schedule.session()]
-  def sessions, do: GenServer.call(__MODULE__, :sessions)
+  @doc "The held programme, as entries in timeline order."
+  @spec entries() :: [Schedule.entry()]
+  def entries, do: GenServer.call(__MODULE__, :entries)
 
   @impl true
   def init(:ok) do
@@ -66,7 +71,7 @@ defmodule Badge.Schedule.Link do
 
   @impl true
   def handle_call(:status, _from, state), do: {:reply, State.status(state), state}
-  def handle_call(:sessions, _from, state), do: {:reply, state.sessions, state}
+  def handle_call(:entries, _from, state), do: {:reply, state.sessions, state}
 
   @impl true
   def handle_cast(:retry, state), do: {:noreply, State.retry(state)}
@@ -95,13 +100,17 @@ defmodule Badge.Schedule.Link do
 
     link = self()
 
-    spawn(fn -> send(link, {:fetched, Schedule.fetch()}) end)
+    spawn(fn -> send(link, {:fetched, packed(Schedule.fetch(Page.Schedule.columns()))}) end)
 
     state
   end
 
-  defp report({:ok, sessions}),
-    do: :io.format(~c"Schedule: holding ~p sessions~n", [length(sessions)])
+  # Packed where it was parsed, so the maps never reach this process.
+  defp packed({:ok, sessions}), do: {:ok, Schedule.pack(sessions)}
+  defp packed(error), do: error
+
+  defp report({:ok, entries}),
+    do: :io.format(~c"Schedule: holding ~p sessions~n", [length(entries)])
 
   defp report({:error, reason}), do: :io.format(~c"Schedule: fetch failed ~p~n", [reason])
 
