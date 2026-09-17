@@ -58,30 +58,11 @@ defmodule Badge.Sim.Live do
     end
   end
 
-  # The shape keys as drawn on the badge; what each one does is the page's business.
-  defp shape(%{key: :square} = assigns),
-    do: ~H|<rect x="5" y="5" width="22" height="22" fill="#d30808" />|
-
-  defp shape(%{key: :triangle} = assigns),
-    do: ~H|<polygon points="16,4 29,27 3,27" fill="#ffb200" />|
-
-  defp shape(%{key: :cross} = assigns),
-    do: ~H|<path d="M6 6 L26 26 M26 6 L6 26" stroke="#fff200" stroke-width="7" />|
-
-  defp shape(%{key: :circle} = assigns),
-    do: ~H|<circle cx="16" cy="16" r="12" fill="#01a30e" />|
-
-  defp shape(%{key: :clover} = assigns) do
-    ~H"""
-    <g fill="#0081ea">
-      <circle cx="16" cy="9" r="6.5" /><circle cx="16" cy="23" r="6.5" />
-      <circle cx="9" cy="16" r="6.5" /><circle cx="23" cy="16" r="6.5" />
-    </g>
-    """
+  # The badge's own icon for a shape key; what the key does is the page's business.
+  defp shape(key) do
+    {width, height} = Badge.Icons.size(key)
+    %{key: key, width: width, height: height, rgba: Base.encode64(Badge.Icons.binary(key, nil))}
   end
-
-  defp shape(%{key: :diamond} = assigns),
-    do: ~H|<polygon points="16,3 29,16 16,29 3,16" fill="#b603ca" />|
 
   def render(assigns) do
     width = Theme.width()
@@ -89,7 +70,7 @@ defmodule Badge.Sim.Live do
 
     assigns =
       assign(assigns,
-        shapes: Enum.with_index(Badge.Pages.keys(), 1),
+        shapes: for({key, n} <- Enum.with_index(Badge.Pages.keys(), 1), do: {shape(key), n}),
         panel_width: width,
         panel_height: height,
         browser_width: width * 2,
@@ -105,8 +86,8 @@ defmodule Badge.Sim.Live do
         style={"width: #{@browser_width}px; height: #{@browser_height}px"}
       ></canvas>
       <div class="buttons">
-        <button :for={{key, n} <- @shapes} phx-click="shape" phx-value-shape={key} title={"#{key}, F#{n}"}>
-          <svg viewBox="0 0 32 32" width="32" height="32" aria-label={key}><.shape key={key} /></svg>
+        <button :for={{shape, n} <- @shapes} phx-click="shape" phx-value-shape={shape.key} title={"#{shape.key}, F#{n}"}>
+          <canvas id={"shape-#{shape.key}"} phx-update="ignore" class="shape" width={shape.width} height={shape.height} data-rgba={shape.rgba} aria-label={shape.key}></canvas>
         </button>
         <button phx-click="reboot" class="reboot">Reboot</button>
       </div>
@@ -116,7 +97,11 @@ defmodule Badge.Sim.Live do
     <script>
     window.hooks.Badge = {
       mounted() {
-        const canvas = this.el.querySelector("canvas");
+        const canvas = this.el.querySelector("#panel");
+        for (const shape of this.el.querySelectorAll("canvas.shape")) {
+          const bytes = Uint8ClampedArray.from(atob(shape.dataset.rgba), c => c.charCodeAt(0));
+          shape.getContext("2d").putImageData(new ImageData(bytes, shape.width, shape.height), 0, 0);
+        }
         const ctx = canvas.getContext("2d");
         ctx.imageSmoothingEnabled = false;
         this.assets = {};
@@ -151,10 +136,11 @@ defmodule Badge.Sim.Live do
 
     <style type="text/css">
       body { background: #222; color: #ccc; font-family: sans-serif; padding: 1em; }
-      canvas { image-rendering: pixelated; border: 8px solid #111; border-radius: 6px; }
+      canvas { image-rendering: pixelated; }
+      #panel { border: 8px solid #111; border-radius: 6px; }
       .buttons { margin: 1em 0; display: flex; gap: 0.5em; }
-      button { padding: 0.4em 0.8em; }
-      button svg { display: block; }
+      button { padding: 0.4em 0.8em; background: #111; color: #ccc; border: 1px solid #444; border-radius: 4px; cursor: pointer; }
+      button canvas { display: block; }
       .reboot { margin-left: auto; }
     </style>
     """
