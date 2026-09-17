@@ -274,14 +274,7 @@ defmodule Badge.Page.Schedule do
 
   defp line(y, colour, text), do: {:text, @margin, y, :default16px, colour, Theme.bg(), text}
 
+  # Held text is one byte per glyph, so a byte count is a column count.
   defp clip(text) when byte_size(text) <= @columns, do: text
-  defp clip(text), do: clip(text, @columns)
-
-  # A cut that lands inside a multi-byte character backs up to before it.
-  defp clip(text, at) do
-    case :binary.at(text, at) do
-      byte when byte >= 0x80 and byte < 0xC0 -> clip(text, at - 1)
-      _boundary -> :binary.part(text, 0, at)
-    end
-  end
+  defp clip(text), do: :binary.part(text, 0, @columns)
 end

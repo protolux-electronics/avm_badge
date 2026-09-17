@@ -3,29 +3,38 @@ defmodule Badge.TextTest do
 
   alias Badge.Text
 
-  describe "ascii/1" do
+  describe "cp437/1" do
     test "leaves ASCII alone" do
-      assert Text.ascii("Texting Lora, 09:15") == "Texting Lora, 09:15"
-      assert Text.ascii("") == ""
+      assert Text.cp437("Texting Lora, 09:15") == "Texting Lora, 09:15"
+      assert Text.cp437("") == ""
     end
 
     test "straightens typographic punctuation" do
-      assert Text.ascii("Doesn’t ‘quite’ “work” – or — not… 2−1") ==
+      assert Text.cp437("Doesn’t ‘quite’ “work” – or — not… 2−1") ==
                "Doesn't 'quite' \"work\" - or - not... 2-1"
     end
 
-    test "drops accents from Latin letters" do
-      assert Text.ascii("Łukasz Kita, Feliks Pobiedziński, Damir Batinović") ==
+    test "keeps the accents the page has, as its bytes" do
+      assert Text.cp437("Kamila Pokój, Julian Köpke") ==
+               <<"Kamila Pok", 0xA2, "j, Julian K", 0x94, "pke">>
+
+      assert Text.cp437("Ångström är 1 Å") == <<0x8F, "ngstr", 0x94, "m ", 0x84, "r 1 ", 0x8F>>
+
+      assert Text.cp437("café Ñandú ½°") ==
+               <<"caf", 0x82, " ", 0xA5, "and", 0xA3, " ", 0xAB, 0xF8>>
+    end
+
+    test "drops accents the page lacks" do
+      assert Text.cp437("Łukasz Kita, Feliks Pobiedziński, Damir Batinović") ==
                "Lukasz Kita, Feliks Pobiedzinski, Damir Batinovic"
 
-      assert Text.ascii("Kamila Pokój, Julian Köpke, Ægir Þór") ==
-               "Kamila Pokoj, Julian Kopke, Agir Tor"
+      assert Text.cp437("Ægir Þór Øystein") == <<0x92, "gir T", 0xA2, "r Oystein">>
     end
 
     test "anything else is a question mark, one per character" do
-      assert Text.ascii("goat 🐐 Ж") == "goat ? ?"
-      assert Text.ascii(<<"a", 0xFF, "b">>) == "a?b"
-      assert Text.ascii(<<0xE2, 0x80>>) == "??"
+      assert Text.cp437("goat 🐐 Ж") == "goat ? ?"
+      assert Text.cp437(<<"a", 0xFF, "b">>) == "a?b"
+      assert Text.cp437(<<0xE2, 0x80>>) == "??"
     end
   end
 

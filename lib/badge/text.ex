@@ -6,45 +6,53 @@ defmodule Badge.Text do
   binaries are walked a byte at a time.
   """
 
-  # What each Latin-1 letter from 0xC0 and each Latin Extended-A letter folds to.
-  @latin1 "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuyty"
+  # Code page 437 bytes for Latin-1 from 0xA0, or the bare letter where the page has none.
+  @latin1 " \xAD\x9B\x9C?\x9D|??c\xA6\xAE\xAA-R-" <>
+            "\xF8\xF1\xFD3'\xE6?.,1\xA7\xAF\xAC\xAB?\xA8" <>
+            "AAAA\x8E\x8F\x92\x80E\x90EEIIII" <>
+            "D\xA5OOOO\x99xOUUU\x9AYT\xE1" <>
+            "\x85\xA0\x83a\x84\x86\x91\x87\x8A\x82\x88\x89\x8D\xA1\x8C\x8B" <>
+            "d\xA4\x95\xA2\x93o\x94\xF6o\x97\xA3\x96\x81yt\x98"
+
+  # The bare letter for each Latin Extended-A codepoint; the page has none of them.
   @latin_a "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIiIiJjKkkLlLlLlLlLlNnNnNnnNnOoOoOoOoRrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs"
 
   @doc """
-  Folds text to the ASCII the panel font can draw.
+  Folds UTF-8 text to the bytes the built-in `default16px` font draws.
 
-  Accented letters lose their accents, typographic quotes, dashes and
-  spaces become the plain kind, and anything else is a question mark. A
-  byte that is not UTF-8 is a question mark too.
+  That font is the VGA 8x16 in code page 437, one glyph per byte, so an
+  accented letter the page has keeps its accent as that page's byte, one it
+  lacks becomes the bare letter, typographic quotes, dashes and spaces
+  become the plain kind, and anything else is a question mark. A byte that
+  is not UTF-8 is a question mark too. The result is not UTF-8.
   """
-  @spec ascii(binary) :: binary
-  def ascii(text), do: ascii(text, [])
+  @spec cp437(binary) :: binary
+  def cp437(text), do: cp437(text, [])
 
-  defp ascii(<<>>, acc), do: :erlang.list_to_binary(:lists.reverse(acc))
+  defp cp437(<<>>, acc), do: :erlang.list_to_binary(:lists.reverse(acc))
 
-  defp ascii(<<byte, rest::binary>>, acc) when byte < 0x80, do: ascii(rest, [byte | acc])
+  defp cp437(<<byte, rest::binary>>, acc) when byte < 0x80, do: cp437(rest, [byte | acc])
 
-  defp ascii(<<lead, tail, rest::binary>>, acc)
+  defp cp437(<<lead, tail, rest::binary>>, acc)
        when lead >= 0xC0 and lead < 0xE0 and tail >= 0x80 and tail < 0xC0 do
-    ascii(rest, [fold((lead - 0xC0) * 64 + (tail - 0x80)) | acc])
+    cp437(rest, [fold((lead - 0xC0) * 64 + (tail - 0x80)) | acc])
   end
 
-  defp ascii(<<lead, second, third, rest::binary>>, acc)
+  defp cp437(<<lead, second, third, rest::binary>>, acc)
        when lead >= 0xE0 and lead < 0xF0 and second >= 0x80 and second < 0xC0 and
               third >= 0x80 and third < 0xC0 do
-    ascii(rest, [fold((lead - 0xE0) * 4096 + (second - 0x80) * 64 + (third - 0x80)) | acc])
+    cp437(rest, [fold((lead - 0xE0) * 4096 + (second - 0x80) * 64 + (third - 0x80)) | acc])
   end
 
-  defp ascii(<<lead, second, third, fourth, rest::binary>>, acc)
+  defp cp437(<<lead, second, third, fourth, rest::binary>>, acc)
        when lead >= 0xF0 and lead < 0xF8 and second >= 0x80 and second < 0xC0 and
               third >= 0x80 and third < 0xC0 and fourth >= 0x80 and fourth < 0xC0 do
-    ascii(rest, [?? | acc])
+    cp437(rest, [?? | acc])
   end
 
-  defp ascii(<<_bad, rest::binary>>, acc), do: ascii(rest, [?? | acc])
+  defp cp437(<<_bad, rest::binary>>, acc), do: cp437(rest, [?? | acc])
 
-  defp fold(0xA0), do: ?\s
-  defp fold(code) when code >= 0xC0 and code <= 0xFF, do: :binary.at(@latin1, code - 0xC0)
+  defp fold(code) when code >= 0xA0 and code <= 0xFF, do: :binary.at(@latin1, code - 0xA0)
   defp fold(code) when code >= 0x100 and code <= 0x17F, do: :binary.at(@latin_a, code - 0x100)
   defp fold(code) when code >= 0x2010 and code <= 0x2015, do: ?-
 

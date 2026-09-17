@@ -298,13 +298,16 @@ defmodule Badge.Page.ScheduleTest do
   end
 
   describe "a long line" do
-    test "is clipped between characters, never inside one" do
-      wide = Map.merge(hd(programme()), %{who: "Łukasz Kita, Feliks Pobiedziński, Kśx"})
+    test "is clipped to the columns, a byte being a glyph" do
+      wide =
+        Map.merge(hd(programme()), %{
+          who: <<"Kamila Pok", 0xA2, "j, Julian K", 0x94, "pke and twenty more">>
+        })
 
       [who] = row(Page.render(shown(nil, [wide])), @card_y + 4 * @pitch)
 
-      assert who == "Łukasz Kita, Feliks Pobiedziński, K"
-      assert byte_size(who) == 37
+      assert who == <<"Kamila Pok", 0xA2, "j, Julian K", 0x94, "pke and twenty ">>
+      assert byte_size(who) == 38
     end
 
     test "wraps to two lines and stops there" do
