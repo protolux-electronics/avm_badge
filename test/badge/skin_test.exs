@@ -3,6 +3,7 @@ defmodule Badge.SkinTest do
 
   alias Badge.Skin
   alias Badge.Skin.Dark
+  alias Badge.Skin.Macintosh
   alias Badge.Skin.Win95
   alias Badge.Theme
 
@@ -36,8 +37,9 @@ defmodule Badge.SkinTest do
     test "shift stops at both ends rather than wrapping" do
       assert Skin.shift(Dark, -1) == Dark
       assert Skin.shift(Dark, 1) == Win95
-      assert Skin.shift(Win95, 1) == Win95
-      assert Skin.shift(Win95, -1) == Dark
+      assert Skin.shift(Win95, 1) == Macintosh
+      assert Skin.shift(Macintosh, 1) == Macintosh
+      assert Skin.shift(Macintosh, -1) == Win95
     end
   end
 
@@ -70,7 +72,30 @@ defmodule Badge.SkinTest do
     end
   end
 
-  for skin <- [Dark, Win95] do
+  describe "the Macintosh title bar" do
+    @long %{battery: :battery_100, wifi: :wifi, clock: "12:34:56 UTC"}
+
+    test "is drawn in black and white only" do
+      for item <- Macintosh.chrome("Badge", @long) do
+        case item do
+          {:rect, _x, _y, _w, _h, colour} -> assert colour in [0x000000, 0xFFFFFF]
+          {:text, _x, _y, _f, fg, bg, _b} -> assert {fg, bg} == {0x000000, 0xFFFFFF}
+          {:image, _x, _y, bg, _image} -> assert bg == 0xFFFFFF
+        end
+      end
+    end
+
+    test "keeps the longest title clear of the longest clock and the close box" do
+      items = Macintosh.chrome("Sudo Mode", @long)
+      [clock_x] = for {:text, x, _y, :default16px, _fg, _bg, _b} <- items, do: x
+      [{title_x, title}] = for {:text, x, _y, :pixel_operator, _fg, _bg, b} <- items, do: {x, b}
+
+      assert title_x + Badge.Font.width(:pixel_operator, title) < clock_x
+      assert title_x > 24
+    end
+  end
+
+  for skin <- [Dark, Win95, Macintosh] do
     describe "#{inspect(skin)}" do
       @skin skin
 

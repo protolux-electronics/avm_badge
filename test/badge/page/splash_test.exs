@@ -166,7 +166,7 @@ defmodule Badge.Page.SplashTest do
 
   describe "the cover" do
     test "blacks out the whole panel, bar included, whatever the skin" do
-      for skin <- [Badge.Skin.Dark, Badge.Skin.Win95] do
+      for skin <- Badge.Skin.all() do
         Badge.Skin.activate(skin)
 
         assert {:rect, 0, 0, w, h, 0x000000} = List.last(Splash.frame({:in, 3}, @seed, @image))
