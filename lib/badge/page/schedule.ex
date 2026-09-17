@@ -17,8 +17,9 @@ defmodule Badge.Page.Schedule do
   from the render loop costs a round of every other process, nothing here
   changes faster than the countdowns, and where now falls is worked out then
   rather than on each frame. The state holds the
-  programme as packed entries and a frame unpacks the six it draws, which
-  keeps this process's heap small enough to collect cheaply.
+  programme as a tuple of packed entries; a frame picks the six it draws by
+  index and unpacks those, which keeps this process's heap small enough to
+  collect cheaply.
   """
 
   use Badge.Page
@@ -62,7 +63,7 @@ defmodule Badge.Page.Schedule do
   @impl true
   def init do
     %{
-      entries: [],
+      entries: {},
       status: :idle,
       reason: nil,
       version: 0,
@@ -100,7 +101,7 @@ defmodule Badge.Page.Schedule do
     do: apply_entries(Link.entries(), status.version, state)
 
   @doc "Takes a fresh programme from the link, tagged with its version."
-  @spec apply_entries([Schedule.entry()], integer, map) :: map
+  @spec apply_entries(Schedule.entries(), integer, map) :: map
   def apply_entries(entries, version, state) do
     placed(%{state | entries: entries, version: version, cursor: clamp(state.cursor, entries)})
   end
@@ -122,14 +123,14 @@ defmodule Badge.Page.Schedule do
         nil
 
       index ->
-        {start, _stop, _packed} = :lists.nth(index + 1, entries)
+        {start, _stop, _packed} = Schedule.entry(entries, index)
         start
     end
   end
 
   @doc "Which session is opened out, as an index into the timeline, or nil for none."
   @spec current(map) :: non_neg_integer | nil
-  def current(%{entries: []}), do: nil
+  def current(%{entries: {}}), do: nil
   def current(%{cursor: cursor}) when is_integer(cursor), do: cursor
   def current(%{focus: focus}), do: focus || 0
 
@@ -150,12 +151,12 @@ defmodule Badge.Page.Schedule do
   def handle_key(_event, _state), do: :ignore
 
   # Off either end there is nothing to open; let the router keep the key.
-  defp move(%{entries: []}, _step), do: :ignore
+  defp move(%{entries: {}}, _step), do: :ignore
 
   defp move(state, step) do
     index = current(state) + step
 
-    case index >= 0 and index < length(state.entries) do
+    case index >= 0 and index < tuple_size(state.entries) do
       true -> {:ok, %{state | cursor: settle(index, state)}}
       false -> :ignore
     end
@@ -166,21 +167,22 @@ defmodule Badge.Page.Schedule do
   defp settle(index, _state), do: index
 
   defp clamp(nil, _entries), do: nil
-  defp clamp(_cursor, []), do: nil
-  defp clamp(cursor, entries), do: min(max(cursor, 0), length(entries) - 1)
+  defp clamp(_cursor, {}), do: nil
+  defp clamp(cursor, entries), do: min(max(cursor, 0), tuple_size(entries) - 1)
 
   @impl true
-  def render(%{entries: []} = state), do: rules() ++ notice(state)
+  def render(%{entries: {}} = state), do: rules() ++ notice(state)
 
-  def render(state) do
-    {before, [open | later]} = :lists.split(current(state), state.entries)
-    above = unpacked(last(before, @above))
-    session = Schedule.unpack(open)
+  def render(%{entries: entries} = state) do
+    index = current(state)
+    above = unpacked(Schedule.slice(entries, index - @above, index - 1))
+    session = Schedule.unpack(Schedule.entry(entries, index))
+    below = unpacked(Schedule.slice(entries, index + 1, index + @below))
 
     rules() ++
       summaries(above, session, state, @upper_rule_y - length(above) * @pitch) ++
       card(session, state) ++
-      summaries(unpacked(:lists.sublist(later, @below)), session, state, @below_y)
+      summaries(below, session, state, @below_y)
   end
 
   defp unpacked(entries), do: :lists.map(&Schedule.unpack/1, entries)
@@ -282,7 +284,4 @@ defmodule Badge.Page.Schedule do
       _boundary -> :binary.part(text, 0, at)
     end
   end
-
-  defp last(list, n) when length(list) <= n, do: list
-  defp last(list, n), do: :lists.nthtail(length(list) - n, list)
 end

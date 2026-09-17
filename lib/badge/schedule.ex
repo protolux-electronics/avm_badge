@@ -10,11 +10,12 @@ defmodule Badge.Schedule do
   fits AtomVM's small integer on a 32-bit chip; anything past 2^27 is boxed
   and every compare on it allocates.
 
-  What a process holds is `pack/1`'s entries, `{start, stop, packed}`, one
-  session each as a binary. AtomVM collects a process's whole live heap on
-  nearly every allocation once the heap is mostly live, so eighty maps kept
-  in the page's state made every tuple cost a copy of all of them. Binaries
-  sit outside the heap; a frame unpacks only the sessions it draws.
+  What a process holds is `pack/1`'s entries: a tuple of `{start, stop,
+  packed}`, one session each as a binary, so a frame reaches the sessions it
+  draws by index and unpacks only those. AtomVM collects a process's whole
+  live heap on nearly every allocation once the heap is mostly live, so
+  eighty maps kept in the page's state made every tuple cost a copy of all
+  of them. Binaries sit outside the heap.
 
   `fetch/0` blocks on the network and belongs in a process of its own;
   everything else is pure.
@@ -63,6 +64,7 @@ defmodule Badge.Schedule do
         }
 
   @type entry :: {integer, integer, binary}
+  @type entries :: tuple
 
   @doc "The programme wrapped to `columns`, or an error when the site cannot be reached or read."
   @spec fetch(pos_integer) :: {:ok, [session]} | {:error, term}
@@ -261,12 +263,27 @@ defmodule Badge.Schedule do
 
   defp digits(_binary, _acc), do: nil
 
-  @doc "Sessions as entries, each packed into a binary of its own."
-  @spec pack([session]) :: [entry]
+  @doc "Sessions as a tuple of entries, each packed into a binary of its own."
+  @spec pack([session]) :: entries
   def pack(sessions) do
-    for %{start: start, stop: stop} = session <- sessions,
-        do: {start, stop, :erlang.term_to_binary(session)}
+    :erlang.list_to_tuple(
+      for %{start: start, stop: stop} = session <- sessions,
+          do: {start, stop, :erlang.term_to_binary(session)}
+    )
   end
+
+  @doc "The entry at a zero-based index."
+  @spec entry(entries, non_neg_integer) :: entry
+  def entry(entries, index), do: :erlang.element(index + 1, entries)
+
+  @doc "The entries from one zero-based index up to another, in order, clipped to what there is."
+  @spec slice(entries, integer, integer) :: [entry]
+  def slice(entries, from, to) do
+    slice(entries, max(from, 0), min(to, tuple_size(entries) - 1), [])
+  end
+
+  defp slice(_entries, from, to, acc) when to < from, do: acc
+  defp slice(entries, from, to, acc), do: slice(entries, from, to - 1, [entry(entries, to) | acc])
 
   @doc "The session an entry holds."
   @spec unpack(entry) :: session
@@ -303,30 +320,36 @@ defmodule Badge.Schedule do
 
   Nil for an empty timeline, or when the clock is not known.
   """
-  @spec focus([entry], integer | nil) :: non_neg_integer | nil
-  def focus([], _now), do: nil
+  @spec focus(entries, integer | nil) :: non_neg_integer | nil
+  def focus({}, _now), do: nil
   def focus(_entries, nil), do: nil
 
   def focus(entries, now) do
-    running(entries, now, 0) || upcoming(entries, now, 0) || length(entries) - 1
+    running(entries, now, 0) || upcoming(entries, now, 0) || tuple_size(entries) - 1
   end
 
-  defp running([], _now, _index), do: nil
+  defp running(entries, _now, index) when index >= tuple_size(entries), do: nil
 
-  defp running([{start, stop, _packed} | _rest], now, index)
-       when start <= now and now < stop,
-       do: index
-
-  defp running([_entry | rest], now, index), do: running(rest, now, index + 1)
+  defp running(entries, now, index) do
+    case entry(entries, index) do
+      {start, stop, _packed} when start <= now and now < stop -> index
+      _other -> running(entries, now, index + 1)
+    end
+  end
 
   @doc "The first session still to start at `now`, or nil once none is."
-  @spec upcoming([entry], integer | nil) :: non_neg_integer | nil
+  @spec upcoming(entries, integer | nil) :: non_neg_integer | nil
   def upcoming(_entries, nil), do: nil
   def upcoming(entries, now), do: upcoming(entries, now, 0)
 
-  defp upcoming([], _now, _index), do: nil
-  defp upcoming([{start, _stop, _packed} | _rest], now, index) when start > now, do: index
-  defp upcoming([_entry | rest], now, index), do: upcoming(rest, now, index + 1)
+  defp upcoming(entries, _now, index) when index >= tuple_size(entries), do: nil
+
+  defp upcoming(entries, now, index) do
+    case entry(entries, index) do
+      {start, _stop, _packed} when start > now -> index
+      _other -> upcoming(entries, now, index + 1)
+    end
+  end
 
   @doc "Whether a session is running, still to come, or done at `now`."
   @spec phase(session, integer | nil) :: :now | :next | :done | :unknown

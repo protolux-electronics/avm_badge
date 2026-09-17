@@ -158,11 +158,22 @@ defmodule Badge.ScheduleTest do
     test "carry a session through a binary of its own, keyed by its times" do
       talk = session(%{})
 
-      assert [{start, stop, packed} = entry] = Schedule.pack([talk])
+      assert {{start, stop, packed} = entry} = Schedule.pack([talk])
       assert start == talk.start
       assert stop == talk.stop
       assert is_binary(packed)
       assert Schedule.unpack(entry) == talk
+    end
+
+    test "entries are reached by index and sliced within bounds" do
+      entries =
+        Schedule.pack([session(%{title: "a"}), session(%{title: "b"}), session(%{title: "c"})])
+
+      assert Schedule.unpack(Schedule.entry(entries, 1)).title == "b"
+      assert for(e <- Schedule.slice(entries, -2, 1), do: Schedule.unpack(e).title) == ["a", "b"]
+      assert for(e <- Schedule.slice(entries, 2, 9), do: Schedule.unpack(e).title) == ["c"]
+      assert Schedule.slice(entries, 3, 5) == []
+      assert Schedule.slice({}, 0, 2) == []
     end
   end
 
@@ -184,7 +195,8 @@ defmodule Badge.ScheduleTest do
     end
 
     test "is the next session in a gap or before the first", %{sessions: sessions} do
-      gapped = :lists.sublist(sessions, 1) ++ :lists.nthtail(2, sessions)
+      [first, _running, last] = :erlang.tuple_to_list(sessions)
+      gapped = {first, last}
 
       assert Schedule.focus(gapped, at(@wednesday, 9, 30)) == 1
       assert Schedule.focus(sessions, at(@wednesday, 7, 0)) == 0
@@ -195,7 +207,7 @@ defmodule Badge.ScheduleTest do
     end
 
     test "is nil with nothing to stand on or no clock", %{sessions: sessions} do
-      assert Schedule.focus([], at(@wednesday, 9, 30)) == nil
+      assert Schedule.focus({}, at(@wednesday, 9, 30)) == nil
       assert Schedule.focus(sessions, nil) == nil
     end
   end

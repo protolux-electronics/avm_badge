@@ -23,8 +23,8 @@ defmodule Badge.Schedule.Link.State do
   A held copy counts as old from the start, so the first tick with a clock
   fetches a fresh one while the page already has something to show.
   """
-  @spec new([map]) :: map
-  def new(sessions \\ []) do
+  @spec new(tuple) :: map
+  def new(sessions \\ {}) do
     %{state: :idle, sessions: sessions, reason: nil, version: 1, at: nil, failures: 0}
   end
 
@@ -35,7 +35,7 @@ defmodule Badge.Schedule.Link.State do
       state: state.state,
       reason: state.reason,
       version: state.version,
-      held: state.sessions != []
+      held: tuple_size(state.sessions) > 0
     }
   end
 
@@ -71,7 +71,7 @@ defmodule Badge.Schedule.Link.State do
   defp doubled(n), do: 2 * doubled(n - 1)
 
   @doc "Takes what the fetch process brought back."
-  @spec fetched(map, {:ok, [map]} | {:error, term}, integer) :: map
+  @spec fetched(map, {:ok, tuple} | {:error, term}, integer) :: map
   def fetched(state, {:ok, sessions}, now) do
     %{
       state

@@ -279,7 +279,7 @@ defmodule Badge.Page.ScheduleTest do
     test "reads the link and the clock once a minute, then leaves the state alone" do
       first = Page.tick(Page.init())
 
-      assert length(first.entries) == length(programme())
+      assert tuple_size(first.entries) == length(programme())
       assert is_integer(first.minute)
       assert first.version == 1
 
@@ -293,7 +293,7 @@ defmodule Badge.Page.ScheduleTest do
       shorter = Page.apply_entries(Schedule.pack(:lists.sublist(programme(), 2)), 2, state)
 
       assert Page.current(shorter) == 1
-      assert Page.current(Page.apply_entries([], 3, state)) == nil
+      assert Page.current(Page.apply_entries({}, 3, state)) == nil
     end
   end
 

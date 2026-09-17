@@ -5,7 +5,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Commands
 
-- `mix test` — 1100 tests across 61 files, no board needed. 2 are excluded as
+- `mix test` — 1101 tests across 61 files, no board needed. 2 are excluded as
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
@@ -200,10 +200,11 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   whole live heap. With eighty session maps (~30 kB) in the page state a
   tuple cost 2.7 ms and a frame 170-230 ms; measured 2026-09-17 with a
   micro-benchmark on the badge. So the programme is held as `pack/1`
-  entries, `{start, stop, packed}` with a `term_to_binary` per session:
-  binaries live off-heap, a frame unpacks the six it draws, and the same
-  frame is 60-80 ms. Keep large terms out of `Badge.UI`'s page state and out
-  of any GenServer that answers the render loop
+  entries: a tuple of `{start, stop, packed}` with a `term_to_binary` per
+  session. Binaries live off-heap, a frame reaches the six it draws by
+  index and unpacks only those, and the same frame is 60-80 ms with a key
+  answered in 130-170 ms. Keep large terms out of `Badge.UI`'s page state
+  and out of any GenServer that answers the render loop
 - A `GenServer.call` from `Badge.UI` costs 20-40 ms on the badge, since the
   reply waits for a round of every other process. The schedule page polls
   its link once a minute, never per tick. `Badge.Page.Chat` still calls per

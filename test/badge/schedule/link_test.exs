@@ -11,7 +11,10 @@ defmodule Badge.Schedule.LinkTest do
     test "is the checked-in programme, parsed on the host" do
       {:ok, sessions} = Schedule.parse(@body, Page.Schedule.columns())
 
-      assert Link.built_in() == Schedule.pack(sessions)
+      built_in = Link.built_in()
+
+      assert is_tuple(built_in)
+      assert :lists.map(&Schedule.unpack/1, :erlang.tuple_to_list(built_in)) == sessions
       assert length(sessions) > 0
     end
   end

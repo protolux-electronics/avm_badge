@@ -3,7 +3,7 @@ defmodule Badge.Schedule.Link.StateTest do
 
   alias Badge.Schedule.Link.State
 
-  @sessions [%{title: "Texting Lora"}]
+  @sessions {%{title: "Texting Lora"}}
 
   defp ready(at) do
     {:fetch, loading} = State.load(State.new(), true, at)

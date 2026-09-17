@@ -7,9 +7,9 @@ defmodule Badge.Schedule.Link do
   page has it the moment the badge boots and nothing is parsed on the device.
   `mix badge.schedule` refreshes that file from the site.
 
-  What is held and handed out are `Badge.Schedule.pack/1` entries, a binary
-  per session, so neither this process nor the page keeps eighty maps live
-  on its heap.
+  What is held and handed out is `Badge.Schedule.pack/1`'s tuple of entries,
+  a binary per session, so neither this process nor the page keeps eighty
+  maps live on its heap.
 
   With `@fetch` on, a ticker also asks `Badge.Schedule.Link.State` every few
   seconds whether a fetch is due: once the clock is set after boot, again
@@ -43,7 +43,7 @@ defmodule Badge.Schedule.Link do
   def start_link(:ok), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
   @doc "The programme compiled into this firmware, as entries in timeline order."
-  @spec built_in() :: [Schedule.entry()]
+  @spec built_in() :: Schedule.entries()
   def built_in, do: :erlang.binary_to_term(@packed)
 
   @doc "Whether the badge refreshes the programme from the site by itself."
@@ -59,7 +59,7 @@ defmodule Badge.Schedule.Link do
   def status, do: GenServer.call(__MODULE__, :status)
 
   @doc "The held programme, as entries in timeline order."
-  @spec entries() :: [Schedule.entry()]
+  @spec entries() :: Schedule.entries()
   def entries, do: GenServer.call(__MODULE__, :entries)
 
   @impl true
@@ -110,7 +110,7 @@ defmodule Badge.Schedule.Link do
   defp packed(error), do: error
 
   defp report({:ok, entries}),
-    do: :io.format(~c"Schedule: holding ~p sessions~n", [length(entries)])
+    do: :io.format(~c"Schedule: holding ~p sessions~n", [tuple_size(entries)])
 
   defp report({:error, reason}), do: :io.format(~c"Schedule: fetch failed ~p~n", [reason])
 
