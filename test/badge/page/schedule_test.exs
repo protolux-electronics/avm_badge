@@ -216,7 +216,7 @@ defmodule Badge.Page.ScheduleTest do
 
       assert row(items, @card_y) == ["Mon 28 Sep 08:00-12:00"]
       assert row(items, @card_y + @pitch) == ["Multimedia with Membrane 101"]
-      assert row(items, @card_y + 4 * @pitch) == ["Łukasz Kita, Feliks Pobiedziński, Ku"]
+      assert row(items, @card_y + 4 * @pitch) == ["Lukasz Kita, Feliks Pobiedzinski, Kuba"]
       assert tag(items) == [{"NEXT in 1d", Theme.accent()}]
       assert Page.handle_key({:move, :up}, state) == :ignore
       assert row(items, @upper_rule_y - @pitch) == []

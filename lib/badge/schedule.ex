@@ -4,7 +4,8 @@ defmodule Badge.Schedule do
 
   The site publishes days, each holding spaces, each holding sessions.
   `parse/2` turns that into a single list ordered by start, with every line
-  the panel shows already made up, so what is held is what is drawn. Times
+  the panel shows already made up and folded to the ASCII the panel font
+  draws, so what is held is what is drawn. Times
   are minutes on one axis that spans days, in the event's own zone, which
   is what the site's clock times are in. The axis starts in 2020 so a minute
   fits AtomVM's small integer on a 32-bit chip; anything past 2^27 is boxed
@@ -182,11 +183,12 @@ defmodule Badge.Schedule do
   defp space_sessions(_space, _day), do: []
 
   # A session missing a title or a time cannot be placed, so it is left out.
-  defp session(%{"title" => title} = session, {days, ymd, label, columns}, space)
-       when is_binary(title) do
+  defp session(%{"title" => raw} = session, {days, ymd, label, columns}, space)
+       when is_binary(raw) do
     with start when is_integer(start) <- clock(text(session, "start_time")),
          stop when is_integer(stop) <- clock(text(session, "end_time")) do
       weekday = :calendar.day_of_the_week(ymd)
+      title = Text.ascii(raw)
 
       entry = %{
         day: days,
@@ -209,11 +211,11 @@ defmodule Badge.Schedule do
 
   defp session(_session, _day, _space), do: []
 
-  defp where(space, nil), do: space
-  defp where(space, label), do: space <> ", " <> label
+  defp where(space, nil), do: Text.ascii(space)
+  defp where(space, label), do: Text.ascii(space <> ", " <> label)
 
   defp who(list) when is_list(list) do
-    :erlang.iolist_to_binary(:lists.join(", ", :lists.flatmap(&speaker/1, list)))
+    Text.ascii(:erlang.iolist_to_binary(:lists.join(", ", :lists.flatmap(&speaker/1, list))))
   end
 
   defp who(_other), do: ""

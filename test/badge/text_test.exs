@@ -3,6 +3,32 @@ defmodule Badge.TextTest do
 
   alias Badge.Text
 
+  describe "ascii/1" do
+    test "leaves ASCII alone" do
+      assert Text.ascii("Texting Lora, 09:15") == "Texting Lora, 09:15"
+      assert Text.ascii("") == ""
+    end
+
+    test "straightens typographic punctuation" do
+      assert Text.ascii("Doesn’t ‘quite’ “work” – or — not… 2−1") ==
+               "Doesn't 'quite' \"work\" - or - not... 2-1"
+    end
+
+    test "drops accents from Latin letters" do
+      assert Text.ascii("Łukasz Kita, Feliks Pobiedziński, Damir Batinović") ==
+               "Lukasz Kita, Feliks Pobiedzinski, Damir Batinovic"
+
+      assert Text.ascii("Kamila Pokój, Julian Köpke, Ægir Þór") ==
+               "Kamila Pokoj, Julian Kopke, Agir Tor"
+    end
+
+    test "anything else is a question mark, one per character" do
+      assert Text.ascii("goat 🐐 Ж") == "goat ? ?"
+      assert Text.ascii(<<"a", 0xFF, "b">>) == "a?b"
+      assert Text.ascii(<<0xE2, 0x80>>) == "??"
+    end
+  end
+
   describe "wrap/2" do
     test "text that fits is left alone" do
       assert Text.wrap("Gus", 18) == ["Gus"]

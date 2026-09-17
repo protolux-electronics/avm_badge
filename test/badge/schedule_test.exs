@@ -67,7 +67,7 @@ defmodule Badge.ScheduleTest do
       assert first.lines == ["Multimedia with Membrane 101"]
       assert first.when == "Mon 28 Sep 08:00-12:00"
       assert first.where == "Techarenan, Workshops"
-      assert first.who == "Łukasz Kita, Feliks Pobiedziński, Kuba Pryc"
+      assert first.who == "Lukasz Kita, Feliks Pobiedzinski, Kuba Pryc"
       assert first.row == "08:00 Multimedia with Membrane 101"
     end
 
@@ -88,9 +88,9 @@ defmodule Badge.ScheduleTest do
     end
 
     test "a long title is wrapped to the columns asked for", %{sessions: sessions} do
-      long = Enum.find(sessions, &(&1.title == "AtomVM: When Constrained Doesn’t Mean Boring"))
+      long = Enum.find(sessions, &(&1.title == "AtomVM: When Constrained Doesn't Mean Boring"))
 
-      assert long.lines == ["AtomVM: When Constrained Doesn’t", "Mean Boring"]
+      assert long.lines == ["AtomVM: When Constrained Doesn't Mean", "Boring"]
 
       body =
         ~s({"days":[{"date":"2026-10-03","spaces":[{"name":"Hall","sessions":[) <>

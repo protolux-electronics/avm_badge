@@ -6,6 +6,59 @@ defmodule Badge.Text do
   binaries are walked a byte at a time.
   """
 
+  # What each Latin-1 letter from 0xC0 and each Latin Extended-A letter folds to.
+  @latin1 "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuyty"
+  @latin_a "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIiIiJjKkkLlLlLlLlLlNnNnNnnNnOoOoOoOoRrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs"
+
+  @doc """
+  Folds text to the ASCII the panel font can draw.
+
+  Accented letters lose their accents, typographic quotes, dashes and
+  spaces become the plain kind, and anything else is a question mark. A
+  byte that is not UTF-8 is a question mark too.
+  """
+  @spec ascii(binary) :: binary
+  def ascii(text), do: ascii(text, [])
+
+  defp ascii(<<>>, acc), do: :erlang.list_to_binary(:lists.reverse(acc))
+
+  defp ascii(<<byte, rest::binary>>, acc) when byte < 0x80, do: ascii(rest, [byte | acc])
+
+  defp ascii(<<lead, tail, rest::binary>>, acc)
+       when lead >= 0xC0 and lead < 0xE0 and tail >= 0x80 and tail < 0xC0 do
+    ascii(rest, [fold((lead - 0xC0) * 64 + (tail - 0x80)) | acc])
+  end
+
+  defp ascii(<<lead, second, third, rest::binary>>, acc)
+       when lead >= 0xE0 and lead < 0xF0 and second >= 0x80 and second < 0xC0 and
+              third >= 0x80 and third < 0xC0 do
+    ascii(rest, [fold((lead - 0xE0) * 4096 + (second - 0x80) * 64 + (third - 0x80)) | acc])
+  end
+
+  defp ascii(<<lead, second, third, fourth, rest::binary>>, acc)
+       when lead >= 0xF0 and lead < 0xF8 and second >= 0x80 and second < 0xC0 and
+              third >= 0x80 and third < 0xC0 and fourth >= 0x80 and fourth < 0xC0 do
+    ascii(rest, [?? | acc])
+  end
+
+  defp ascii(<<_bad, rest::binary>>, acc), do: ascii(rest, [?? | acc])
+
+  defp fold(0xA0), do: ?\s
+  defp fold(code) when code >= 0xC0 and code <= 0xFF, do: :binary.at(@latin1, code - 0xC0)
+  defp fold(code) when code >= 0x100 and code <= 0x17F, do: :binary.at(@latin_a, code - 0x100)
+  defp fold(code) when code >= 0x2010 and code <= 0x2015, do: ?-
+
+  defp fold(code) when code == 0x2018 or code == 0x2019 or code == 0x201A or code == 0x2032,
+    do: ?'
+
+  defp fold(code) when code == 0x201C or code == 0x201D or code == 0x201E or code == 0x2033,
+    do: ?"
+
+  defp fold(0x2026), do: ~c"..."
+  defp fold(code) when code == 0x2009 or code == 0x202F, do: ?\s
+  defp fold(0x2212), do: ?-
+  defp fold(_code), do: ??
+
   @doc """
   Breaks `text` into lines of at most `columns` characters.
 
@@ -38,7 +91,8 @@ defmodule Badge.Text do
   end
 
   # A space so far back that breaking on it would leave the line half empty.
-  defp at_space(text, columns, orphan, at, acc) when is_integer(orphan) and columns - at > orphan do
+  defp at_space(text, columns, orphan, at, acc)
+       when is_integer(orphan) and columns - at > orphan do
     dash(text, columns, orphan, acc)
   end
 

@@ -5,7 +5,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Commands
 
-- `mix test` — 1101 tests across 61 files, no board needed. 2 are excluded as
+- `mix test` — 1105 tests across 61 files, no board needed. 2 are excluded as
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
@@ -173,6 +173,9 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   `https://goatmire.com/schedule.json`; commit it and flash. It is held as
   the panel draws it: each session carries `when`, `where`, `who` and `row`
   already made up, next to `day`, `weekday`, `start`, `stop` and `title`
+- The built-in `default16px` font draws ASCII, so `Badge.Text.ascii/1` folds
+  every title, room and name at parse time: accents dropped, curly quotes
+  and dashes straightened, anything else a question mark
 - The site's times are Swedish local time, so `Schedule.now/1` converts UTC
   through `Badge.Zone` for `Europe/Stockholm`, not the badge's own zone. A
   system clock before 2024 counts as unset
