@@ -81,6 +81,7 @@ defmodule Badge.Page.Name do
 
   @entry_label_y Theme.content_top() + 30
   @entry_value_y Theme.content_top() + 70
+  @entry_columns div(Theme.width(), @char_w)
 
   # The code is fitted to this box at whole-pixel scale, so it stays sharp and
   # a longer link draws smaller rather than off the panel.
@@ -441,13 +442,11 @@ defmodule Badge.Page.Name do
   @impl true
   def render(%{mode: :typing} = state) do
     key = selected(state)
-    value = Field.value(state.field) <> "_"
 
     [
       centred(Profile.label(key), @entry_label_y, Theme.dim()),
-      centred(value, @entry_value_y, Theme.select()),
       centred("Enter save   Esc cancel", @hint_y, Theme.dim())
-    ]
+    ] ++ entry_line(key, Field.value(state.field))
   end
 
   def render(%{mode: :fields} = state) do
@@ -750,6 +749,39 @@ defmodule Badge.Page.Name do
   # The QR row holds a choice, so it shows the choice's label rather than its stored name.
   defp field_value(state, :qr), do: Profile.qr_label(Profile.qr_key(state.profile))
   defp field_value(state, key), do: shown(Map.get(state.profile, key, ""))
+
+  # The dim prefix and example sit around the value; a line too wide loses its start.
+  defp entry_line(key, value) do
+    segments =
+      for {text, colour} <- [{Profile.prefix(key), Theme.dim()} | value_segments(key, value)],
+          text != "",
+          do: {text, colour}
+
+    columns = :lists.foldl(fn {text, _colour}, sum -> sum + byte_size(text) end, 0, segments)
+    shown = cut_front(segments, columns - @entry_columns)
+    x = div(Theme.width() - @char_w * min(columns, @entry_columns), 2)
+
+    segment_items(shown, x, [])
+  end
+
+  defp value_segments(key, ""), do: [{"_", Theme.select()}, {Profile.hint(key), Theme.dim()}]
+  defp value_segments(_key, value), do: [{value <> "_", Theme.select()}]
+
+  defp cut_front(segments, excess) when excess <= 0, do: segments
+
+  defp cut_front([{text, colour} | rest], excess) when byte_size(text) > excess do
+    [{:binary.part(text, excess, byte_size(text) - excess), colour} | rest]
+  end
+
+  defp cut_front([{text, _colour} | rest], excess), do: cut_front(rest, excess - byte_size(text))
+
+  defp segment_items([], _x, acc), do: acc
+
+  defp segment_items([{text, colour} | rest], x, acc) do
+    item = {:text, x, @entry_value_y, :default16px, colour, Theme.bg(), text}
+
+    segment_items(rest, x + @char_w * byte_size(text), [item | acc])
+  end
 
   defp centred(text, y, colour) do
     {:text, div(Theme.width() - @char_w * byte_size(text), 2), y, :default16px, colour,

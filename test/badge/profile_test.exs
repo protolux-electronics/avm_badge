@@ -28,6 +28,30 @@ defmodule Badge.ProfileTest do
     test "an unknown field does not crash the lookups" do
       assert Profile.label(:nonesuch) == ""
       assert Profile.capacity(:nonesuch) > 0
+      assert Profile.hint(:nonesuch) == ""
+      assert Profile.prefix(:nonesuch) == ""
+    end
+
+    test "every typed field has an example that fits in it" do
+      for key <- Profile.keys(), key != :qr do
+        assert byte_size(Profile.hint(key)) > 0
+        assert byte_size(Profile.hint(key)) <= Profile.capacity(key)
+      end
+    end
+
+    test "the QR field is a choice, so it has no example to type" do
+      assert Profile.hint(:qr) == ""
+    end
+
+    test "handles that complete a URL show the part they complete" do
+      assert Profile.prefix(:github) == "github.com/"
+      assert Profile.prefix(:linkedin) == "linkedin.com/in/"
+      assert Profile.prefix(:name) == ""
+      assert Profile.prefix(:bluesky) == ""
+    end
+
+    test "the QR row is named after what it draws" do
+      assert Profile.label(:qr) == "QR Code"
     end
   end
 

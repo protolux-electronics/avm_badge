@@ -19,7 +19,25 @@ defmodule Badge.Profile do
     {:mastodon, "Mastodon", 30, :mastodon},
     {:bluesky, "Bluesky", 30, :bluesky},
     {:links, "Link", 32, :link},
-    {:qr, "QR link", 12, nil}
+    {:qr, "QR Code", 12, nil}
+  ]
+
+  # What an empty field shows in the editor.
+  @hints [
+    {:name, "Goat McMire"},
+    {:company, "Goatmire International"},
+    {:email, "goat@goatmire.com"},
+    {:github, "goatmcmire"},
+    {:linkedin, "goat-mcmire"},
+    {:mastodon, "@goat@mastodon.social"},
+    {:bluesky, "goat.bsky.social"},
+    {:links, "goatmire.com"}
+  ]
+
+  # The part of the URL a handle completes, shown ahead of it in the editor.
+  @prefixes [
+    {:github, "github.com/"},
+    {:linkedin, "linkedin.com/in/"}
   ]
 
   @required :name
@@ -55,6 +73,14 @@ defmodule Badge.Profile do
   @doc "The icon shown beside a value on the badge, or nil for a plain line."
   @spec icon(atom) :: atom | nil
   def icon(key), do: lookup(@fields, key, 3, nil)
+
+  @doc "An example value, shown while the field is empty in the editor."
+  @spec hint(atom) :: binary
+  def hint(key), do: lookup(@hints, key, 1, "")
+
+  @doc "What the editor shows ahead of the value, or empty for a plain field."
+  @spec prefix(atom) :: binary
+  def prefix(key), do: lookup(@prefixes, key, 1, "")
 
   @doc "The one field that must be filled in."
   def required, do: @required

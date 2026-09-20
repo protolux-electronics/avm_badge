@@ -943,6 +943,69 @@ defmodule Badge.Page.NameTest do
     end
   end
 
+  describe "hints while typing" do
+    defp typing(key, overrides \\ %{name: "Gus"}) do
+      index = length(:lists.takewhile(&(&1 != key), Profile.keys()))
+
+      editing(overrides) |> press({:move, :down}, index) |> press({:edit, :newline})
+    end
+
+    # The value sits on the second row: below the label, above the key hint.
+    defp entry_row(state) do
+      rows =
+        for {:text, x, y, _f, colour, _b, body} <- Name.render(state), do: {y, x, colour, body}
+
+      value_y = :lists.nth(2, :lists.usort(for {y, _x, _c, _b} <- rows, do: y))
+
+      for {^value_y, x, colour, body} <- rows, do: {x, colour, body}
+    end
+
+    test "an empty field shows its example after the cursor, dimmed" do
+      [{cursor_x, cursor_colour, "_"}, {hint_x, hint_colour, hint}] =
+        :lists.keysort(1, entry_row(typing(:bluesky)))
+
+      assert hint == Profile.hint(:bluesky)
+      assert hint_colour == Theme.dim()
+      assert cursor_colour == Theme.select()
+      assert hint_x == cursor_x + 8
+    end
+
+    test "the example goes away on the first keystroke" do
+      bodies = for {_x, _c, body} <- entry_row(type(typing(:bluesky), "g")), do: body
+
+      assert bodies == ["g_"]
+    end
+
+    test "a handle that completes a URL is shown after that URL" do
+      [{prefix_x, prefix_colour, prefix}, {value_x, value_colour, "gus-workman_"}] =
+        :lists.keysort(1, entry_row(typing(:linkedin, %{name: "Gus", linkedin: "gus-workman"})))
+
+      assert prefix == Profile.prefix(:linkedin)
+      assert prefix_colour == Theme.dim()
+      assert value_colour == Theme.select()
+      assert value_x == prefix_x + 8 * byte_size(prefix)
+    end
+
+    test "an empty handle shows the URL, the cursor, then the example" do
+      row = :lists.keysort(1, entry_row(typing(:github)))
+
+      assert for({_x, _c, body} <- row, do: body) == ["github.com/", "_", Profile.hint(:github)]
+    end
+
+    test "a line too wide for the panel loses its start, not its cursor" do
+      long = :erlang.list_to_binary(:lists.duplicate(Profile.capacity(:linkedin), ?x))
+      row = :lists.keysort(1, entry_row(typing(:linkedin, %{name: "Gus", linkedin: long})))
+
+      for {x, _c, body} <- row, do: assert(x >= 0 and x + 8 * byte_size(body) <= Theme.width())
+      assert :binary.last(elem(:lists.last(row), 2)) == ?_
+      assert :lists.sum(for {_x, _c, body} <- row, do: byte_size(body)) == div(Theme.width(), 8)
+    end
+
+    test "a plain field still shows just the value and cursor" do
+      assert for({_x, _c, body} <- entry_row(typing(:name)), do: body) == ["Gus_"]
+    end
+  end
+
   describe "choosing the QR link" do
     defp on_the_choice(state) do
       press(state, {:move, :down}, length(Profile.keys()) - 1)
