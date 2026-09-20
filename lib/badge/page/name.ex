@@ -338,9 +338,10 @@ defmodule Badge.Page.Name do
   defp fields_key({:move, :left}, state), do: {:ok, step_qr(state, :previous)}
 
   defp fields_key({:edit, :newline}, state) do
-    case selected(state) == :qr do
-      true -> {:ok, step_qr(state, :next)}
-      false -> {:ok, open(state)}
+    if selected(state) == :qr do
+      {:ok, step_qr(state, :next)}
+    else
+      {:ok, open(state)}
     end
   end
 
@@ -355,14 +356,12 @@ defmodule Badge.Page.Name do
 
   # Off the QR row there is nothing to step, so the key is swallowed as it was.
   defp step_qr(state, direction) do
-    case selected(state) == :qr do
-      true ->
-        key = Profile.qr_step(Profile.qr_key(state.profile), direction)
+    if selected(state) == :qr do
+      key = Profile.qr_step(Profile.qr_key(state.profile), direction)
 
-        %{state | profile: Map.put(state.profile, :qr, Profile.qr_name(key))}
-
-      false ->
-        state
+      %{state | profile: Map.put(state.profile, :qr, Profile.qr_name(key))}
+    else
+      state
     end
   end
 
@@ -443,9 +442,10 @@ defmodule Badge.Page.Name do
     name = Profile.display_name(profile)
 
     {font, lines} =
-      case Font.fits?(@big_font, name, @big_usable) do
-        true -> {@big_font, [name]}
-        false -> {@name_font, Text.wrap(name, @name_columns)}
+      if Font.fits?(@big_font, name, @big_usable) do
+        {@big_font, [name]}
+      else
+        {@name_font, Text.wrap(name, @name_columns)}
       end
 
     height = Font.line_height(font)
@@ -558,9 +558,10 @@ defmodule Badge.Page.Name do
   defp qr_caption(state, key) do
     value = Map.get(state.profile, key, "")
 
-    case Profile.present?(value) do
-      true -> link_line(key, qr_cut(value))
-      false -> []
+    if Profile.present?(value) do
+      link_line(key, qr_cut(value))
+    else
+      []
     end
   end
 

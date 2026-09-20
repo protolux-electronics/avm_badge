@@ -150,18 +150,20 @@ defmodule Badge.Profile do
     key = qr_key(profile)
     value = Map.get(profile, key, "")
 
-    case key != :none and present?(value) do
-      true -> link_url(key, value)
-      false -> nil
+    if key != :none and present?(value) do
+      link_url(key, value)
+    else
+      nil
     end
   end
 
   defp qr_key(_stored, []), do: :none
 
   defp qr_key(stored, [{key, name} | rest]) do
-    case name == stored do
-      true -> key
-      false -> qr_key(stored, rest)
+    if name == stored do
+      key
+    else
+      qr_key(stored, rest)
     end
   end
 
@@ -170,9 +172,10 @@ defmodule Badge.Profile do
   defp position(key, [_other | rest], at), do: position(key, rest, at + 1)
 
   defp link_url(key, value) do
-    case absolute?(value) do
-      true -> value
-      false -> prefixed(key, value)
+    if absolute?(value) do
+      value
+    else
+      prefixed(key, value)
     end
   end
 
@@ -206,9 +209,10 @@ defmodule Badge.Profile do
   defp field_lines(profile, key) do
     value = Map.get(profile, key, "")
 
-    case present?(value) do
-      true -> [{icon(key), value}]
-      false -> []
+    if present?(value) do
+      [{icon(key), value}]
+    else
+      []
     end
   end
 
