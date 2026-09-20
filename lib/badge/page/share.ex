@@ -21,6 +21,7 @@ defmodule Badge.Page.Share do
   alias Badge.Theme
 
   @char_w 8
+  @hint_y 216
 
   @screens 3
   @share_screen 0
@@ -44,6 +45,14 @@ defmodule Badge.Page.Share do
   @met_name_y 130
   @met_note_y 154
   @met_count_y 186
+
+  @row_y Theme.content_top() + 44
+  @row_pitch 18
+  @marker_x 0
+  @box_x 8
+  @label_x 40
+  @value_x 112
+  @value_columns div(Theme.width() - @value_x - 8, @char_w)
 
   # Two badges meeting, centred between the chip id and the badge heard.
   @art :badge_share
@@ -218,19 +227,43 @@ defmodule Badge.Page.Share do
   @impl true
   def handle_key({:move, :right}, %{mode: :show} = state), do: {:ok, turn(state, 1)}
   def handle_key({:move, :left}, %{mode: :show} = state), do: {:ok, turn(state, -1)}
+
+  def handle_key(event, %{mode: :show, screen: @sharing_screen} = state),
+    do: sharing_key(event, state)
+
   def handle_key(_event, _state), do: :ignore
 
   defp turn(state, delta) do
     %{state | screen: rem(state.screen + delta + @screens, @screens), cursor: 0, top: 0}
   end
 
+  defp sharing_key({:move, :up}, state),
+    do: {:ok, %{state | cursor: clamp(state.cursor - 1, last_field())}}
+
+  defp sharing_key({:move, :down}, state),
+    do: {:ok, %{state | cursor: clamp(state.cursor + 1, last_field())}}
+
+  defp sharing_key({:edit, :newline}, state) do
+    key = :lists.nth(state.cursor + 1, Sharing.fields())
+
+    {:ok, recycle(%{state | shared: Sharing.toggle(state.shared, key)})}
+  end
+
+  defp sharing_key(_event, _state), do: :ignore
+
+  defp last_field, do: length(Sharing.fields()) - 1
+
+  defp clamp(index, _last) when index < 0, do: 0
+  defp clamp(index, last) when index > last, do: last
+  defp clamp(index, _last), do: index
+
   @impl true
   def render(%{screen: @share_screen} = state) do
     [art()] ++ share_screen(state) ++ dots(@share_screen)
   end
 
-  def render(%{screen: @sharing_screen}),
-    do: [centred("Sharing", @heading_y, Theme.fg())] ++ dots(@sharing_screen)
+  def render(%{screen: @sharing_screen} = state),
+    do: sharing_screen(state) ++ dots(@sharing_screen)
 
   def render(%{screen: @collected_screen}),
     do: [centred("Collected", @heading_y, Theme.fg())] ++ dots(@collected_screen)
@@ -253,6 +286,54 @@ defmodule Badge.Page.Share do
       centred(state.chip, @chip_y, Theme.dim())
     ] ++ met_lines(state.met, Peers.count(state.peers))
   end
+
+  defp sharing_screen(state) do
+    [centred("Sharing", @heading_y, Theme.fg())] ++
+      field_rows(Sharing.fields(), 0, state, @row_y, []) ++
+      [centred("up/down pick   Enter toggle", @hint_y, Theme.dim())]
+  end
+
+  defp field_rows([], _position, _state, _y, acc), do: acc
+
+  defp field_rows([key | rest], position, state, y, acc) do
+    selected = position == state.cursor
+    value = Map.get(state.profile, key, "")
+
+    items = [
+      {:text, @marker_x, y, :default16px, Theme.select(), Theme.bg(), marker(selected)},
+      {:text, @box_x, y, :default16px, box_colour(key, selected), Theme.bg(),
+       box(state.shared, key)},
+      {:text, @label_x, y, :default16px, label_colour(value, selected), Theme.bg(),
+       Profile.label(key)},
+      {:text, @value_x, y, :default16px, Theme.dim(), Theme.bg(), shown(value)}
+    ]
+
+    field_rows(rest, position + 1, state, y + @row_pitch, items ++ acc)
+  end
+
+  defp marker(true), do: ">"
+  defp marker(false), do: " "
+
+  defp box(shared, key), do: if(Sharing.shared?(shared, key), do: "[x]", else: "[ ]")
+
+  defp box_colour(key, selected) do
+    cond do
+      key == Sharing.required() -> Theme.dim()
+      selected -> Theme.select()
+      true -> Theme.fg()
+    end
+  end
+
+  defp label_colour("", _selected), do: Theme.dim()
+  defp label_colour(_value, true), do: Theme.select()
+  defp label_colour(_value, false), do: Theme.fg()
+
+  defp shown(""), do: "-"
+
+  defp shown(value) when byte_size(value) > @value_columns,
+    do: :binary.part(value, 0, @value_columns)
+
+  defp shown(value), do: value
 
   defp art do
     {width, _height} = Icons.size(@art)

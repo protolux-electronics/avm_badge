@@ -4,6 +4,7 @@ defmodule Badge.Sim.ShareNvsTest do
   alias Badge.Page.Share, as: Page
   alias Badge.Peers
   alias Badge.Profile
+  alias Badge.Sharing
   alias Badge.Sharing.Wire
 
   @me <<0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6>>
@@ -30,6 +31,11 @@ defmodule Badge.Sim.ShareNvsTest do
 
   defp tick(state, n), do: :lists.foldl(fn _i, acc -> Page.tick(acc) end, state, :lists.seq(1, n))
 
+  defp press(state, event) do
+    {:ok, next} = Page.handle_key(event, state)
+    next
+  end
+
   test "peers are written once the beam has been quiet for a second" do
     {:ok, heard} = Page.handle_ir(@other, Wire.encode(:name, [:name], "Pat"), loaded())
     settled = tick(heard, 5)
@@ -43,5 +49,25 @@ defmodule Badge.Sim.ShareNvsTest do
 
     assert Page.leave(heard) == :ok
     assert Peers.load() == heard.peers
+  end
+
+  test "the share set is written once the sharing screen is left" do
+    chosen =
+      %{loaded() | screen: 1}
+      |> press({:move, :down})
+      |> press({:edit, :newline})
+      |> press({:move, :right})
+
+    written = Page.tick(chosen)
+
+    assert written.saved_shared == [:name, :company]
+    assert Sharing.load() == [:name, :company]
+  end
+
+  test "leaving from the sharing screen writes the share set too" do
+    chosen = %{loaded() | screen: 1} |> press({:move, :down}) |> press({:edit, :newline})
+
+    assert Page.leave(chosen) == :ok
+    assert Sharing.load() == [:name, :company]
   end
 end

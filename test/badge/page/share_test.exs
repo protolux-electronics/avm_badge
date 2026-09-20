@@ -4,6 +4,7 @@ defmodule Badge.Page.ShareTest do
   alias Badge.Page.Share, as: Page
   alias Badge.Peers
   alias Badge.Profile
+  alias Badge.Sharing
   alias Badge.Sharing.Wire
   alias Badge.Theme
 
@@ -264,6 +265,67 @@ defmodule Badge.Page.ShareTest do
 
     test "leaving before anything was read writes nothing" do
       assert Page.leave(Page.init()) == :ok
+    end
+  end
+
+  describe "the sharing screen" do
+    defp choosing(overrides \\ %{name: "Gus", company: "Protolux"}, shared \\ [:name]) do
+      on(loaded(overrides, shared), 1)
+    end
+
+    test "lists every shareable field with a box, name ticked and nothing else" do
+      bodies = texts(choosing())
+
+      for key <- Sharing.fields(), do: assert(Profile.label(key) in bodies)
+      refute Profile.label(:qr) in bodies
+      assert Enum.count(bodies, &(&1 == "[x]")) == 1
+      assert Enum.count(bodies, &(&1 == "[ ]")) == length(Sharing.fields()) - 1
+    end
+
+    test "shows each field's value, or a dash" do
+      assert "Protolux" in texts(choosing())
+      assert "-" in texts(choosing())
+    end
+
+    test "up and down move the cursor over the fields, without running off" do
+      last = length(Sharing.fields()) - 1
+
+      assert press(choosing(), {:move, :down}).cursor == 1
+      assert press(choosing(), {:move, :down}, 20).cursor == last
+      assert press(choosing(), {:move, :up}).cursor == 0
+    end
+
+    test "enter ticks a field, and again clears it" do
+      ticked = choosing() |> press({:move, :down}) |> press({:edit, :newline})
+
+      assert ticked.shared == [:name, :company]
+      assert ticked.cycle == [{:name, "Gus"}, {:company, "Protolux"}]
+      assert press(ticked, {:edit, :newline}).shared == [:name]
+    end
+
+    test "the name cannot be cleared" do
+      assert press(choosing(), {:edit, :newline}).shared == [:name]
+    end
+
+    test "ticking an empty field changes the set but not the cycle" do
+      ticked = choosing(%{name: "Gus"}) |> press({:move, :down}) |> press({:edit, :newline})
+
+      assert ticked.shared == [:name, :company]
+      assert ticked.cycle == [{:name, "Gus"}]
+    end
+
+    test "the change is not written while the screen is showing" do
+      ticked = choosing() |> press({:move, :down}) |> press({:edit, :newline})
+
+      assert Page.tick(ticked).saved_shared == [:name]
+    end
+
+    test "paging away starts the cursor at the top again" do
+      assert press(press(choosing(), {:move, :down}, 3), {:move, :right}).cursor == 0
+    end
+
+    test "the rows stay above the key hint" do
+      for {:text, _x, y, _f, _c, _b, _body} <- Page.render(choosing()), do: assert(y <= 216)
     end
   end
 end
