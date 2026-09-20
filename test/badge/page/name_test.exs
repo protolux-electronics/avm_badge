@@ -3,7 +3,6 @@ defmodule Badge.Page.NameTest do
 
   alias Badge.Font
   alias Badge.Page.Name
-  alias Badge.Peers
   alias Badge.Profile
   alias Badge.QR
   alias Badge.Theme
@@ -307,93 +306,22 @@ defmodule Badge.Page.NameTest do
         assert length(dim) == Name.screens() - 1
       end
     end
-  end
 
-  describe "the share screen" do
-    defp sharing(overrides \\ %{}) do
-      %{screen(showing(Map.merge(%{name: "Gus"}, overrides)), 2) | chip: "A1B2C3D4E5F6"}
+    test "there are three screens: the badge, the big name and the code" do
+      assert Name.screens() == 3
     end
 
-    test "shows this badge's own chip id" do
-      assert "A1B2C3D4E5F6" in texts(sharing())
+    test "enter is not a key this page uses on any screen" do
+      for screen <- [0, 1, 2] do
+        assert Name.handle_key({:edit, :newline}, screen(showing(%{name: "Gus"}), screen)) ==
+                 :ignore
+      end
     end
 
-    test "says what to do rather than offering a switch" do
-      shown = texts(sharing())
-
-      assert Enum.any?(shown, &(:binary.match(&1, "hold another badge") != :nomatch))
-      refute Enum.any?(shown, &(:binary.match(&1, "sharing is") != :nomatch))
-      refute Enum.any?(shown, &(:binary.match(&1, "turn on") != :nomatch))
-    end
-
-    test "enter is no longer the share screen's key" do
-      assert Name.handle_key({:edit, :newline}, sharing()) == :ignore
-    end
-
-    defp met(greeting, name \\ "Pat") do
-      %{sharing() | met: {name, greeting}}
-    end
-
-    defp colour_of(state, text) do
-      [c] =
-        for {:text, _x, _y, _f, c, _b, body} <- Name.render(state),
-            :binary.match(body, text) != :nomatch,
-            do: c
-
-      c
-    end
-
-    test "before anyone is heard it says what to do" do
-      assert Enum.any?(
-               texts(sharing()),
-               &(:binary.match(&1, "hold another badge") != :nomatch)
-             )
-    end
-
-    test "a new badge reads as saved, in the good colour" do
-      assert "Pat" in texts(met(:new))
-      assert colour_of(met(:new), "added to your badges") == Theme.ok()
-    end
-
-    test "a badge already collected says so, in its own colour" do
-      assert colour_of(met(:known), "already in your badges") == Theme.select()
-      refute colour_of(met(:known), "already in your badges") == Theme.ok()
-    end
-
-    test "a renamed badge is distinct from both new and known" do
-      assert colour_of(met(:renamed), "name updated") == Theme.warn()
-    end
-
-    test "the panel slows down on the screen that feeds it" do
-      assert Name.refresh(sharing()) == 333
-      assert Name.refresh(showing(%{name: "Gus"})) == 100
-    end
-  end
-
-  describe "deciding what a heard badge means" do
-    defp known(pairs) do
-      Enum.reduce(pairs, [], fn {id, name}, acc -> Peers.add(acc, id, %{name: name}) end)
-    end
-
-    test "an unheard chip id is new" do
-      assert Name.greeting([], "aaaaaa", "Pat") == :new
-      assert Name.greeting(known([{"bbbbbb", "Gus"}]), "aaaaaa", "Pat") == :new
-    end
-
-    test "the same chip id under the same name is already known" do
-      assert Name.greeting(known([{"aaaaaa", "Pat"}]), "aaaaaa", "Pat") == :known
-    end
-
-    test "the same chip id under a new name is a rename, not a new badge" do
-      assert Name.greeting(known([{"aaaaaa", "Pat"}]), "aaaaaa", "Patricia") == :renamed
-    end
-
-    test "a rename replaces rather than duplicating" do
-      peers = known([{"aaaaaa", "Pat"}])
-      renamed = Peers.add(peers, "aaaaaa", %{name: "Patricia"})
-
-      assert Peers.count(renamed) == 1
-      assert Profile.display_name(Peers.find(renamed, "aaaaaa").profile) == "Patricia"
+    test "up and down are not keys this page uses on any screen" do
+      for screen <- [0, 1, 2] do
+        assert Name.handle_key({:move, :down}, screen(showing(%{name: "Gus"}), screen)) == :ignore
+      end
     end
   end
 
@@ -416,181 +344,6 @@ defmodule Badge.Page.NameTest do
     end
   end
 
-  describe "hearing a badge" do
-    test "the same badge beaming again changes nothing" do
-      state = %{sharing() | announced: {"aaaaaa", "Pat"}}
-
-      assert Name.handle_ir("aaaaaa", "Pat", state) == :ignore
-    end
-
-    test "a badge already collected is reported without rewriting the list" do
-      peers = [%{id: "aaaaaa", profile: %{name: "Pat"}}]
-      state = %{sharing() | peers: peers}
-
-      {:ok, next} = Name.handle_ir("aaaaaa", "Pat", state)
-
-      assert next.met == {"Pat", :known}
-      assert next.peers == peers
-      assert next.announced == {"aaaaaa", "Pat"}
-    end
-
-    test "a new badge is collected" do
-      {:ok, next} = Name.handle_ir("aaaaaa", "Pat", sharing())
-
-      assert next.met == {"Pat", :new}
-      assert Peers.count(next.peers) == 1
-    end
-
-    test "collecting a badge does not write to NVS from the handler" do
-      {:ok, next} = Name.handle_ir("aaaaaa", "Pat", sharing())
-
-      assert Peers.count(next.peers) == 1
-      assert next.stored == []
-    end
-
-    test "a badge heard on any other screen is dropped" do
-      for other <- [0, 1, 3] do
-        state = %{sharing() | screen: other}
-
-        assert Name.handle_ir("aaaaaa", "Pat", state) == :ignore
-      end
-    end
-  end
-
-  describe "beaming the profile" do
-    # persist/1 writes to NVS unless the profile already matches the saved one.
-    defp beaming(state \\ sharing()), do: %{state | saved: state.profile}
-
-    test "transmits on every third tick and no other" do
-      assert Name.beam_ticks() == 3
-
-      one = Name.tick(beaming())
-      two = Name.tick(one)
-      three = Name.tick(two)
-
-      assert one.beam == 1
-      assert two.beam == 2
-      assert three.beam == 0
-    end
-
-    test "a screen that is not sharing never advances the counter" do
-      for other <- [0, 1, 3] do
-        state = beaming(%{sharing() | screen: other})
-
-        assert Name.tick(state).beam == 0
-        assert state |> Name.tick() |> Name.tick() |> Map.get(:beam) == 0
-      end
-    end
-
-    test "paging away resets the counter, so returning starts a fresh cycle" do
-      part_way = beaming() |> Name.tick() |> Name.tick()
-
-      assert part_way.beam == 2
-      assert Name.tick(%{part_way | screen: 3}).beam == 0
-    end
-  end
-
-  describe "scrolling the collected list" do
-    defp with_peers(n) do
-      peers = for i <- 1..n, do: %{id: <<i::48>>, profile: %{name: "Badge #{i}"}}
-
-      %{screen(showing(%{name: "Gus"}), 3) | peers: peers}
-    end
-
-    test "a list that fits does not scroll" do
-      assert Name.scroll(with_peers(3), 1).top == 0
-    end
-
-    test "scrolling stops at the last full window" do
-      assert Name.scroll(with_peers(10), 99).top == 4
-    end
-
-    test "scrolling stops at the top" do
-      assert Name.scroll(with_peers(10), -99).top == 0
-    end
-
-    test "the window shows the names it has scrolled to" do
-      scrolled = Name.scroll(with_peers(10), 2)
-
-      assert "Badge 3" in texts(scrolled)
-      refute "Badge 1" in texts(scrolled)
-    end
-
-    test "a short list says nothing about scrolling" do
-      refute Enum.any?(texts(with_peers(3)), &(:binary.match(&1, "of 3") != :nomatch))
-    end
-
-    test "a long list says where you are in it" do
-      assert Enum.any?(texts(with_peers(10)), &(:binary.match(&1, "1-6 of 10") != :nomatch))
-    end
-
-    test "up and down belong to the collected screen alone" do
-      assert Name.handle_key({:move, :down}, screen(showing(%{name: "Gus"}), 1)) == :ignore
-      assert press(with_peers(10), {:move, :down}).top == 1
-    end
-
-    test "paging away from the list starts it at the top again" do
-      scrolled = Name.scroll(with_peers(10), 3)
-
-      assert press(scrolled, {:move, :right}).top == 0
-    end
-
-    test "enter is not a key this page uses on any screen" do
-      for screen <- [0, 1, 2, 3] do
-        assert Name.handle_key({:edit, :newline}, screen(showing(%{name: "Gus"}), screen)) ==
-                 :ignore
-      end
-    end
-  end
-
-  describe "the collected screen" do
-    defp collected(peers) do
-      %{screen(showing(%{name: "Gus"}), 3) | peers: peers}
-    end
-
-    defp peer(n, name) do
-      %{id: <<0, 0, 0, 0, 0, n>>, profile: Map.put(Profile.blank(), :name, name)}
-    end
-
-    test "an empty collection says none" do
-      assert Enum.any?(texts(collected([])), &(:binary.match(&1, "0 badges") != :nomatch))
-    end
-
-    test "one badge is singular" do
-      assert Enum.any?(
-               texts(collected([peer(1, "A")])),
-               &(:binary.match(&1, "1 badge") != :nomatch)
-             )
-    end
-
-    test "counts what has been collected" do
-      peers = for n <- 1..5, do: peer(n, "P")
-
-      assert Enum.any?(texts(collected(peers)), &(:binary.match(&1, "5 badges") != :nomatch))
-    end
-
-    test "names the badges collected" do
-      bodies = texts(collected([peer(1, "Ada"), peer(2, "Grace")]))
-
-      assert "Ada" in bodies
-      assert "Grace" in bodies
-    end
-
-    test "shows only as many as fit, rather than overflowing" do
-      peers = for n <- 1..40, do: peer(n, "P")
-
-      for {:text, _x, y, _f, _c, _b, _body} <- Name.render(collected(peers)) do
-        assert y < Theme.height()
-      end
-    end
-
-    test "a peer with no name still lists rather than blanking the row" do
-      bare = %{id: <<0, 0, 0, 0, 0, 9>>, profile: %{}}
-
-      assert Profile.placeholder() in texts(collected([bare]))
-    end
-  end
-
   describe "the QR screen" do
     defp qrcode(overrides \\ %{}) do
       profile =
@@ -598,7 +351,7 @@ defmodule Badge.Page.NameTest do
         |> Map.merge(overrides)
         |> then(&Map.merge(Profile.blank(), &1))
 
-      %{screen(showing(profile), 4) | qr_result: :none}
+      %{screen(showing(profile), 2) | qr_result: :none}
     end
 
     defp qr_items(state) do
@@ -606,9 +359,10 @@ defmodule Badge.Page.NameTest do
           do: item
     end
 
-    test "is the fifth and last screen" do
-      assert Name.screens() == 5
-      assert press(screen(showing(%{name: "Gus"}), 3), {:move, :right}).screen == 4
+    test "is the third and last screen" do
+      assert Name.screens() == 3
+      assert press(screen(showing(%{name: "Gus"}), 1), {:move, :right}).screen == 2
+      assert press(screen(showing(%{name: "Gus"}), 2), {:move, :right}).screen == 0
     end
 
     test "leaves the space above the code empty, so a big code cannot run into text" do
@@ -699,7 +453,7 @@ defmodule Badge.Page.NameTest do
     # The code is only built while its own screen is up, so that the encode
     # cannot slow the panel down on the screens that never show it.
     defp showing_link(overrides \\ %{}) do
-      %{ready(Map.merge(%{qr: "github", github: "gus"}, overrides)) | screen: 4}
+      %{ready(Map.merge(%{qr: "github", github: "gus"}, overrides)) | screen: 2}
     end
 
     defp relink(state, overrides) do
@@ -709,7 +463,7 @@ defmodule Badge.Page.NameTest do
     end
 
     test "no other screen starts a worker, however the profile reads" do
-      for screen <- [0, 1, 2, 3] do
+      for screen <- [0, 1] do
         ticked = Name.tick(%{showing_link() | screen: screen})
 
         assert ticked.qr_pid == nil
@@ -783,7 +537,7 @@ defmodule Badge.Page.NameTest do
       assert left.qr_payload == nil
       assert left.qr_pid == nil
 
-      assert Name.tick(%{left | screen: 4}).qr_result == :pending
+      assert Name.tick(%{left | screen: 2}).qr_result == :pending
     end
 
     test "leaving the QR screen keeps a code that is already built" do
@@ -797,7 +551,7 @@ defmodule Badge.Page.NameTest do
       assert left.qr_result == {:ok, :code}
       assert left.qr_pid == nil
 
-      assert Name.tick(%{left | screen: 4}).qr_result == {:ok, :code}
+      assert Name.tick(%{left | screen: 2}).qr_result == {:ok, :code}
     end
 
     test "leaving the page stops the worker" do
@@ -1131,7 +885,7 @@ defmodule Badge.Page.NameTest do
       chosen = picking() |> press({:move, :down}) |> press({:edit, :newline})
 
       # saved: profile, so tick/1 does not write the edited profile to NVS from a test.
-      state = %{chosen | mode: :show, screen: 4, saved: chosen.profile}
+      state = %{chosen | mode: :show, screen: 2, saved: chosen.profile}
 
       assert Name.tick(state).qr_payload == "https://github.com/gus"
     end

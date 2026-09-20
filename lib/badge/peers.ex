@@ -34,17 +34,6 @@ defmodule Badge.Peers do
   def count(peers), do: length(peers)
 
   @doc """
-  Records a badge, replacing any earlier meeting with the same chip.
-
-  The newest goes to the front, and the oldest falls off the end once the
-  list is full.
-  """
-  @spec add([map], binary, map) :: [map]
-  def add(peers, id, profile) do
-    [%{id: id, profile: profile} | reject(peers, id, [])] |> take(@limit, [])
-  end
-
-  @doc """
   Records one field heard from a badge.
 
   The peer keeps only the fields in `shared`, what the sender is sharing

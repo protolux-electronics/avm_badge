@@ -4,20 +4,13 @@ defmodule Badge.Page.Name do
 
   The name is set in the editor and kept in NVS. Long names wrap onto a
   second line, and the rule sits under however many lines that takes.
-
-  The share screen beams the name over IR while it is showing, and records
-  the badges it hears. Turning away from it stops both.
   """
 
   use Badge.Page
 
   alias Badge.Field
   alias Badge.Font
-  alias Badge.Identity
   alias Badge.Icons
-  alias Badge.Ir
-  alias Badge.Peers
-  alias Badge.Pixels
   alias Badge.Profile
   alias Badge.QR
   alias Badge.Text
@@ -55,18 +48,7 @@ defmodule Badge.Page.Name do
   @value_x 88
   @value_columns div(Theme.width() - @value_x - 8, @char_w)
 
-  @screens 5
-
-  @muted_rows 6
-
-  # What meeting a badge looks like, on the panel and on the LED chain.
-  @met_name_y 130
-  @met_note_y 154
-  @met_count_y 186
-
-  @new_hue 120
-  @known_hue 200
-  @renamed_hue 45
+  @screens 3
 
   # The big-name screen, and what it falls back to when a name will not fit.
   @big_font :w95fa
@@ -74,10 +56,6 @@ defmodule Badge.Page.Name do
   @dot_y 228
   @dot 6
   @dot_gap 10
-
-  # Every third UI tick, so the beam is quiet four fifths of the time and the
-  # other badge can be heard.
-  @beam_ticks 3
 
   @entry_label_y Theme.content_top() + 30
   @entry_value_y Theme.content_top() + 70
@@ -87,7 +65,7 @@ defmodule Badge.Page.Name do
 
   # The code is fitted to this box at whole-pixel scale, so it stays sharp and
   # a longer link draws smaller rather than off the panel.
-  @qr_screen 4
+  @qr_screen 2
   @qr_box 148
   @qr_top 40
   @qr_mid_y @qr_top + div(@qr_box, 2) - 8
@@ -95,10 +73,7 @@ defmodule Badge.Page.Name do
   @qr_max_scale 4
   @qr_caption_chars div(Theme.width() - 2 * @margin - @icon_w - 6, @char_w)
 
-  # Sharing repaints whenever a badge is heard; the editor wants the cursor to
-  # keep up, and only one of those two can have the panel.
   @impl true
-  def refresh(%{screen: 2}), do: 333
   def refresh(_state), do: 100
 
   # w95fa is 18 kB in the display driver's heap, so it is only asked for on
@@ -119,13 +94,6 @@ defmodule Badge.Page.Name do
       mode: :show,
       screen: 0,
       profile: Profile.blank(),
-      peers: [],
-      stored: [],
-      chip: "",
-      beam: 0,
-      announced: nil,
-      met: nil,
-      top: 0,
       cursor: 0,
       pick: 0,
       field: nil,
@@ -140,61 +108,16 @@ defmodule Badge.Page.Name do
 
   # Hardware is only touched here, never from a key handler.
   @impl true
-  def tick(state), do: state |> load() |> beam() |> persist() |> qr()
+  def tick(state), do: state |> load() |> persist() |> qr()
 
   # The saved profile arrives on the first tick, so init/0 stays pure.
   defp load(%{loaded: true} = state), do: state
 
   defp load(state) do
     profile = Profile.load()
-    peers = Peers.load()
 
-    %{
-      state
-      | profile: profile,
-        saved: profile,
-        peers: peers,
-        stored: peers,
-        chip: Identity.format(Identity.chip_id()),
-        loaded: true
-    }
+    %{state | profile: profile, saved: profile, loaded: true}
   end
-
-  # Screen 2 is the whole protocol: on it we beam, off it we are silent.
-  defp beam(%{screen: 2} = state) do
-    %{state | beam: transmit(rem(state.beam + 1, @beam_ticks), state.profile)}
-  end
-
-  defp beam(state), do: %{state | beam: 0}
-
-  defp transmit(0, profile) do
-    Ir.send(Profile.display_name(profile))
-
-    0
-  end
-
-  defp transmit(count, _profile), do: count
-
-  @doc "How many UI ticks pass between transmissions."
-  def beam_ticks, do: @beam_ticks
-
-  # Frames reach Badge.UI, not the page, so they arrive through here.
-  #
-  # A badge held in front of this one beams three times a second. Reacting to
-  # every frame would strobe the LEDs and rewrite NVS continuously, so nothing
-  # happens until the chip id or the name actually changes.
-  @impl true
-  def handle_ir(from, name, %{screen: 2, announced: {from, name}}), do: :ignore
-
-  def handle_ir(from, name, %{screen: 2} = state) do
-    greeting = greeting(state.peers, from, name)
-
-    :io.format(~c"Name: ~p ~s ~s~n", [greeting, Identity.format(from), name])
-
-    {:ok, meet(state, from, name, greeting)}
-  end
-
-  def handle_ir(_from, _payload, _state), do: :ignore
 
   # The worker sends here rather than to the page, because Badge.UI owns the mailbox.
   @impl true
@@ -211,41 +134,7 @@ defmodule Badge.Page.Name do
     :ok
   end
 
-  @doc """
-  What hearing this badge means: unknown, known already, or known under a
-  different name because they have edited their profile since.
-  """
-  @spec greeting([map], binary, binary) :: :new | :known | :renamed
-  def greeting(peers, mac, name) do
-    case Peers.find(peers, mac) do
-      nil -> :new
-      peer -> same_name(Profile.display_name(Map.get(peer, :profile, %{})), name)
-    end
-  end
-
-  defp same_name(name, name), do: :known
-  defp same_name(_stored, _heard), do: :renamed
-
-  # Only a change is worth the flash write; hearing a badge again is free.
-  defp meet(state, mac, name, :known) do
-    Pixels.flash(@known_hue)
-
-    %{state | announced: {mac, name}, met: {name, :known}}
-  end
-
-  defp meet(state, mac, name, greeting) do
-    peers = Peers.add(state.peers, mac, %{name: name})
-    Pixels.flash(hue(greeting))
-
-    %{state | peers: peers, announced: {mac, name}, met: {name, greeting}}
-  end
-
-  defp hue(:new), do: @new_hue
-  defp hue(:renamed), do: @renamed_hue
-
-  # Both writes are deferred to here, so a key handler and an arriving frame
-  # stay pure and NVS is only touched on a tick.
-  defp persist(state), do: state |> persist_profile() |> persist_peers()
+  defp persist(state), do: persist_profile(state)
 
   # Written once the editor is closed, not on every keystroke.
   defp persist_profile(%{mode: mode} = state) when mode != :show, do: state
@@ -255,14 +144,6 @@ defmodule Badge.Page.Name do
     Profile.save(state.profile)
 
     %{state | saved: state.profile}
-  end
-
-  defp persist_peers(%{peers: peers, stored: peers} = state), do: state
-
-  defp persist_peers(state) do
-    Peers.save(state.peers)
-
-    %{state | stored: state.peers}
   end
 
   # Only its own screen builds a code: the encode is heavy enough to slow the
@@ -321,23 +202,12 @@ defmodule Badge.Page.Name do
     {:ok, %{state | mode: :fields, cursor: 0}}
   end
 
-  defp show_key({:move, :down}, %{screen: 3} = state), do: {:ok, scroll(state, 1)}
-  defp show_key({:move, :up}, %{screen: 3} = state), do: {:ok, scroll(state, -1)}
-
   defp show_key({:move, :right}, state), do: {:ok, turn(state, 1)}
   defp show_key({:move, :left}, state), do: {:ok, turn(state, -1)}
   defp show_key(_event, _state), do: :ignore
 
   defp turn(state, delta) do
-    %{state | screen: rem(state.screen + delta + @screens, @screens), top: 0}
-  end
-
-  @doc "Moves the window over the collected list, without running off either end."
-  @spec scroll(map, integer) :: map
-  def scroll(%{peers: peers, top: top} = state, delta) do
-    last = max(Peers.count(peers) - @muted_rows, 0)
-
-    %{state | top: min(max(top + delta, 0), last)}
+    %{state | screen: rem(state.screen + delta + @screens, @screens)}
   end
 
   @doc "How many badge screens there are to page through."
@@ -463,10 +333,6 @@ defmodule Badge.Page.Name do
 
   def render(%{screen: 1, profile: profile}), do: big_screen(profile) ++ dots(1)
 
-  def render(%{screen: 2} = state), do: share_screen(state) ++ dots(2)
-
-  def render(%{screen: 3} = state), do: peers_screen(state) ++ dots(3)
-
   def render(%{screen: @qr_screen} = state), do: qr_screen(state) ++ dots(@qr_screen)
 
   def render(%{profile: profile} = state) do
@@ -505,65 +371,6 @@ defmodule Badge.Page.Name do
 
     big_lines(rest, font, height, y + height, [item | acc])
   end
-
-  defp share_screen(state) do
-    [
-      centred("Share", Theme.content_top() + 16, Theme.fg()),
-      centred(state.chip, Theme.content_top() + 44, Theme.dim())
-    ] ++ met_lines(state.met, Peers.count(state.peers))
-  end
-
-  # Before anyone has been heard there is nothing to report but the count.
-  defp met_lines(nil, count) do
-    [
-      centred("hold another badge up to this one", @met_name_y, Theme.dim()),
-      collected_line(count)
-    ]
-  end
-
-  defp met_lines({name, greeting}, count) do
-    [
-      centred(name, @met_name_y, Theme.fg()),
-      centred(note(greeting), @met_note_y, colour(greeting)),
-      collected_line(count)
-    ]
-  end
-
-  defp note(:new), do: "added to your badges"
-  defp note(:known), do: "already in your badges"
-  defp note(:renamed), do: "name updated"
-
-  defp colour(:new), do: Theme.ok()
-  defp colour(:known), do: Theme.select()
-  defp colour(:renamed), do: Theme.warn()
-
-  defp collected_line(count) do
-    centred(
-      :erlang.integer_to_binary(count) <> collected(count) <> " collected",
-      @met_count_y,
-      Theme.dim()
-    )
-  end
-
-  defp peers_screen(%{peers: peers, top: top}) do
-    count = Peers.count(peers)
-
-    [
-      centred("Collected", Theme.content_top() + 16, Theme.fg()),
-      centred(
-        :erlang.integer_to_binary(count) <> collected(count),
-        Theme.content_top() + 44,
-        Theme.ok()
-      )
-    ] ++
-      peer_rows(drop(peers, top), @muted_rows, Theme.content_top() + 80, []) ++
-      scroll_hint(count, top)
-  end
-
-  # There is no Enum.drop on AtomVM, and the list is at most @limit long.
-  defp drop(peers, 0), do: peers
-  defp drop([], _n), do: []
-  defp drop([_peer | rest], n), do: drop(rest, n - 1)
 
   defp qr_screen(state) do
     key = Profile.qr_key(state.profile)
@@ -621,34 +428,6 @@ defmodule Badge.Page.Name do
     do: :binary.part(value, 0, @qr_caption_chars)
 
   defp qr_cut(value), do: value
-
-  # Only says so when there is something off-screen in that direction.
-  defp scroll_hint(count, _top) when count <= @muted_rows, do: []
-
-  defp scroll_hint(count, top) do
-    shown = min(top + @muted_rows, count)
-    range = :erlang.integer_to_binary(top + 1) <> "-" <> :erlang.integer_to_binary(shown)
-
-    [
-      centred(
-        range <> " of " <> :erlang.integer_to_binary(count) <> "   up/down",
-        @hint_y,
-        Theme.dim()
-      )
-    ]
-  end
-
-  defp collected(1), do: " badge"
-  defp collected(_count), do: " badges"
-
-  defp peer_rows([], _left, _y, acc), do: :lists.reverse(acc)
-  defp peer_rows(_peers, 0, _y, acc), do: :lists.reverse(acc)
-
-  defp peer_rows([peer | rest], left, y, acc) do
-    name = Profile.display_name(Map.get(peer, :profile, %{}))
-
-    peer_rows(rest, left - 1, y + @detail_pitch, [centred(name, y, Theme.muted()) | acc])
-  end
 
   # Which screen you are on, so paging is discoverable without a label.
   defp dots(current) do
