@@ -992,6 +992,12 @@ defmodule Badge.Page.NameTest do
       assert for({_x, _c, body} <- row, do: body) == ["github.com/", "_", Profile.hint(:github)]
     end
 
+    test "an empty link shows the scheme, the cursor, then the example" do
+      row = :lists.keysort(1, entry_row(typing(:links)))
+
+      assert for({_x, _c, body} <- row, do: body) == ["https://", "_", Profile.hint(:links)]
+    end
+
     test "a line too wide for the panel loses its start, not its cursor" do
       long = :erlang.list_to_binary(:lists.duplicate(Profile.capacity(:linkedin), ?x))
       row = :lists.keysort(1, entry_row(typing(:linkedin, %{name: "Gus", linkedin: long})))

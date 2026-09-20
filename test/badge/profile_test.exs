@@ -46,6 +46,7 @@ defmodule Badge.ProfileTest do
     test "handles that complete a URL show the part they complete" do
       assert Profile.prefix(:github) == "github.com/"
       assert Profile.prefix(:linkedin) == "linkedin.com/in/"
+      assert Profile.prefix(:links) == "https://"
       assert Profile.prefix(:name) == ""
       assert Profile.prefix(:bluesky) == ""
     end
@@ -212,6 +213,11 @@ defmodule Badge.ProfileTest do
     test "a bluesky handle drops its at sign" do
       assert Profile.qr_url(with_values(%{qr: "bluesky", bluesky: "@gus.bsky.social"})) ==
                "https://bsky.app/profile/gus.bsky.social"
+    end
+
+    test "a bare link gets the scheme the editor shows" do
+      assert Profile.qr_url(with_values(%{qr: "links", links: "goatmire.com"})) ==
+               "https://goatmire.com"
     end
 
     test "a link is used as it is stored" do

@@ -37,7 +37,8 @@ defmodule Badge.Profile do
   # The part of the URL a handle completes, shown ahead of it in the editor.
   @prefixes [
     {:github, "github.com/"},
-    {:linkedin, "linkedin.com/in/"}
+    {:linkedin, "linkedin.com/in/"},
+    {:links, "https://"}
   ]
 
   # A reminder shown under the value while a field is being edited.
@@ -219,7 +220,7 @@ defmodule Badge.Profile do
   defp prefixed(:linkedin, value), do: "https://www.linkedin.com/in/" <> handle(value)
   defp prefixed(:bluesky, value), do: "https://bsky.app/profile/" <> handle(value)
   defp prefixed(:mastodon, value), do: mastodon_url(value)
-  defp prefixed(:links, value), do: value
+  defp prefixed(:links, value), do: "https://" <> value
 
   defp handle(<<"@", rest::binary>>), do: rest
   defp handle(value), do: value
