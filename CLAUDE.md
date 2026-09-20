@@ -5,7 +5,7 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Commands
 
-- `mix test` — 1107 tests across 61 files, no board needed. 2 are excluded as
+- `mix test` — 1303 tests across 69 files, no board needed. 2 are excluded as
   `:regenerates_assets` because they rewrite tracked files
 - `mix atomvm.esp32.flash` — builds, checks, flashes; port auto-detects, don't
   pass `--port`
@@ -160,6 +160,22 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
   `tools/cluster.exs` instead
 - The cookie is the only thing guarding the node, and rpc runs anything, so
   joining is a keypress on the badge rather than something it does at boot
+
+## Sharing
+
+- `Badge.Page.Share` beams the profile over IR while its first screen shows
+  and records what it hears; it is on the triangle key of the first home
+  screen. `Badge.Sharing` holds the share set (NVS key `share`, field names
+  joined by spaces, name always in it) and `Badge.Sharing.Wire` the frame:
+  `<tag> <mask> <value>`, one field per frame, tags below 0x20 so a bare
+  name from older firmware still decodes as a name
+- One frame every 200 ms (`@beam_ms`): 2400 baud carries 240 bytes/s and
+  the longest frame is 44 bytes on the wire. **The beam is full duplex**;
+  no quiet time is needed to hear the other badge
+- Peers are written a second after the last frame and on leaving the page;
+  the list caps at 32 because a peer now carries up to a whole profile
+- The page tests never write NVS. `sim/test/badge/sim/share_nvs_test.exs`
+  starts `Badge.Sim.Nvs` and covers the writes
 
 ## Schedule
 
@@ -354,7 +370,8 @@ Elixir firmware for an ESP32-S3 conference badge: ST7789 display via AtomGL,
 
 ## Conventions
 
-- Commit subjects: capitalised, one line, no body, no `Co-Authored-By`.
+- Commit messages: one line, capitalised, at most 50 characters, no body,
+  no trailers of any kind (no `Co-Authored-By`).
 - Comments: at most one line, local clarification only. No rationale, no
   measurements.
 - Docstrings: may be multi-line but concise — how to use it, not why it was
