@@ -83,7 +83,7 @@ defmodule Badge.Page.Name do
   @entry_value_y Theme.content_top() + 70
   @entry_columns div(Theme.width(), @char_w)
   @entry_note_y Theme.content_top() + 110
-  @entry_note_columns div(Theme.width() - 2 * @margin, @char_w)
+  @entry_note_columns 30
 
   # The code is fitted to this box at whole-pixel scale, so it stays sharp and
   # a longer link draws smaller rather than off the panel.

@@ -42,7 +42,7 @@ defmodule Badge.Profile do
 
   # A reminder shown under the value while a field is being edited.
   @notes [
-    {:bluesky, "Reminder: tag your bsky posts\nwith #goatmire!"}
+    {:bluesky, "Reminder: tag your bsky posts with #goatmire!"}
   ]
 
   @required :name

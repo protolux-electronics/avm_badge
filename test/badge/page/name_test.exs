@@ -1015,8 +1015,8 @@ defmodule Badge.Page.NameTest do
       lines = :lists.keysort(1, muted(typing(:bluesky)))
       [value_y] = for {:text, _x, y, _f, _c, _b, "_"} <- Name.render(typing(:bluesky)), do: y
 
-      assert Enum.join(for({_y, _x, body} <- lines, do: body), " ") == Profile.note(:bluesky)
-      assert length(lines) == 2
+      assert for({_y, _x, body} <- lines, do: body) ==
+               ["Reminder: tag your bsky posts", "with #goatmire!"]
 
       for {y, x, body} <- lines do
         assert y > value_y and y < 216
