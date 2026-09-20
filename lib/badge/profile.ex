@@ -26,11 +26,11 @@ defmodule Badge.Profile do
   @hints [
     {:name, "Goat McMire"},
     {:company, "Goatmire International"},
-    {:email, "goat@goatmire.com"},
-    {:github, "goatmcmire"},
+    {:email, "goat-mcmire@goatmire.com"},
+    {:github, "goat-mcmire"},
     {:linkedin, "goat-mcmire"},
-    {:mastodon, "@goat@mastodon.social"},
-    {:bluesky, "goat.bsky.social"},
+    {:mastodon, "@goat-mcmire@mastodon.social"},
+    {:bluesky, "goat-mcmire.bsky.social"},
     {:links, "goatmire.com"}
   ]
 
