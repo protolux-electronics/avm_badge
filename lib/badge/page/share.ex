@@ -12,9 +12,11 @@ defmodule Badge.Page.Share do
 
   alias Badge.Icons
   alias Badge.Identity
+  alias Badge.Ir
   alias Badge.Peers
   alias Badge.Profile
   alias Badge.Sharing
+  alias Badge.Sharing.Wire
   alias Badge.Theme
 
   @char_w 8
@@ -84,7 +86,7 @@ defmodule Badge.Page.Share do
 
   # Hardware is only touched here, never from a key handler.
   @impl true
-  def tick(state), do: load(state)
+  def tick(state), do: state |> load() |> beam()
 
   # Everything stored arrives on the first tick, so init/0 stays pure.
   defp load(%{loaded: true} = state), do: state
@@ -107,6 +109,16 @@ defmodule Badge.Page.Share do
         loaded: true
     })
   end
+
+  # Screen 0 is the whole protocol: on it we beam, off it we are silent.
+  defp beam(%{screen: @share_screen, mode: :show, cycle: [_frame | _rest] = cycle} = state) do
+    {key, value} = :lists.nth(state.next + 1, cycle)
+    Ir.send(Wire.encode(key, state.shared, value))
+
+    %{state | next: rem(state.next + 1, length(cycle))}
+  end
+
+  defp beam(state), do: %{state | next: 0}
 
   @doc "Rebuilds what the share screen beams, starting the cycle over."
   @spec recycle(map) :: map

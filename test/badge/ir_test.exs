@@ -13,13 +13,13 @@ defmodule Badge.IrTest do
       assert Link.baud() == 2400
     end
 
-    test "a full-width name leaves the beam quiet most of each cycle" do
-      frame = Frame.encode(<<1, 2, 3, 4, 5, 6>>, "Wolfgang Amadeus M")
+    test "the longest share frame clears the line within one beam interval" do
+      payload =
+        Badge.Sharing.Wire.encode(:links, Badge.Sharing.Wire.fields(), :binary.copy("x", 32))
 
-      # The UI base tick is 100 ms, so this is the gap between transmissions.
-      cadence_ms = Badge.Page.Name.beam_ticks() * 100
+      frame = Frame.encode(<<1, 2, 3, 4, 5, 6>>, payload)
 
-      assert airtime_ms(frame) * 2 < cadence_ms
+      assert airtime_ms(frame) < Badge.Page.Share.beam_ms()
     end
   end
 

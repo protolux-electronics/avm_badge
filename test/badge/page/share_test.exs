@@ -142,4 +142,41 @@ defmodule Badge.Page.ShareTest do
       assert is_list(Page.render(ticked))
     end
   end
+
+  describe "beaming the profile" do
+    test "walks the cycle one frame a tick, name first, and wraps" do
+      state = loaded(%{name: "Gus", company: "Protolux"}, [:name, :company])
+
+      assert state.cycle == [{:name, "Gus"}, {:company, "Protolux"}]
+
+      one = Page.tick(state)
+      two = Page.tick(one)
+      three = Page.tick(two)
+
+      assert {one.next, two.next, three.next} == {1, 0, 1}
+    end
+
+    test "a field that is shared but empty is skipped" do
+      assert loaded(%{name: "Gus"}, [:name, :company]).cycle == [{:name, "Gus"}]
+    end
+
+    test "any other screen, or the detail, never advances" do
+      for screen <- [1, 2] do
+        assert Page.tick(on(loaded(), screen)).next == 0
+      end
+
+      assert Page.tick(%{loaded() | mode: :detail}).next == 0
+    end
+
+    test "paging away resets the cycle, so returning starts from the name" do
+      part_way = Page.tick(loaded(%{name: "Gus", company: "P"}, [:name, :company]))
+
+      assert part_way.next == 1
+      assert Page.tick(on(part_way, 1)).next == 0
+    end
+
+    test "nothing goes out without a name" do
+      assert Page.tick(loaded(%{})).next == 0
+    end
+  end
 end
