@@ -775,7 +775,7 @@ defmodule Badge.Page.Name do
   defp note_lines([], _y, acc), do: acc
 
   defp note_lines([line | rest], y, acc) do
-    note_lines(rest, y + @detail_pitch, [centred(line, y, Theme.accent()) | acc])
+    note_lines(rest, y + @detail_pitch, [centred(line, y, Theme.muted()) | acc])
   end
 
   defp value_segments(key, ""), do: [{"_", Theme.select()}, {Profile.hint(key), Theme.dim()}]

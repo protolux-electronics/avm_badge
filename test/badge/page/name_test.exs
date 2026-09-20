@@ -1005,14 +1005,14 @@ defmodule Badge.Page.NameTest do
       assert for({_x, _c, body} <- entry_row(typing(:name)), do: body) == ["Gus_"]
     end
 
-    defp accented(state) do
-      for {:text, x, y, _f, colour, _b, body} <- Name.render(state), colour == Theme.accent() do
+    defp muted(state) do
+      for {:text, x, y, _f, colour, _b, body} <- Name.render(state), colour == Theme.muted() do
         {y, x, body}
       end
     end
 
-    test "the bluesky reminder is drawn in the accent colour, wrapped, under the value" do
-      lines = :lists.keysort(1, accented(typing(:bluesky)))
+    test "the bluesky reminder is drawn muted, wrapped, under the value" do
+      lines = :lists.keysort(1, muted(typing(:bluesky)))
       [value_y] = for {:text, _x, y, _f, _c, _b, "_"} <- Name.render(typing(:bluesky)), do: y
 
       assert Enum.join(for({_y, _x, body} <- lines, do: body), " ") == Profile.note(:bluesky)
@@ -1024,8 +1024,8 @@ defmodule Badge.Page.NameTest do
       end
     end
 
-    test "a field without a note draws nothing in the accent colour" do
-      assert accented(typing(:name)) == []
+    test "a field without a note draws nothing muted" do
+      assert muted(typing(:name)) == []
     end
   end
 
