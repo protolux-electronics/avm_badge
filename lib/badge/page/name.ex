@@ -19,6 +19,7 @@ defmodule Badge.Page.Name do
   alias Badge.Peers
   alias Badge.Pixels
   alias Badge.Profile
+  alias Badge.QR
   alias Badge.Text
   alias Badge.Theme
 
@@ -54,7 +55,7 @@ defmodule Badge.Page.Name do
   @value_x 88
   @value_columns div(Theme.width() - @value_x - 8, @char_w)
 
-  @screens 4
+  @screens 5
 
   @muted_rows 6
 
@@ -80,6 +81,16 @@ defmodule Badge.Page.Name do
 
   @entry_label_y Theme.content_top() + 30
   @entry_value_y Theme.content_top() + 70
+
+  # The code is fitted to this box at whole-pixel scale, so it stays sharp and
+  # a longer link draws smaller rather than off the panel.
+  @qr_box 148
+  @qr_top 50
+  @qr_heading_y 36
+  @qr_mid_y @qr_top + div(@qr_box, 2) - 8
+  @qr_caption_y 204
+  @qr_max_scale 4
+  @qr_caption_chars div(Theme.width() - 2 * @margin - @icon_w - 6, @char_w)
 
   # Sharing repaints whenever a badge is heard; the editor wants the cursor to
   # keep up, and only one of those two can have the panel.
@@ -115,13 +126,17 @@ defmodule Badge.Page.Name do
       cursor: 0,
       field: nil,
       loaded: false,
-      saved: nil
+      saved: nil,
+      qr_payload: nil,
+      qr_result: :none,
+      qr_pid: nil,
+      qr_ref: nil
     }
   end
 
   # Hardware is only touched here, never from a key handler.
   @impl true
-  def tick(state), do: state |> load() |> beam() |> persist()
+  def tick(state), do: state |> load() |> beam() |> persist() |> qr()
 
   # The saved profile arrives on the first tick, so init/0 stays pure.
   defp load(%{loaded: true} = state), do: state
@@ -177,6 +192,21 @@ defmodule Badge.Page.Name do
 
   def handle_ir(_from, _payload, _state), do: :ignore
 
+  # The worker sends here rather than to the page, because Badge.UI owns the mailbox.
+  @impl true
+  def handle_info({ref, _payload, result}, %{qr_ref: ref} = state) do
+    {:ok, %{state | qr_result: result, qr_pid: nil}}
+  end
+
+  def handle_info(_message, _state), do: :ignore
+
+  @impl true
+  def leave(state) do
+    stop(state)
+
+    :ok
+  end
+
   @doc """
   What hearing this badge means: unknown, known already, or known under a
   different name because they have edited their profile since.
@@ -231,6 +261,42 @@ defmodule Badge.Page.Name do
     %{state | stored: state.peers}
   end
 
+  # A link is never encoded while it is being typed, so a half-finished value
+  # cannot reach a code. The wanted URL is compared against the payload already
+  # in hand, so an edit restarts the work and a finished result is left alone.
+  defp qr(%{mode: mode} = state) when mode != :show, do: state
+
+  defp qr(state) do
+    wanted = Profile.qr_url(state.profile)
+
+    cond do
+      wanted == nil -> idle(state)
+      state.qr_payload == wanted -> state
+      true -> encode(state, wanted)
+    end
+  end
+
+  defp encode(state, payload) do
+    stop(state)
+
+    parent = self()
+    ref = make_ref()
+    pid = spawn(fn -> send(parent, {ref, payload, QR.encode(payload)}) end)
+
+    %{state | qr_payload: payload, qr_result: :pending, qr_pid: pid, qr_ref: ref}
+  end
+
+  defp idle(%{qr_payload: nil, qr_pid: nil} = state), do: state
+
+  defp idle(state) do
+    stop(state)
+
+    %{state | qr_payload: nil, qr_result: :none, qr_pid: nil, qr_ref: nil}
+  end
+
+  defp stop(%{qr_pid: pid}) when is_pid(pid), do: Process.exit(pid, :kill)
+  defp stop(_state), do: :ok
+
   @impl true
   def handle_key(event, %{mode: :typing} = state), do: typing_key(event, state)
   def handle_key(event, %{mode: :fields} = state), do: fields_key(event, state)
@@ -267,14 +333,38 @@ defmodule Badge.Page.Name do
   defp fields_key({:move, :up}, state), do: {:ok, move(state, -1)}
   defp fields_key({:move, :down}, state), do: {:ok, move(state, 1)}
 
-  defp fields_key({:edit, :newline}, state) do
-    key = selected(state)
-    value = Map.get(state.profile, key, "")
+  # The QR row picks from a list, so left and right step it.
+  defp fields_key({:move, :right}, state), do: {:ok, step_qr(state, :next)}
+  defp fields_key({:move, :left}, state), do: {:ok, step_qr(state, :previous)}
 
-    {:ok, %{state | mode: :typing, field: fill(value, Profile.capacity(key))}}
+  defp fields_key({:edit, :newline}, state) do
+    case selected(state) == :qr do
+      true -> {:ok, step_qr(state, :next)}
+      false -> {:ok, open(state)}
+    end
   end
 
   defp fields_key(_event, state), do: {:ok, state}
+
+  defp open(state) do
+    key = selected(state)
+    value = Map.get(state.profile, key, "")
+
+    %{state | mode: :typing, field: fill(value, Profile.capacity(key))}
+  end
+
+  # Off the QR row there is nothing to step, so the key is swallowed as it was.
+  defp step_qr(state, direction) do
+    case selected(state) == :qr do
+      true ->
+        key = Profile.qr_step(Profile.qr_key(state.profile), direction)
+
+        %{state | profile: Map.put(state.profile, :qr, Profile.qr_name(key))}
+
+      false ->
+        state
+    end
+  end
 
   defp typing_key({:nav, :home}, state), do: {:ok, %{state | mode: :fields, field: nil}}
 
@@ -334,6 +424,8 @@ defmodule Badge.Page.Name do
   def render(%{screen: 2} = state), do: share_screen(state) ++ dots(2)
 
   def render(%{screen: 3} = state), do: peers_screen(state) ++ dots(3)
+
+  def render(%{screen: 4} = state), do: qr_screen(state) ++ dots(4)
 
   def render(%{profile: profile} = state) do
     lines = Text.wrap(Profile.display_name(profile), @name_columns)
@@ -430,6 +522,66 @@ defmodule Badge.Page.Name do
   defp drop([], _n), do: []
   defp drop([_peer | rest], n), do: drop(rest, n - 1)
 
+  defp qr_screen(state) do
+    key = Profile.qr_key(state.profile)
+
+    [centred(qr_heading(key), @qr_heading_y, Theme.fg())] ++
+      qr_body(state) ++ qr_caption(state, key)
+  end
+
+  defp qr_heading(:none), do: "QR"
+  defp qr_heading(key), do: Profile.qr_label(key)
+
+  # The image carries its own size, quiet zone included.
+  defp qr_body(%{qr_result: {:ok, code}}) do
+    {:rgba8888, outer, _height, _pixels} = code.image
+    scale = qr_scale(outer)
+    width = outer * scale
+
+    [QR.item(code, div(Theme.width() - width, 2), @qr_top + div(@qr_box - width, 2), scale)]
+  end
+
+  defp qr_body(%{qr_result: :pending}) do
+    [centred("Generating...", @qr_mid_y, Theme.dim())]
+  end
+
+  defp qr_body(%{qr_result: {:error, :too_long}}) do
+    [centred("Link is too long", @qr_mid_y, Theme.alert())]
+  end
+
+  defp qr_body(_state), do: [centred("Set a link in the editor", @qr_mid_y, Theme.dim())]
+
+  defp qr_scale(outer), do: min(max(div(@qr_box, outer), 1), @qr_max_scale)
+
+  defp qr_caption(_state, :none), do: []
+
+  defp qr_caption(state, key) do
+    value = Map.get(state.profile, key, "")
+
+    case Profile.present?(value) do
+      true -> link_line(key, qr_cut(value))
+      false -> []
+    end
+  end
+
+  # The icon sits to the left of the handle, and the pair is centred as one.
+  defp link_line(key, text) do
+    icon = Profile.icon(key)
+    {icon_width, _height} = Icons.size(icon)
+    gap = 6
+    x = div(Theme.width() - (icon_width + gap + @char_w * byte_size(text)), 2)
+
+    [
+      Icons.item(icon, x, @qr_caption_y),
+      {:text, x + icon_width + gap, @qr_caption_y, :default16px, Theme.muted(), Theme.bg(), text}
+    ]
+  end
+
+  defp qr_cut(value) when byte_size(value) > @qr_caption_chars,
+    do: :binary.part(value, 0, @qr_caption_chars)
+
+  defp qr_cut(value), do: value
+
   # Only says so when there is something off-screen in that direction.
   defp scroll_hint(count, _top) when count <= @muted_rows, do: []
 
@@ -499,8 +651,7 @@ defmodule Badge.Page.Name do
     marker = if position == state.cursor, do: ">", else: " "
 
     items = [
-      {:text, @value_x, y, :default16px, colour, Theme.bg(),
-       shown(Map.get(state.profile, key, ""))},
+      {:text, @value_x, y, :default16px, colour, Theme.bg(), field_value(state, key)},
       {:text, @label_x, y, :default16px, label_colour(state, position), Theme.bg(),
        Profile.label(key)},
       {:text, @marker_x, y, :default16px, Theme.select(), Theme.bg(), marker}
@@ -528,6 +679,10 @@ defmodule Badge.Page.Name do
 
   defp shown(""), do: "-"
   defp shown(value), do: value
+
+  # The QR row holds a choice, so it shows the choice's label rather than its stored name.
+  defp field_value(state, :qr), do: Profile.qr_label(Profile.qr_key(state.profile))
+  defp field_value(state, key), do: shown(Map.get(state.profile, key, ""))
 
   defp centred(text, y, colour) do
     {:text, div(Theme.width() - @char_w * byte_size(text), 2), y, :default16px, colour,

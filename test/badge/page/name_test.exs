@@ -5,6 +5,7 @@ defmodule Badge.Page.NameTest do
   alias Badge.Page.Name
   alias Badge.Peers
   alias Badge.Profile
+  alias Badge.QR
   alias Badge.Theme
 
   defp showing(overrides) do
@@ -590,6 +591,182 @@ defmodule Badge.Page.NameTest do
     end
   end
 
+  describe "the QR screen" do
+    defp qrcode(overrides \\ %{}) do
+      profile =
+        %{name: "Gus", qr: "github", github: "gus"}
+        |> Map.merge(overrides)
+        |> then(&Map.merge(Profile.blank(), &1))
+
+      %{screen(showing(profile), 4) | qr_result: :none}
+    end
+
+    defp qr_items(state) do
+      for item = {:scaled_cropped_image, _, _, _, _, _, _, _, _, _, _, _} <- Name.render(state),
+          do: item
+    end
+
+    test "is the fifth and last screen" do
+      assert Name.screens() == 5
+      assert press(screen(showing(%{name: "Gus"}), 3), {:move, :right}).screen == 4
+    end
+
+    test "names the link it points at" do
+      assert "GitHub" in texts(qrcode())
+    end
+
+    test "heads with QR when no link is chosen" do
+      assert "QR" in texts(qrcode(%{qr: ""}))
+    end
+
+    test "shows the chosen handle under the code" do
+      assert "gus" in texts(qrcode())
+    end
+
+    test "draws the link's own icon" do
+      assert Enum.any?(Name.render(qrcode()), &match?({:image, _x, _y, _bg, _img}, &1))
+    end
+
+    test "asks for a link when there is nothing to encode" do
+      assert "Set a link in the editor" in texts(qrcode(%{qr: "", github: ""}))
+    end
+
+    test "says so while a code is being built" do
+      assert "Generating..." in texts(%{qrcode() | qr_result: :pending})
+    end
+
+    test "says so when a link will not fit in a code" do
+      assert "Link is too long" in texts(%{qrcode() | qr_result: {:error, :too_long}})
+    end
+
+    test "draws the code once it is built" do
+      {:ok, code} = QR.encode("https://github.com/gus")
+
+      assert [{:scaled_cropped_image, x, y, w, h, 0xFFFFFF, 0, 0, scale, scale, [], _img}] =
+               qr_items(%{qrcode() | qr_result: {:ok, code}})
+
+      assert w == (code.size + 8) * scale
+      assert x == div(Theme.width() - w, 2)
+      assert y >= Theme.content_top()
+      assert y + h <= Theme.height()
+    end
+
+    test "a longer link draws a smaller code, never one off the panel" do
+      for length <- [20, 60, 140, 271] do
+        {:ok, code} = QR.encode(:binary.copy("a", length))
+
+        assert [{:scaled_cropped_image, x, y, w, h, _bg, 0, 0, scale, _ys, [], _img}] =
+                 qr_items(%{qrcode() | qr_result: {:ok, code}})
+
+        assert scale >= 1
+        assert x >= 0
+        assert x + w <= Theme.width()
+        assert y >= Theme.content_top()
+        assert y + h <= Theme.height()
+      end
+    end
+
+    test "the pending screen is a still frame: one line and the dots, nothing that could move" do
+      items = Name.render(%{qrcode() | qr_result: :pending})
+      bodies = for {:text, _x, _y, _f, _c, _b, body} <- items, do: body
+      rects = for {:rect, _x, _y, _w, _h, _c} <- items, do: :rect
+
+      assert "Generating..." in bodies
+      assert length(bodies) == 3
+      assert length(rects) == Name.screens()
+    end
+  end
+
+  describe "encoding the QR in the background" do
+    # saved: profile, so persist/1 does not write to NVS from a test.
+    defp ready(overrides) do
+      profile = Map.merge(Profile.blank(), Map.merge(%{name: "Gus"}, overrides))
+
+      %{Name.init() | loaded: true, mode: :show, profile: profile, saved: profile}
+    end
+
+    defp relink(state, overrides) do
+      profile = Map.merge(state.profile, overrides)
+
+      %{state | profile: profile, saved: profile}
+    end
+
+    test "a page with no link to show never starts a worker" do
+      ticked = Name.tick(ready(%{}))
+
+      assert ticked.qr_result == :none
+      assert ticked.qr_pid == nil
+    end
+
+    test "the first tick starts the encode, and the result arrives as a message" do
+      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+
+      assert started.qr_result == :pending
+      assert is_pid(started.qr_pid)
+      assert started.qr_payload == "https://github.com/gus"
+
+      {:ok, done} = Name.handle_info({started.qr_ref, started.qr_payload, {:ok, :code}}, started)
+
+      assert done.qr_result == {:ok, :code}
+      assert done.qr_pid == nil
+    end
+
+    test "a second tick leaves a running encode alone" do
+      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+
+      assert Name.tick(started) == started
+    end
+
+    test "a result that cannot be encoded is not retried forever" do
+      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+
+      {:ok, failed} =
+        Name.handle_info({started.qr_ref, started.qr_payload, {:error, :too_long}}, started)
+
+      assert Name.tick(failed).qr_result == {:error, :too_long}
+    end
+
+    test "changing the link starts a new encode" do
+      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      changed = Name.tick(relink(started, %{github: "pat"}))
+
+      assert changed.qr_payload == "https://github.com/pat"
+      assert changed.qr_result == :pending
+    end
+
+    test "clearing the link drops the code" do
+      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      cleared = Name.tick(relink(started, %{github: ""}))
+
+      assert cleared.qr_result == :none
+      assert cleared.qr_payload == nil
+      assert cleared.qr_pid == nil
+    end
+
+    test "nothing is encoded while the editor is open" do
+      editing = press(ready(%{qr: "github", github: "gus"}), {:char, ?e})
+
+      assert Name.tick(editing).qr_result == :none
+    end
+
+    test "leaving the page stops the worker" do
+      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      ref = Process.monitor(started.qr_pid)
+
+      assert Name.leave(started) == :ok
+      assert_receive {:DOWN, ^ref, :process, _pid, _reason}, 500
+    end
+
+    test "a message from an older worker is ignored" do
+      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+
+      assert Name.handle_info({make_ref(), "https://github.com/pat", {:ok, :stale}}, started) ==
+               :ignore
+
+      assert Name.handle_info({make_ref(), "x", :anything}, started) == :ignore
+    end
+  end
+
   describe "opening the editor" do
     test "E opens it, and so does a capital E" do
       assert editing().mode == :fields
@@ -717,6 +894,57 @@ defmodule Badge.Page.NameTest do
 
       assert Map.get(state.profile, :company) == "Protolux"
       assert Map.get(state.profile, :name) == "Gus"
+    end
+  end
+
+  describe "choosing the QR link" do
+    defp on_the_choice(state) do
+      press(state, {:move, :down}, length(Profile.keys()) - 1)
+    end
+
+    defp stored(state), do: Profile.qr_key(state.profile)
+
+    test "the row is the last one, and starts at none" do
+      state = on_the_choice(editing())
+
+      assert Name.selected(state) == :qr
+      assert stored(state) == :none
+    end
+
+    test "right steps forward and left steps back, wrapping" do
+      state = on_the_choice(editing())
+
+      assert state |> press({:move, :right}) |> stored() == :github
+      assert state |> press({:move, :left}) |> stored() == :links
+    end
+
+    test "enter steps it forward rather than opening the keyboard" do
+      stepped = on_the_choice(editing()) |> press({:edit, :newline})
+
+      assert stepped.mode == :fields
+      assert stored(stepped) == :github
+    end
+
+    test "left and right on another row change nothing" do
+      state = editing()
+
+      assert press(state, {:move, :right}).profile == state.profile
+      assert press(state, {:move, :left}).profile == state.profile
+    end
+
+    test "the row shows the label rather than the stored name" do
+      state = on_the_choice(editing(%{name: "Gus", qr: "linkedin"}))
+
+      assert "LinkedIn" in texts(state)
+    end
+
+    test "the choice reaches the page, which encodes it" do
+      chosen = on_the_choice(editing(%{name: "Gus", github: "gus"})) |> press({:move, :right})
+
+      # saved: profile, so tick/1 does not write the edited profile to NVS from a test.
+      state = %{chosen | mode: :show, saved: chosen.profile}
+
+      assert Name.tick(state).qr_payload == "https://github.com/gus"
     end
   end
 

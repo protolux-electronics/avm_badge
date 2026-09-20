@@ -15,13 +15,30 @@ defmodule Badge.Profile do
     {:company, "Company", 30, :company},
     {:email, "Email", 32, :email},
     {:github, "GitHub", 26, :github},
+    {:linkedin, "LinkedIn", 30, :linkedin},
     {:mastodon, "Mastodon", 30, :mastodon},
     {:bluesky, "Bluesky", 30, :bluesky},
-    {:links, "Link", 32, :link}
+    {:links, "Link", 32, :link},
+    {:qr, "QR link", 12, nil}
   ]
 
   @required :name
   @placeholder "Nameless"
+
+  # The one field that points at another rather than holding a value, and the
+  # links it may point at, as {key, stored name}.
+  @qr :qr
+
+  @qr_links [
+    {:none, "none"},
+    {:github, "github"},
+    {:linkedin, "linkedin"},
+    {:mastodon, "mastodon"},
+    {:bluesky, "bluesky"},
+    {:links, "links"}
+  ]
+
+  @qr_order for {key, _name} <- @qr_links, do: key
 
   @doc "Every field, in the order they are edited and shown."
   def fields, do: @fields
@@ -78,7 +95,9 @@ defmodule Badge.Profile do
   """
   @spec lines(map) :: [{atom | nil, binary}]
   def lines(profile) do
-    :lists.append(for key <- keys(), key != @required, do: field_lines(profile, key))
+    :lists.append(
+      for key <- keys(), key != @required and key != @qr, do: field_lines(profile, key)
+    )
   end
 
   @doc "Reads the stored profile."
@@ -92,6 +111,93 @@ defmodule Badge.Profile do
 
     :ok
   end
+
+  @doc "The links the QR code may point at, as `{key, label}`."
+  @spec qr_choices() :: [{atom, binary}]
+  def qr_choices, do: for({key, _name} <- @qr_links, do: {key, qr_label(key)})
+
+  @doc "The name a choice is stored under."
+  @spec qr_name(atom) :: binary
+  def qr_name(key), do: lookup(@qr_links, key, 1, "none")
+
+  @doc "The label shown for a choice."
+  @spec qr_label(atom) :: binary
+  def qr_label(:none), do: "None"
+  def qr_label(key), do: label(key)
+
+  @doc "The chosen link, `:none` when unset or unrecognised."
+  @spec qr_key(map) :: atom
+  def qr_key(profile), do: qr_key(Map.get(profile, @qr, ""), @qr_links)
+
+  @doc "The choice after `:next` or before `:previous`, wrapping at both ends."
+  @spec qr_step(atom, :next | :previous) :: atom
+  def qr_step(key, direction) do
+    count = length(@qr_order)
+    at = position(key, @qr_order, 0)
+    delta = if direction == :next, do: 1, else: count - 1
+
+    :lists.nth(rem(at + delta, count) + 1, @qr_order)
+  end
+
+  @doc """
+  The URL the QR code carries, or nil when there is nothing to encode.
+
+  Links are stored as handles, so each field has its own prefix. A stored value
+  that is already a URL is used as it is.
+  """
+  @spec qr_url(map) :: binary | nil
+  def qr_url(profile) do
+    key = qr_key(profile)
+    value = Map.get(profile, key, "")
+
+    case key != :none and present?(value) do
+      true -> link_url(key, value)
+      false -> nil
+    end
+  end
+
+  defp qr_key(_stored, []), do: :none
+
+  defp qr_key(stored, [{key, name} | rest]) do
+    case name == stored do
+      true -> key
+      false -> qr_key(stored, rest)
+    end
+  end
+
+  defp position(_key, [], at), do: at
+  defp position(key, [key | _rest], at), do: at
+  defp position(key, [_other | rest], at), do: position(key, rest, at + 1)
+
+  defp link_url(key, value) do
+    case absolute?(value) do
+      true -> value
+      false -> prefixed(key, value)
+    end
+  end
+
+  defp absolute?(<<"http://", _rest::binary>>), do: true
+  defp absolute?(<<"https://", _rest::binary>>), do: true
+  defp absolute?(_value), do: false
+
+  defp prefixed(:github, value), do: "https://github.com/" <> handle(value)
+  defp prefixed(:linkedin, value), do: "https://www.linkedin.com/in/" <> handle(value)
+  defp prefixed(:bluesky, value), do: "https://bsky.app/profile/" <> handle(value)
+  defp prefixed(:mastodon, value), do: mastodon_url(value)
+  defp prefixed(:links, value), do: value
+
+  defp handle(<<"@", rest::binary>>), do: rest
+  defp handle(value), do: value
+
+  # @user@host names a user on a host; anything else is taken as a host.
+  defp mastodon_url(<<"@", rest::binary>>) do
+    case :binary.split(rest, "@") do
+      [user, host] -> "https://" <> host <> "/@" <> user
+      [_user] -> "https://" <> rest
+    end
+  end
+
+  defp mastodon_url(value), do: "https://" <> value
 
   defp field_lines(profile, :links) do
     for link <- split_words(Map.get(profile, :links, "")), do: {icon(:links), link}

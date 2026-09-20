@@ -18,6 +18,7 @@ defmodule Badge.IconsTest do
     :wifi_slash,
     :email,
     :github,
+    :linkedin,
     :mastodon,
     :bluesky,
     :company,
