@@ -59,9 +59,11 @@ defmodule Badge.PagesTest do
       end
     end
 
-    test "the agent sits on the red square of the second screen" do
-      assert Pages.for_key(:square, 1) == Badge.Page.Agent
-      assert Pages.for_key(:triangle, 1) == Badge.Page.Schedule
+    test "share sits next to the name on the first screen, and text leads the second" do
+      assert Pages.for_key(:square) == Badge.Page.Name
+      assert Pages.for_key(:triangle) == Badge.Page.Share
+      assert Pages.for_key(:square, 1) == Badge.Page.Text
+      assert Pages.for_key(:triangle, 1) == Badge.Page.Agent
     end
 
     test "an empty slot is nil, not a crash" do

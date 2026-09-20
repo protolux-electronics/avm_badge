@@ -13,11 +13,12 @@ defmodule Badge.Pages do
 
   @pages [
     Badge.Page.Name,
+    Badge.Page.Share,
     Badge.Page.Chat,
-    Badge.Page.Text,
     Badge.Page.Led,
     Badge.Page.Sensors,
     Badge.Page.Settings,
+    Badge.Page.Text,
     Badge.Page.Agent,
     Badge.Page.Cluster,
     Badge.Page.About,
