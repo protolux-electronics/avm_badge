@@ -54,6 +54,13 @@ defmodule Badge.Page.Share do
   @value_x 112
   @value_columns div(Theme.width() - @value_x - 8, @char_w)
 
+  @list_rows 6
+  @list_pitch 20
+  @name_x 8
+  @icon_pitch 18
+  @icons_x Theme.width() - 8 - 7 * @icon_pitch
+  @list_name_columns div(@icons_x - @name_x - 8, @char_w)
+
   # Two badges meeting, centred between the chip id and the badge heard.
   @art :badge_share
   @art_y 92
@@ -231,6 +238,9 @@ defmodule Badge.Page.Share do
   def handle_key(event, %{mode: :show, screen: @sharing_screen} = state),
     do: sharing_key(event, state)
 
+  def handle_key(event, %{mode: :show, screen: @collected_screen} = state),
+    do: collected_key(event, state)
+
   def handle_key(_event, _state), do: :ignore
 
   defp turn(state, delta) do
@@ -251,6 +261,22 @@ defmodule Badge.Page.Share do
 
   defp sharing_key(_event, _state), do: :ignore
 
+  defp collected_key({:move, :up}, state), do: {:ok, scroll(state, -1)}
+  defp collected_key({:move, :down}, state), do: {:ok, scroll(state, 1)}
+  defp collected_key(_event, _state), do: :ignore
+
+  @doc "Moves the cursor over the collected list, the window following it."
+  @spec scroll(map, integer) :: map
+  def scroll(state, delta) do
+    cursor = clamp(state.cursor + delta, max(Peers.count(state.peers) - 1, 0))
+
+    %{state | cursor: cursor, top: follow(state.top, cursor)}
+  end
+
+  defp follow(top, cursor) when cursor < top, do: cursor
+  defp follow(top, cursor) when cursor >= top + @list_rows, do: cursor - @list_rows + 1
+  defp follow(top, _cursor), do: top
+
   defp last_field, do: length(Sharing.fields()) - 1
 
   defp clamp(index, _last) when index < 0, do: 0
@@ -265,8 +291,8 @@ defmodule Badge.Page.Share do
   def render(%{screen: @sharing_screen} = state),
     do: sharing_screen(state) ++ dots(@sharing_screen)
 
-  def render(%{screen: @collected_screen}),
-    do: [centred("Collected", @heading_y, Theme.fg())] ++ dots(@collected_screen)
+  def render(%{screen: @collected_screen} = state),
+    do: collected_screen(state) ++ dots(@collected_screen)
 
   # Nothing to say until the stores have been read.
   defp share_screen(%{loaded: false}), do: [centred("Share", @heading_y, Theme.fg())]
@@ -334,6 +360,75 @@ defmodule Badge.Page.Share do
     do: :binary.part(value, 0, @value_columns)
 
   defp shown(value), do: value
+
+  defp collected_screen(%{peers: []}) do
+    [
+      centred("Collected", @heading_y, Theme.fg()),
+      centred("no badges yet", @met_name_y, Theme.dim())
+    ]
+  end
+
+  defp collected_screen(state) do
+    count = Peers.count(state.peers)
+
+    [centred("Collected " <> :erlang.integer_to_binary(count), @heading_y, Theme.fg())] ++
+      peer_rows(drop(state.peers, state.top), state.top, state, @row_y, []) ++
+      [centred(list_hint(count, state.top), @hint_y, Theme.dim())]
+  end
+
+  defp peer_rows([], _position, _state, _y, acc), do: acc
+
+  defp peer_rows(_peers, position, %{top: top}, _y, acc) when position >= top + @list_rows,
+    do: acc
+
+  defp peer_rows([peer | rest], position, state, y, acc) do
+    selected = position == state.cursor
+    name = cut(Profile.display_name(peer.profile), @list_name_columns)
+
+    items =
+      [
+        {:text, @marker_x, y, :default16px, Theme.select(), Theme.bg(), marker(selected)},
+        {:text, @name_x, y, :default16px, row_colour(selected), Theme.bg(), name}
+      ] ++ icon_items(icons_for(peer.profile), @icons_x, y, [])
+
+    peer_rows(rest, position + 1, state, y + @list_pitch, items ++ acc)
+  end
+
+  defp row_colour(true), do: Theme.select()
+  defp row_colour(false), do: Theme.fg()
+
+  # One icon per field the badge shared, in field order, so a row reads as an overview.
+  defp icons_for(profile) do
+    for key <- Sharing.fields(),
+        key != Sharing.required(),
+        Profile.present?(Map.get(profile, key, "")),
+        do: Profile.icon(key)
+  end
+
+  defp icon_items([], _x, _y, acc), do: acc
+
+  defp icon_items([icon | rest], x, y, acc) do
+    icon_items(rest, x + @icon_pitch, y, [Icons.item(icon, x, y) | acc])
+  end
+
+  defp list_hint(count, _top) when count <= @list_rows, do: "up/down pick   Enter open"
+
+  defp list_hint(count, top) do
+    shown = min(top + @list_rows, count)
+
+    :erlang.integer_to_binary(top + 1) <>
+      "-" <>
+      :erlang.integer_to_binary(shown) <>
+      " of " <> :erlang.integer_to_binary(count) <> "   Enter open"
+  end
+
+  defp cut(value, columns) when byte_size(value) > columns, do: :binary.part(value, 0, columns)
+  defp cut(value, _columns), do: value
+
+  # There is no Enum.drop on AtomVM, and the list is at most 32 long.
+  defp drop(list, 0), do: list
+  defp drop([], _n), do: []
+  defp drop([_head | rest], n), do: drop(rest, n - 1)
 
   defp art do
     {width, _height} = Icons.size(@art)

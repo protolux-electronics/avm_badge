@@ -328,4 +328,76 @@ defmodule Badge.Page.ShareTest do
       for {:text, _x, y, _f, _c, _b, _body} <- Page.render(choosing()), do: assert(y <= 216)
     end
   end
+
+  describe "the collected screen" do
+    defp peer(n, name, extra \\ %{}) do
+      %{id: <<0, 0, 0, 0, 0, n>>, profile: Map.merge(%{name: name}, extra)}
+    end
+
+    defp collected(peers), do: %{on(loaded(), 2) | peers: peers}
+
+    defp with_peers(n), do: collected(for i <- 1..n, do: peer(i, "Badge #{i}"))
+
+    defp images(state),
+      do: for({:image, _x, _y, _bg, _img} = item <- Page.render(state), do: item)
+
+    test "an empty collection says so" do
+      assert says?(collected([]), "no badges yet")
+    end
+
+    test "names the badges collected, and counts them" do
+      state = collected([peer(1, "Ada"), peer(2, "Grace")])
+
+      assert "Ada" in texts(state)
+      assert "Grace" in texts(state)
+      assert says?(state, "Collected 2")
+    end
+
+    test "a badge's row carries one icon per field it shared" do
+      assert length(images(collected([peer(1, "Ada", %{github: "ada", company: "Analytical"})]))) ==
+               2
+
+      assert images(collected([peer(1, "Ada")])) == []
+    end
+
+    test "a peer with no name still lists rather than blanking the row" do
+      assert Profile.placeholder() in texts(
+               collected([%{id: <<0, 0, 0, 0, 0, 9>>, profile: %{}}])
+             )
+    end
+
+    test "shows only as many as fit, rather than overflowing" do
+      for {:text, _x, y, _f, _c, _b, _body} <- Page.render(with_peers(40)), do: assert(y <= 216)
+    end
+
+    test "down moves the cursor and the window follows it" do
+      state = press(with_peers(10), {:move, :down}, 7)
+
+      assert state.cursor == 7
+      assert state.top == 2
+      assert "Badge 8" in texts(state)
+      refute "Badge 1" in texts(state)
+    end
+
+    test "the cursor stops at both ends, and a short list never scrolls" do
+      assert press(with_peers(10), {:move, :down}, 99).cursor == 9
+      assert press(with_peers(10), {:move, :up}, 99).cursor == 0
+      assert press(with_peers(3), {:move, :down}, 9).top == 0
+    end
+
+    test "up brings the window back with the cursor" do
+      state = with_peers(10) |> press({:move, :down}, 9) |> press({:move, :up}, 9)
+
+      assert state.top == 0
+    end
+
+    test "a long list says where you are in it" do
+      assert says?(with_peers(10), "1-6 of 10")
+      refute says?(with_peers(3), "of 3")
+    end
+
+    test "paging away starts the list at the top again" do
+      assert press(press(with_peers(10), {:move, :down}, 8), {:move, :right}).top == 0
+    end
+  end
 end
