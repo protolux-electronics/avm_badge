@@ -1,6 +1,6 @@
 defmodule Badge.Peers do
   @moduledoc """
-  Profiles collected from other badges.
+  Profiles collected from other badges, a field at a time.
 
   Keyed by the other badge's chip id, so meeting the same person twice
   updates their entry rather than adding a second one.
@@ -14,8 +14,8 @@ defmodule Badge.Peers do
 
   @key :peers
 
-  # A badge that met everyone at a large conference would still fit in NVS.
-  @limit 64
+  # A peer now carries up to a whole profile, and NVS is 24 kB shared with wifi.
+  @limit 32
 
   @doc "Every peer seen, most recently met first."
   @spec load() :: [map]
@@ -42,6 +42,29 @@ defmodule Badge.Peers do
   @spec add([map], binary, map) :: [map]
   def add(peers, id, profile) do
     [%{id: id, profile: profile} | reject(peers, id, [])] |> take(@limit, [])
+  end
+
+  @doc """
+  Records one field heard from a badge.
+
+  The peer keeps only the fields in `shared`, what the sender is sharing
+  now, goes to the front, and the oldest falls off the end once the list is
+  full.
+  """
+  @spec hear([map], binary, atom, [atom], binary) :: [map]
+  def hear(peers, id, key, shared, value) do
+    profile = keep(shared, Map.put(profile_of(find(peers, id)), key, value), %{})
+
+    [%{id: id, profile: profile} | reject(peers, id, [])] |> take(@limit, [])
+  end
+
+  @doc "What hearing `value` under `key` from a badge means: unheard, unchanged, or changed."
+  @spec greeting([map], binary, atom, binary) :: :new | :known | :updated
+  def greeting(peers, id, key, value) do
+    case find(peers, id) do
+      nil -> :new
+      peer -> if Map.get(profile_of(peer), key) == value, do: :known, else: :updated
+    end
   end
 
   @doc "The peer with this chip id, or nil."
@@ -83,6 +106,18 @@ defmodule Badge.Peers do
 
   defp keep_valid([_other | rest], acc), do: keep_valid(rest, acc)
   defp keep_valid(_other, acc), do: :lists.reverse(acc)
+
+  defp profile_of(nil), do: %{}
+  defp profile_of(%{profile: profile}), do: profile
+
+  defp keep([], _profile, acc), do: acc
+
+  defp keep([key | rest], profile, acc) do
+    case Map.get(profile, key) do
+      nil -> keep(rest, profile, acc)
+      value -> keep(rest, profile, Map.put(acc, key, value))
+    end
+  end
 
   defp reject([], _id, acc), do: :lists.reverse(acc)
   defp reject([%{id: id} | rest], id, acc), do: reject(rest, id, acc)

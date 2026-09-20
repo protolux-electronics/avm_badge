@@ -45,7 +45,76 @@ defmodule Badge.PeersTest do
           :lists.seq(1, 200)
         )
 
-      assert Peers.count(peers) <= 64
+      assert Peers.count(peers) <= 32
+    end
+  end
+
+  describe "hear/5" do
+    test "the first field heard from a badge makes its entry" do
+      assert Peers.hear([], id(1), :name, [:name], "Gus") ==
+               [%{id: id(1), profile: %{name: "Gus"}}]
+    end
+
+    test "each field heard fills the same entry in" do
+      peers =
+        []
+        |> Peers.hear(id(1), :name, [:name, :company], "Gus")
+        |> Peers.hear(id(1), :company, [:name, :company], "Protolux")
+
+      assert Peers.find(peers, id(1)).profile == %{name: "Gus", company: "Protolux"}
+      assert Peers.count(peers) == 1
+    end
+
+    test "a field the sender no longer shares is dropped" do
+      peers =
+        []
+        |> Peers.hear(id(1), :name, [:name, :company], "Gus")
+        |> Peers.hear(id(1), :company, [:name, :company], "Protolux")
+        |> Peers.hear(id(1), :name, [:name], "Gus")
+
+      assert Peers.find(peers, id(1)).profile == %{name: "Gus"}
+    end
+
+    test "the badge heard last comes first" do
+      peers =
+        []
+        |> Peers.hear(id(1), :name, [:name], "A")
+        |> Peers.hear(id(2), :name, [:name], "B")
+        |> Peers.hear(id(1), :name, [:name], "A")
+
+      assert for(peer <- peers, do: peer.id) == [id(1), id(2)]
+    end
+
+    test "the list holds 32, dropping the ones met longest ago" do
+      peers =
+        :lists.foldl(
+          fn n, acc -> Peers.hear(acc, id(n), :name, [:name], "n") end,
+          [],
+          :lists.seq(1, 40)
+        )
+
+      assert Peers.count(peers) == 32
+      assert Peers.find(peers, id(40)) != nil
+      assert Peers.find(peers, id(1)) == nil
+    end
+  end
+
+  describe "greeting/4" do
+    test "an unheard chip id is new" do
+      assert Peers.greeting([], id(1), :name, "Pat") == :new
+    end
+
+    test "the same value again is known" do
+      peers = Peers.hear([], id(1), :name, [:name], "Pat")
+
+      assert Peers.greeting(peers, id(1), :name, "Pat") == :known
+    end
+
+    test "a different value, or a field not heard before, is an update" do
+      peers = Peers.hear([], id(1), :name, [:name], "Pat")
+
+      assert Peers.greeting(peers, id(1), :name, "Patricia") == :updated
+      assert Peers.greeting(peers, id(1), :company, "Protolux") == :updated
     end
   end
 
@@ -87,6 +156,12 @@ defmodule Badge.PeersTest do
       mixed = :erlang.term_to_binary([%{id: id(1), profile: profile("A")}, :junk, %{id: 5}])
 
       assert Peers.decode(mixed) == [%{id: id(1), profile: profile("A")}]
+    end
+
+    test "a blob from before fields were shared still loads" do
+      old = :erlang.term_to_binary([%{id: id(1), profile: %{name: "Pat"}}])
+
+      assert Peers.decode(old) == [%{id: id(1), profile: %{name: "Pat"}}]
     end
   end
 end
