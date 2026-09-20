@@ -14,6 +14,7 @@ defmodule Badge.Page.Share do
   alias Badge.Identity
   alias Badge.Ir
   alias Badge.Peers
+  alias Badge.Pixels
   alias Badge.Profile
   alias Badge.Sharing
   alias Badge.Sharing.Wire
@@ -29,6 +30,14 @@ defmodule Badge.Page.Share do
   # Between frames on the share screen.
   @beam_ms 200
   @idle_ms 333
+
+  # What meeting a badge looks like on the LED chain.
+  @new_hue 120
+  @known_hue 200
+  @updated_hue 45
+
+  # One second at @beam_ms without a frame, before peers are written.
+  @settle_ticks 5
 
   @heading_y Theme.content_top() + 16
   @chip_y Theme.content_top() + 44
@@ -86,7 +95,7 @@ defmodule Badge.Page.Share do
 
   # Hardware is only touched here, never from a key handler.
   @impl true
-  def tick(state), do: state |> load() |> beam()
+  def tick(state), do: state |> load() |> beam() |> settle() |> persist()
 
   # Everything stored arrives on the first tick, so init/0 stays pure.
   defp load(%{loaded: true} = state), do: state
@@ -119,6 +128,87 @@ defmodule Badge.Page.Share do
   end
 
   defp beam(state), do: %{state | next: 0}
+
+  defp settle(state), do: %{state | quiet: min(state.quiet + 1, @settle_ticks)}
+
+  # Both writes are deferred to here, so a key handler and an arriving frame stay pure.
+  defp persist(state), do: state |> persist_shared() |> persist_peers()
+
+  # Written once the sharing screen is left, not on every toggle.
+  defp persist_shared(%{screen: @sharing_screen} = state), do: state
+  defp persist_shared(%{shared: shared, saved_shared: shared} = state), do: state
+
+  defp persist_shared(state) do
+    Sharing.save(state.shared)
+
+    %{state | saved_shared: state.shared}
+  end
+
+  # A badge sharing several fields arrives over several frames; one write covers them.
+  defp persist_peers(%{peers: peers, stored: peers} = state), do: state
+  defp persist_peers(%{quiet: quiet} = state) when quiet < @settle_ticks, do: state
+
+  defp persist_peers(state) do
+    Peers.save(state.peers)
+
+    %{state | stored: state.peers}
+  end
+
+  @impl true
+  def leave(%{loaded: false}), do: :ok
+
+  def leave(state) do
+    if state.shared != state.saved_shared, do: Sharing.save(state.shared)
+    if state.peers != state.stored, do: Peers.save(state.peers)
+
+    :ok
+  end
+
+  # Frames reach Badge.UI, not the page, so they arrive through here. Only
+  # the share screen listens, and a badge with nothing to beam does not.
+  @impl true
+  def handle_ir(
+        from,
+        payload,
+        %{screen: @share_screen, mode: :show, cycle: [_frame | _rest]} = state
+      ) do
+    if from == state.id do
+      :ignore
+    else
+      hear(Wire.decode(payload), from, state)
+    end
+  end
+
+  def handle_ir(_from, _payload, _state), do: :ignore
+
+  defp hear(:error, from, _state) do
+    :io.format(~c"Share: bad frame from ~s~n", [Identity.format(from)])
+
+    :ignore
+  end
+
+  defp hear({:ok, key, shared, value}, from, state) do
+    greeting = Peers.greeting(state.peers, from, key, value)
+    peers = Peers.hear(state.peers, from, key, shared, value)
+
+    {:ok, announce(%{state | peers: peers, quiet: 0}, from, key, value, greeting)}
+  end
+
+  # A badge held up beams its name every cycle; the LEDs answer it once.
+  defp announce(%{announced: {from, name}} = state, from, :name, name, _greeting), do: state
+
+  defp announce(state, from, :name, name, greeting) do
+    :io.format(~c"Share: ~p ~s ~s~n", [greeting, Identity.format(from), name])
+    Pixels.flash(hue(greeting))
+
+    %{state | announced: {from, name}, met: {name, greeting}}
+  end
+
+  defp announce(state, _from, _key, _value, _greeting), do: state
+
+  defp hue(:new), do: @new_hue
+  defp hue(:known), do: @known_hue
+  defp hue(:updated), do: @updated_hue
 
   @doc "Rebuilds what the share screen beams, starting the cycle over."
   @spec recycle(map) :: map

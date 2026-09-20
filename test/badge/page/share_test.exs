@@ -2,7 +2,9 @@ defmodule Badge.Page.ShareTest do
   use ExUnit.Case, async: true
 
   alias Badge.Page.Share, as: Page
+  alias Badge.Peers
   alias Badge.Profile
+  alias Badge.Sharing.Wire
   alias Badge.Theme
 
   @me <<0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6>>
@@ -177,6 +179,91 @@ defmodule Badge.Page.ShareTest do
 
     test "nothing goes out without a name" do
       assert Page.tick(loaded(%{})).next == 0
+    end
+  end
+
+  describe "hearing a badge" do
+    defp name_frame(name, shared \\ [:name]), do: Wire.encode(:name, shared, name)
+
+    test "a new badge is collected and reported, without writing to NVS" do
+      {:ok, next} = Page.handle_ir(@other, name_frame("Pat"), loaded())
+
+      assert next.met == {"Pat", :new}
+      assert next.announced == {@other, "Pat"}
+      assert Peers.find(next.peers, @other).profile == %{name: "Pat"}
+      assert next.stored == []
+    end
+
+    test "a badge already collected is reported as known" do
+      state = %{loaded() | peers: [%{id: @other, profile: %{name: "Pat"}}]}
+      {:ok, next} = Page.handle_ir(@other, name_frame("Pat"), state)
+
+      assert next.met == {"Pat", :known}
+    end
+
+    test "a badge under a new name is reported as updated" do
+      state = %{loaded() | peers: [%{id: @other, profile: %{name: "Pat"}}]}
+      {:ok, next} = Page.handle_ir(@other, name_frame("Patricia"), state)
+
+      assert next.met == {"Patricia", :updated}
+    end
+
+    test "the same badge beaming its name again changes nothing but the quiet count" do
+      {:ok, once} = Page.handle_ir(@other, name_frame("Pat"), loaded())
+      {:ok, twice} = Page.handle_ir(@other, name_frame("Pat"), %{once | quiet: 3})
+
+      assert twice == once
+    end
+
+    test "other fields fill the peer in silently" do
+      {:ok, state} = Page.handle_ir(@other, name_frame("Pat", [:name, :company]), loaded())
+
+      {:ok, next} =
+        Page.handle_ir(@other, Wire.encode(:company, [:name, :company], "Protolux"), state)
+
+      assert Peers.find(next.peers, @other).profile == %{name: "Pat", company: "Protolux"}
+      assert next.met == state.met
+    end
+
+    test "a bare name from older firmware is a name" do
+      {:ok, next} = Page.handle_ir(@other, "Pat", loaded())
+
+      assert next.met == {"Pat", :new}
+    end
+
+    test "a frame that is not ours is dropped" do
+      assert Page.handle_ir(@other, <<0, 1, "x">>, loaded()) == :ignore
+    end
+
+    test "our own frame reflected back is dropped" do
+      assert Page.handle_ir(@me, name_frame("Gus"), loaded()) == :ignore
+    end
+
+    test "a badge heard on any other screen, in the detail, or without a name is dropped" do
+      for state <- [on(loaded(), 1), on(loaded(), 2), %{loaded() | mode: :detail}, loaded(%{})] do
+        assert Page.handle_ir(@other, name_frame("Pat"), state) == :ignore
+      end
+    end
+  end
+
+  describe "writing what was heard" do
+    test "peers are held while the beam is busy" do
+      {:ok, heard} = Page.handle_ir(@other, name_frame("Pat"), loaded())
+      settling = heard |> Page.tick() |> Page.tick() |> Page.tick() |> Page.tick()
+
+      assert settling.stored == []
+      assert settling.quiet == 4
+    end
+
+    test "a frame resets the quiet count" do
+      {:ok, heard} = Page.handle_ir(@other, name_frame("Pat"), loaded())
+      {:ok, again} = Page.handle_ir(@other, name_frame("Pat"), Page.tick(Page.tick(heard)))
+
+      assert again.quiet == 0
+    end
+
+    test "leaving before anything was read writes nothing" do
+      assert Page.leave(Page.init()) == :ok
     end
   end
 end
