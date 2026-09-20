@@ -38,8 +38,6 @@ defmodule Badge.Profile do
     {:links, "links"}
   ]
 
-  @qr_order for {key, _name} <- @qr_links, do: key
-
   @doc "Every field, in the order they are edited and shown."
   def fields, do: @fields
 
@@ -112,9 +110,22 @@ defmodule Badge.Profile do
     :ok
   end
 
-  @doc "The links the QR code may point at, as `{key, label}`."
-  @spec qr_choices() :: [{atom, binary}]
-  def qr_choices, do: for({key, _name} <- @qr_links, do: {key, qr_label(key)})
+  @doc """
+  The links the QR code may point at, as `{key, label}`.
+
+  Only links the owner has filled in, so a code can never be made for an empty
+  field, plus the `:none` choice that clears the selection.
+  """
+  @spec qr_choices(map) :: [{atom, binary}]
+  def qr_choices(profile) do
+    filled =
+      for {key, _name} <- @qr_links,
+          key != :none,
+          present?(Map.get(profile, key, "")),
+          do: key
+
+    for key <- [:none | filled], do: {key, qr_label(key)}
+  end
 
   @doc "The name a choice is stored under."
   @spec qr_name(atom) :: binary
@@ -128,16 +139,6 @@ defmodule Badge.Profile do
   @doc "The chosen link, `:none` when unset or unrecognised."
   @spec qr_key(map) :: atom
   def qr_key(profile), do: qr_key(Map.get(profile, @qr, ""), @qr_links)
-
-  @doc "The choice after `:next` or before `:previous`, wrapping at both ends."
-  @spec qr_step(atom, :next | :previous) :: atom
-  def qr_step(key, direction) do
-    count = length(@qr_order)
-    at = position(key, @qr_order, 0)
-    delta = if direction == :next, do: 1, else: count - 1
-
-    :lists.nth(rem(at + delta, count) + 1, @qr_order)
-  end
 
   @doc """
   The URL the QR code carries, or nil when there is nothing to encode.
@@ -166,10 +167,6 @@ defmodule Badge.Profile do
       qr_key(stored, rest)
     end
   end
-
-  defp position(_key, [], at), do: at
-  defp position(key, [key | _rest], at), do: at
-  defp position(key, [_other | rest], at), do: position(key, rest, at + 1)
 
   defp link_url(key, value) do
     if absolute?(value) do

@@ -611,12 +611,18 @@ defmodule Badge.Page.NameTest do
       assert press(screen(showing(%{name: "Gus"}), 3), {:move, :right}).screen == 4
     end
 
-    test "names the link it points at" do
-      assert "GitHub" in texts(qrcode())
-    end
+    test "leaves the space above the code empty, so a big code cannot run into text" do
+      for length <- [20, 60, 140, 271] do
+        {:ok, code} = QR.encode(:binary.copy("a", length))
+        items = Name.render(%{qrcode() | qr_result: {:ok, code}})
 
-    test "heads with QR when no link is chosen" do
-      assert "QR" in texts(qrcode(%{qr: ""}))
+        [{:scaled_cropped_image, _x, top, _w, height, _bg, 0, 0, _xs, _ys, [], _img}] =
+          qr_items(%{qrcode() | qr_result: {:ok, code}})
+
+        for {:text, _x, y, _f, _c, _b, _body} <- items do
+          assert top + height <= y
+        end
+      end
     end
 
     test "shows the chosen handle under the code" do
@@ -672,7 +678,7 @@ defmodule Badge.Page.NameTest do
       rects = for {:rect, _x, _y, _w, _h, _c} <- items, do: :rect
 
       assert "Generating..." in bodies
-      assert length(bodies) == 3
+      assert length(bodies) == 2
       assert length(rects) == Name.screens()
     end
   end
@@ -685,10 +691,25 @@ defmodule Badge.Page.NameTest do
       %{Name.init() | loaded: true, mode: :show, profile: profile, saved: profile}
     end
 
+    # The code is only built while its own screen is up, so that the encode
+    # cannot slow the panel down on the screens that never show it.
+    defp showing_link(overrides \\ %{}) do
+      %{ready(Map.merge(%{qr: "github", github: "gus"}, overrides)) | screen: 4}
+    end
+
     defp relink(state, overrides) do
       profile = Map.merge(state.profile, overrides)
 
       %{state | profile: profile, saved: profile}
+    end
+
+    test "no other screen starts a worker, however the profile reads" do
+      for screen <- [0, 1, 2, 3] do
+        ticked = Name.tick(%{showing_link() | screen: screen})
+
+        assert ticked.qr_pid == nil
+        assert ticked.qr_result == :none
+      end
     end
 
     test "a page with no link to show never starts a worker" do
@@ -698,8 +719,8 @@ defmodule Badge.Page.NameTest do
       assert ticked.qr_pid == nil
     end
 
-    test "the first tick starts the encode, and the result arrives as a message" do
-      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+    test "the QR screen starts the encode, and the result arrives as a message" do
+      started = Name.tick(showing_link())
 
       assert started.qr_result == :pending
       assert is_pid(started.qr_pid)
@@ -712,13 +733,13 @@ defmodule Badge.Page.NameTest do
     end
 
     test "a second tick leaves a running encode alone" do
-      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      started = Name.tick(showing_link())
 
       assert Name.tick(started) == started
     end
 
     test "a result that cannot be encoded is not retried forever" do
-      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      started = Name.tick(showing_link())
 
       {:ok, failed} =
         Name.handle_info({started.qr_ref, started.qr_payload, {:error, :too_long}}, started)
@@ -727,7 +748,7 @@ defmodule Badge.Page.NameTest do
     end
 
     test "changing the link starts a new encode" do
-      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      started = Name.tick(showing_link())
       changed = Name.tick(relink(started, %{github: "pat"}))
 
       assert changed.qr_payload == "https://github.com/pat"
@@ -735,7 +756,7 @@ defmodule Badge.Page.NameTest do
     end
 
     test "clearing the link drops the code" do
-      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      started = Name.tick(showing_link())
       cleared = Name.tick(relink(started, %{github: ""}))
 
       assert cleared.qr_result == :none
@@ -744,13 +765,38 @@ defmodule Badge.Page.NameTest do
     end
 
     test "nothing is encoded while the editor is open" do
-      editing = press(ready(%{qr: "github", github: "gus"}), {:char, ?e})
+      editing = press(showing_link(), {:char, ?e})
 
       assert Name.tick(editing).qr_result == :none
     end
 
+    test "leaving the QR screen drops a half-built code" do
+      started = Name.tick(showing_link())
+      left = Name.tick(%{started | screen: 0})
+
+      assert left.qr_result == :none
+      assert left.qr_payload == nil
+      assert left.qr_pid == nil
+
+      assert Name.tick(%{left | screen: 4}).qr_result == :pending
+    end
+
+    test "leaving the QR screen keeps a code that is already built" do
+      started = Name.tick(showing_link())
+
+      {:ok, done} =
+        Name.handle_info({started.qr_ref, started.qr_payload, {:ok, :code}}, started)
+
+      left = Name.tick(%{done | screen: 0})
+
+      assert left.qr_result == {:ok, :code}
+      assert left.qr_pid == nil
+
+      assert Name.tick(%{left | screen: 4}).qr_result == {:ok, :code}
+    end
+
     test "leaving the page stops the worker" do
-      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      started = Name.tick(showing_link())
       ref = Process.monitor(started.qr_pid)
 
       assert Name.leave(started) == :ok
@@ -758,7 +804,7 @@ defmodule Badge.Page.NameTest do
     end
 
     test "a message from an older worker is ignored" do
-      started = Name.tick(ready(%{qr: "github", github: "gus"}))
+      started = Name.tick(showing_link())
 
       assert Name.handle_info({make_ref(), "https://github.com/pat", {:ok, :stale}}, started) ==
                :ignore
@@ -904,6 +950,12 @@ defmodule Badge.Page.NameTest do
 
     defp stored(state), do: Profile.qr_key(state.profile)
 
+    defp filled, do: %{name: "Gus", github: "gus", linkedin: "gus-workman"}
+
+    defp picking(overrides \\ %{}) do
+      editing(Map.merge(filled(), overrides)) |> on_the_choice() |> press({:edit, :newline})
+    end
+
     test "the row is the last one, and starts at none" do
       state = on_the_choice(editing())
 
@@ -911,25 +963,65 @@ defmodule Badge.Page.NameTest do
       assert stored(state) == :none
     end
 
-    test "right steps forward and left steps back, wrapping" do
-      state = on_the_choice(editing())
-
-      assert state |> press({:move, :right}) |> stored() == :github
-      assert state |> press({:move, :left}) |> stored() == :links
+    test "enter opens a picker rather than the keyboard" do
+      assert picking().mode == :picking
     end
 
-    test "enter steps it forward rather than opening the keyboard" do
-      stepped = on_the_choice(editing()) |> press({:edit, :newline})
-
-      assert stepped.mode == :fields
-      assert stored(stepped) == :github
+    test "the picker opens on the choice already stored" do
+      assert picking(%{qr: "linkedin"}).pick == 2
     end
 
-    test "left and right on another row change nothing" do
-      state = editing()
+    test "up and down move the picker and stop at the ends" do
+      assert picking() |> press({:move, :down}) |> Map.get(:pick) == 1
+      assert picking() |> press({:move, :up}) |> Map.get(:pick) == 0
 
-      assert press(state, {:move, :right}).profile == state.profile
-      assert press(state, {:move, :left}).profile == state.profile
+      at_the_end = picking(%{links: "https://example.com", qr: "links"})
+
+      assert at_the_end.pick == 3
+      assert at_the_end |> press({:move, :down}) |> Map.get(:pick) == 3
+    end
+
+    test "enter takes the highlighted choice and returns to the fields" do
+      taken = picking() |> press({:move, :down}) |> press({:edit, :newline})
+
+      assert taken.mode == :fields
+      assert stored(taken) == :github
+    end
+
+    test "escape leaves the picker without changing the choice" do
+      left = picking() |> press({:move, :down}) |> press({:nav, :home})
+
+      assert left.mode == :fields
+      assert stored(left) == :none
+    end
+
+    test "only links that are filled in can be picked" do
+      bodies = texts(picking())
+
+      assert "GitHub" in bodies
+      assert "LinkedIn" in bodies
+      refute "Bluesky" in bodies
+      refute "Link" in bodies
+    end
+
+    test "an empty profile offers only None" do
+      labels =
+        for {:text, 8, y, _f, _c, _b, body} <- Name.render(picking(%{github: "", linkedin: ""})),
+            y < 200,
+            do: body
+
+      assert labels == ["None"]
+    end
+
+    test "the picker shows the handle each choice would encode" do
+      assert "gus-workman" in texts(picking())
+    end
+
+    test "left and right change nothing, on any row" do
+      for state <- [editing(), on_the_choice(editing())] do
+        assert press(state, {:move, :right}).profile == state.profile
+        assert press(state, {:move, :left}).profile == state.profile
+      end
     end
 
     test "the row shows the label rather than the stored name" do
@@ -939,10 +1031,10 @@ defmodule Badge.Page.NameTest do
     end
 
     test "the choice reaches the page, which encodes it" do
-      chosen = on_the_choice(editing(%{name: "Gus", github: "gus"})) |> press({:move, :right})
+      chosen = picking() |> press({:move, :down}) |> press({:edit, :newline})
 
       # saved: profile, so tick/1 does not write the edited profile to NVS from a test.
-      state = %{chosen | mode: :show, saved: chosen.profile}
+      state = %{chosen | mode: :show, screen: 4, saved: chosen.profile}
 
       assert Name.tick(state).qr_payload == "https://github.com/gus"
     end

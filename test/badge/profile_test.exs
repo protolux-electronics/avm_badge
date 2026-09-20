@@ -107,8 +107,18 @@ defmodule Badge.ProfileTest do
   end
 
   describe "the QR link choice" do
-    test "offers none, then the link fields in field order" do
-      assert Profile.qr_choices() == [
+    defp all_links do
+      with_values(%{
+        github: "gus",
+        linkedin: "gus-workman",
+        mastodon: "@gus@hachyderm.io",
+        bluesky: "@gus.bsky.social",
+        links: "https://example.com"
+      })
+    end
+
+    test "offers none, then the links that are filled in, in field order" do
+      assert Profile.qr_choices(all_links()) == [
                {:none, "None"},
                {:github, "GitHub"},
                {:linkedin, "LinkedIn"},
@@ -116,6 +126,20 @@ defmodule Badge.ProfileTest do
                {:bluesky, "Bluesky"},
                {:links, "Link"}
              ]
+    end
+
+    test "a link with nothing in it cannot be chosen" do
+      filled = with_values(%{github: "gus", bluesky: "a.b"})
+
+      assert Profile.qr_choices(filled) == [
+               {:none, "None"},
+               {:github, "GitHub"},
+               {:bluesky, "Bluesky"}
+             ]
+    end
+
+    test "an empty profile offers only none" do
+      assert Profile.qr_choices(Profile.blank()) == [{:none, "None"}]
     end
 
     test "a blank profile encodes nothing" do
@@ -128,20 +152,9 @@ defmodule Badge.ProfileTest do
     end
 
     test "every choice round-trips through the stored name" do
-      for {key, _label} <- Profile.qr_choices() do
+      for {key, _label} <- Profile.qr_choices(all_links()) do
         assert Profile.qr_key(with_values(%{qr: Profile.qr_name(key)})) == key
       end
-    end
-
-    test "stepping walks the choices and wraps at both ends" do
-      assert Profile.qr_step(:none, :next) == :github
-      assert Profile.qr_step(:none, :previous) == :links
-      assert Profile.qr_step(:links, :next) == :none
-      assert Profile.qr_step(:github, :previous) == :none
-    end
-
-    test "an unknown key steps from the start rather than crashing" do
-      assert Profile.qr_step(:nonesuch, :next) == :github
     end
   end
 

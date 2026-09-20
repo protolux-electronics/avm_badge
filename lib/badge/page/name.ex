@@ -84,9 +84,9 @@ defmodule Badge.Page.Name do
 
   # The code is fitted to this box at whole-pixel scale, so it stays sharp and
   # a longer link draws smaller rather than off the panel.
+  @qr_screen 4
   @qr_box 148
-  @qr_top 50
-  @qr_heading_y 36
+  @qr_top 40
   @qr_mid_y @qr_top + div(@qr_box, 2) - 8
   @qr_caption_y 204
   @qr_max_scale 4
@@ -124,6 +124,7 @@ defmodule Badge.Page.Name do
       met: nil,
       top: 0,
       cursor: 0,
+      pick: 0,
       field: nil,
       loaded: false,
       saved: nil,
@@ -261,12 +262,9 @@ defmodule Badge.Page.Name do
     %{state | stored: state.peers}
   end
 
-  # A link is never encoded while it is being typed, so a half-finished value
-  # cannot reach a code. The wanted URL is compared against the payload already
-  # in hand, so an edit restarts the work and a finished result is left alone.
-  defp qr(%{mode: mode} = state) when mode != :show, do: state
-
-  defp qr(state) do
+  # Only its own screen builds a code: the encode is heavy enough to slow the
+  # panel down, and a finished result is kept for when the screen comes back.
+  defp qr(%{mode: :show, screen: @qr_screen} = state) do
     wanted = Profile.qr_url(state.profile)
 
     cond do
@@ -275,6 +273,19 @@ defmodule Badge.Page.Name do
       true -> encode(state, wanted)
     end
   end
+
+  defp qr(state) do
+    stop(state)
+
+    forget_pending(state)
+  end
+
+  # A half-built code is dropped on the way out, so returning starts it again
+  # rather than showing a placeholder that nothing will ever fill.
+  defp forget_pending(%{qr_result: :pending} = state),
+    do: %{state | qr_payload: nil, qr_result: :none, qr_pid: nil, qr_ref: nil}
+
+  defp forget_pending(state), do: %{state | qr_pid: nil, qr_ref: nil}
 
   defp encode(state, payload) do
     stop(state)
@@ -299,6 +310,7 @@ defmodule Badge.Page.Name do
 
   @impl true
   def handle_key(event, %{mode: :typing} = state), do: typing_key(event, state)
+  def handle_key(event, %{mode: :picking} = state), do: picking_key(event, state)
   def handle_key(event, %{mode: :fields} = state), do: fields_key(event, state)
   def handle_key(event, state), do: show_key(event, state)
 
@@ -333,13 +345,11 @@ defmodule Badge.Page.Name do
   defp fields_key({:move, :up}, state), do: {:ok, move(state, -1)}
   defp fields_key({:move, :down}, state), do: {:ok, move(state, 1)}
 
-  # The QR row picks from a list, so left and right step it.
-  defp fields_key({:move, :right}, state), do: {:ok, step_qr(state, :next)}
-  defp fields_key({:move, :left}, state), do: {:ok, step_qr(state, :previous)}
-
+  # The QR row opens a picker, like every other list in the firmware, rather
+  # than turning into an editor of its own.
   defp fields_key({:edit, :newline}, state) do
     if selected(state) == :qr do
-      {:ok, step_qr(state, :next)}
+      {:ok, %{state | mode: :picking, pick: pick_at(state)}}
     else
       {:ok, open(state)}
     end
@@ -354,16 +364,43 @@ defmodule Badge.Page.Name do
     %{state | mode: :typing, field: fill(value, Profile.capacity(key))}
   end
 
-  # Off the QR row there is nothing to step, so the key is swallowed as it was.
-  defp step_qr(state, direction) do
-    if selected(state) == :qr do
-      key = Profile.qr_step(Profile.qr_key(state.profile), direction)
+  # Picking is a list like any other: escape backs out, Enter takes the choice.
+  defp picking_key({:nav, :home}, state), do: {:ok, %{state | mode: :fields}}
+  defp picking_key({:move, :up}, state), do: {:ok, pick_move(state, -1)}
+  defp picking_key({:move, :down}, state), do: {:ok, pick_move(state, 1)}
 
-      %{state | profile: Map.put(state.profile, :qr, Profile.qr_name(key))}
-    else
-      state
+  defp picking_key({:edit, :newline}, state) do
+    key = picked(state)
+
+    {:ok, %{state | mode: :fields, profile: Map.put(state.profile, :qr, Profile.qr_name(key))}}
+  end
+
+  defp picking_key(_event, state), do: {:ok, state}
+
+  defp pick_move(state, delta) do
+    last = length(Profile.qr_choices(state.profile)) - 1
+
+    %{state | pick: min(max(state.pick + delta, 0), last)}
+  end
+
+  defp picked(state) do
+    {key, _label} = :lists.nth(state.pick + 1, Profile.qr_choices(state.profile))
+
+    key
+  end
+
+  # The cursor lands on the choice already stored, or on None when a stored
+  # choice is no longer offered because its field was emptied.
+  defp pick_at(state) do
+    case index_of(Profile.qr_choices(state.profile), Profile.qr_key(state.profile), 0) do
+      :not_found -> 0
+      index -> index
     end
   end
+
+  defp index_of([], _key, _at), do: :not_found
+  defp index_of([{key, _label} | _rest], key, at), do: at
+  defp index_of([_choice | rest], key, at), do: index_of(rest, key, at + 1)
 
   defp typing_key({:nav, :home}, state), do: {:ok, %{state | mode: :fields, field: nil}}
 
@@ -415,7 +452,12 @@ defmodule Badge.Page.Name do
 
   def render(%{mode: :fields} = state) do
     rows(Profile.keys(), 0, state, @row_y, []) ++
-      [centred("up/down pick   Enter edit   Esc done", @hint_y, Theme.dim())]
+      [centred(fields_hint(state), @hint_y, Theme.dim())]
+  end
+
+  def render(%{mode: :picking} = state) do
+    picks(Profile.qr_choices(state.profile), 0, state, @row_y, []) ++
+      [centred("up/down pick   Enter choose   Esc back", @hint_y, Theme.dim())]
   end
 
   def render(%{screen: 1, profile: profile}), do: big_screen(profile) ++ dots(1)
@@ -424,7 +466,7 @@ defmodule Badge.Page.Name do
 
   def render(%{screen: 3} = state), do: peers_screen(state) ++ dots(3)
 
-  def render(%{screen: 4} = state), do: qr_screen(state) ++ dots(4)
+  def render(%{screen: @qr_screen} = state), do: qr_screen(state) ++ dots(@qr_screen)
 
   def render(%{profile: profile} = state) do
     lines = Text.wrap(Profile.display_name(profile), @name_columns)
@@ -525,12 +567,8 @@ defmodule Badge.Page.Name do
   defp qr_screen(state) do
     key = Profile.qr_key(state.profile)
 
-    [centred(qr_heading(key), @qr_heading_y, Theme.fg())] ++
-      qr_body(state) ++ qr_caption(state, key)
+    qr_body(state) ++ qr_caption(state, key)
   end
-
-  defp qr_heading(:none), do: "QR"
-  defp qr_heading(key), do: Profile.qr_label(key)
 
   # The image carries its own size, quiet zone included.
   defp qr_body(%{qr_result: {:ok, code}}) do
@@ -661,6 +699,15 @@ defmodule Badge.Page.Name do
     rows(rest, position + 1, state, y + @row_pitch, items ++ acc)
   end
 
+  # The QR row opens a list; every other row opens an editor.
+  defp fields_hint(state) do
+    if selected(state) == :qr do
+      "up/down pick   Enter choose   Esc done"
+    else
+      "up/down pick   Enter edit   Esc done"
+    end
+  end
+
   # The one field that must be filled in says so, in the colour used for problems.
   defp row_colour(state, position, key) do
     cond do
@@ -680,6 +727,25 @@ defmodule Badge.Page.Name do
 
   defp shown(""), do: "-"
   defp shown(value), do: value
+
+  # The picker lists what the code could point at, with the handle it would use.
+  defp picks([], _position, _state, _y, acc), do: :lists.reverse(acc)
+
+  defp picks([{key, label} | rest], position, state, y, acc) do
+    colour = if position == state.pick, do: Theme.select(), else: Theme.fg()
+    marker = if position == state.pick, do: ">", else: " "
+
+    items = [
+      {:text, @value_x, y, :default16px, Theme.dim(), Theme.bg(), shown(pick_value(state, key))},
+      {:text, @label_x, y, :default16px, colour, Theme.bg(), label},
+      {:text, @marker_x, y, :default16px, Theme.select(), Theme.bg(), marker}
+    ]
+
+    picks(rest, position + 1, state, y + @row_pitch, items ++ acc)
+  end
+
+  defp pick_value(_state, :none), do: ""
+  defp pick_value(state, key), do: Map.get(state.profile, key, "")
 
   # The QR row holds a choice, so it shows the choice's label rather than its stored name.
   defp field_value(state, :qr), do: Profile.qr_label(Profile.qr_key(state.profile))
