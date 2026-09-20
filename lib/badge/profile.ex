@@ -8,6 +8,7 @@ defmodule Badge.Profile do
   """
 
   alias Badge.Nvs
+  alias Badge.Text
 
   # {key, label, capacity, icon shown beside it on the badge}
   @fields [
@@ -236,7 +237,7 @@ defmodule Badge.Profile do
   defp mastodon_url(value), do: "https://" <> value
 
   defp field_lines(profile, :links) do
-    for link <- split_words(Map.get(profile, :links, "")), do: {icon(:links), link}
+    for link <- Text.words(Map.get(profile, :links, "")), do: {icon(:links), link}
   end
 
   defp field_lines(profile, key) do
@@ -247,19 +248,6 @@ defmodule Badge.Profile do
     else
       []
     end
-  end
-
-  # Hand-rolled: AtomVM has no String module at runtime.
-  defp split_words(value), do: split_words(value, <<>>, [])
-
-  defp split_words(<<>>, <<>>, acc), do: :lists.reverse(acc)
-  defp split_words(<<>>, word, acc), do: :lists.reverse([word | acc])
-
-  defp split_words(<<?\s, rest::binary>>, <<>>, acc), do: split_words(rest, <<>>, acc)
-  defp split_words(<<?\s, rest::binary>>, word, acc), do: split_words(rest, <<>>, [word | acc])
-
-  defp split_words(<<char, rest::binary>>, word, acc) do
-    split_words(rest, word <> <<char>>, acc)
   end
 
   defp lookup([], _key, _position, fallback), do: fallback

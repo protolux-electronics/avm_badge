@@ -142,4 +142,14 @@ defmodule Badge.Text do
       _other -> line
     end
   end
+
+  @doc "The words in `text`, split on spaces; runs of spaces make no empty words."
+  @spec words(binary) :: [binary]
+  def words(text), do: words(text, <<>>, [])
+
+  defp words(<<>>, <<>>, acc), do: :lists.reverse(acc)
+  defp words(<<>>, word, acc), do: :lists.reverse([word | acc])
+  defp words(<<?\s, rest::binary>>, <<>>, acc), do: words(rest, <<>>, acc)
+  defp words(<<?\s, rest::binary>>, word, acc), do: words(rest, <<>>, [word | acc])
+  defp words(<<char, rest::binary>>, word, acc), do: words(rest, word <> <<char>>, acc)
 end

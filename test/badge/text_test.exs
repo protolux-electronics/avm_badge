@@ -161,4 +161,13 @@ defmodule Badge.TextTest do
                :binary.replace(text, " ", "", [:global])
     end
   end
+
+  describe "words/1" do
+    test "splits on spaces, making no empty words" do
+      assert Badge.Text.words("one two  three") == ["one", "two", "three"]
+      assert Badge.Text.words("  padded ") == ["padded"]
+      assert Badge.Text.words("") == []
+      assert Badge.Text.words("   ") == []
+    end
+  end
 end
