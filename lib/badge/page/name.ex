@@ -82,6 +82,8 @@ defmodule Badge.Page.Name do
   @entry_label_y Theme.content_top() + 30
   @entry_value_y Theme.content_top() + 70
   @entry_columns div(Theme.width(), @char_w)
+  @entry_note_y Theme.content_top() + 110
+  @entry_note_columns div(Theme.width() - 2 * @margin, @char_w)
 
   # The code is fitted to this box at whole-pixel scale, so it stays sharp and
   # a longer link draws smaller rather than off the panel.
@@ -446,7 +448,7 @@ defmodule Badge.Page.Name do
     [
       centred(Profile.label(key), @entry_label_y, Theme.dim()),
       centred("Enter save   Esc cancel", @hint_y, Theme.dim())
-    ] ++ entry_line(key, Field.value(state.field))
+    ] ++ entry_line(key, Field.value(state.field)) ++ entry_note(Profile.note(key))
   end
 
   def render(%{mode: :fields} = state) do
@@ -762,6 +764,18 @@ defmodule Badge.Page.Name do
     x = div(Theme.width() - @char_w * min(columns, @entry_columns), 2)
 
     segment_items(shown, x, [])
+  end
+
+  defp entry_note(""), do: []
+
+  defp entry_note(note) do
+    note_lines(Text.wrap(note, @entry_note_columns), @entry_note_y, [])
+  end
+
+  defp note_lines([], _y, acc), do: acc
+
+  defp note_lines([line | rest], y, acc) do
+    note_lines(rest, y + @detail_pitch, [centred(line, y, Theme.accent()) | acc])
   end
 
   defp value_segments(key, ""), do: [{"_", Theme.select()}, {Profile.hint(key), Theme.dim()}]

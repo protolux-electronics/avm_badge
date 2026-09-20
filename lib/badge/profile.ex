@@ -40,6 +40,11 @@ defmodule Badge.Profile do
     {:linkedin, "linkedin.com/in/"}
   ]
 
+  # A reminder shown under the value while a field is being edited.
+  @notes [
+    {:bluesky, "Reminder: tag your bsky posts\nwith #goatmire!"}
+  ]
+
   @required :name
   @placeholder "Nameless"
 
@@ -81,6 +86,10 @@ defmodule Badge.Profile do
   @doc "What the editor shows ahead of the value, or empty for a plain field."
   @spec prefix(atom) :: binary
   def prefix(key), do: lookup(@prefixes, key, 1, "")
+
+  @doc "A reminder the editor shows under the value, or empty when there is none."
+  @spec note(atom) :: binary
+  def note(key), do: lookup(@notes, key, 1, "")
 
   @doc "The one field that must be filled in."
   def required, do: @required

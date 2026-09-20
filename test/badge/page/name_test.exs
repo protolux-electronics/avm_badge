@@ -1004,6 +1004,29 @@ defmodule Badge.Page.NameTest do
     test "a plain field still shows just the value and cursor" do
       assert for({_x, _c, body} <- entry_row(typing(:name)), do: body) == ["Gus_"]
     end
+
+    defp accented(state) do
+      for {:text, x, y, _f, colour, _b, body} <- Name.render(state), colour == Theme.accent() do
+        {y, x, body}
+      end
+    end
+
+    test "the bluesky reminder is drawn in the accent colour, wrapped, under the value" do
+      lines = :lists.keysort(1, accented(typing(:bluesky)))
+      [value_y] = for {:text, _x, y, _f, _c, _b, "_"} <- Name.render(typing(:bluesky)), do: y
+
+      assert Enum.join(for({_y, _x, body} <- lines, do: body), " ") == Profile.note(:bluesky)
+      assert length(lines) == 2
+
+      for {y, x, body} <- lines do
+        assert y > value_y and y < 216
+        assert x == div(Theme.width() - 8 * byte_size(body), 2)
+      end
+    end
+
+    test "a field without a note draws nothing in the accent colour" do
+      assert accented(typing(:name)) == []
+    end
   end
 
   describe "choosing the QR link" do

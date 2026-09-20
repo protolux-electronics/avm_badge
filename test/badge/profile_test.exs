@@ -53,6 +53,12 @@ defmodule Badge.ProfileTest do
     test "the QR row is named after what it draws" do
       assert Profile.label(:qr) == "QR Code"
     end
+
+    test "bluesky carries a reminder to tag posts, and the others carry none" do
+      assert Profile.note(:bluesky) == "Reminder: tag your bsky posts with #goatmire!"
+      assert Profile.note(:name) == ""
+      assert Profile.note(:nonesuch) == ""
+    end
   end
 
   describe "completeness" do
