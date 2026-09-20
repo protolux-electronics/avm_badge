@@ -164,8 +164,7 @@ defmodule Badge.Page.Share do
     :ok
   end
 
-  # Frames reach Badge.UI, not the page, so they arrive through here. Only
-  # the share screen listens, and a badge with nothing to beam does not.
+  # Only the share screen listens, and only with something to beam.
   @impl true
   def handle_ir(
         from,
