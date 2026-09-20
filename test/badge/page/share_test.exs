@@ -400,4 +400,52 @@ defmodule Badge.Page.ShareTest do
       assert press(press(with_peers(10), {:move, :down}, 8), {:move, :right}).top == 0
     end
   end
+
+  describe "the detail" do
+    defp opened(extra \\ %{}) do
+      press(collected([peer(1, "Ada Lovelace", extra)]), {:edit, :newline})
+    end
+
+    test "enter on a row opens it, and escape comes back to the list" do
+      state = opened()
+
+      assert state.mode == :detail
+      assert state.opened.profile.name == "Ada Lovelace"
+
+      back = press(state, {:nav, :home})
+
+      assert back.mode == :show
+      assert back.screen == 2
+      assert back.opened == nil
+    end
+
+    test "enter opens the row under the cursor" do
+      state = press(press(with_peers(3), {:move, :down}), {:edit, :newline})
+
+      assert state.opened.profile.name == "Badge 2"
+    end
+
+    test "enter on an empty list does nothing" do
+      assert Page.handle_key({:edit, :newline}, collected([])) == :ignore
+    end
+
+    test "shows the name large, then what they shared with its icon" do
+      state = opened(%{github: "ada", company: "Analytical Engines"})
+      big = for {:text, _x, _y, :dogica, _c, _b, body} <- Page.render(state), do: body
+
+      assert "Ada Lovelace" in big
+      assert "ada" in texts(state)
+      assert "Analytical Engines" in texts(state)
+      assert length(images(state)) == 2
+      assert says?(state, "Esc back")
+    end
+
+    test "the detail does not page, and has no dots" do
+      state = opened()
+
+      assert press(state, {:move, :right}).mode == :detail
+      assert press(state, {:move, :right}).screen == 2
+      refute Enum.any?(Page.render(state), &match?({:rect, _x, 228, 6, 6, _c}, &1))
+    end
+  end
 end

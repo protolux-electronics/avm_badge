@@ -10,6 +10,7 @@ defmodule Badge.Page.Share do
 
   use Badge.Page
 
+  alias Badge.Font
   alias Badge.Icons
   alias Badge.Identity
   alias Badge.Ir
@@ -18,6 +19,7 @@ defmodule Badge.Page.Share do
   alias Badge.Profile
   alias Badge.Sharing
   alias Badge.Sharing.Wire
+  alias Badge.Text
   alias Badge.Theme
 
   @char_w 8
@@ -60,6 +62,24 @@ defmodule Badge.Page.Share do
   @icon_pitch 18
   @icons_x Theme.width() - 8 - 7 * @icon_pitch
   @list_name_columns div(@icons_x - @name_x - 8, @char_w)
+
+  @margin 16
+
+  # dogica is fixed width, so the name can be measured and wrapped exactly.
+  @name_font :dogica
+  @name_w Font.advance(@name_font)
+
+  @name_w != nil ||
+    raise "#{@name_font} is proportional; the name cannot be wrapped without glyph widths"
+
+  @name_columns div(Theme.width() - 2 * @margin, @name_w)
+  @name_pitch 22
+  @name_y Theme.content_top() + 10
+  @rule_h 2
+  @rule_w 200
+  @detail_pitch 20
+  @icon_w 16
+  @detail_x @margin + @icon_w + 6
 
   # Two badges meeting, centred between the chip id and the badge heard.
   @art :badge_share
@@ -232,6 +252,8 @@ defmodule Badge.Page.Share do
   end
 
   @impl true
+  def handle_key(event, %{mode: :detail} = state), do: detail_key(event, state)
+
   def handle_key({:move, :right}, %{mode: :show} = state), do: {:ok, turn(state, 1)}
   def handle_key({:move, :left}, %{mode: :show} = state), do: {:ok, turn(state, -1)}
 
@@ -246,6 +268,10 @@ defmodule Badge.Page.Share do
   defp turn(state, delta) do
     %{state | screen: rem(state.screen + delta + @screens, @screens), cursor: 0, top: 0}
   end
+
+  # Escape closes the detail; it is trapped here and nowhere else on the page.
+  defp detail_key({:nav, :home}, state), do: {:ok, %{state | mode: :show, opened: nil}}
+  defp detail_key(_event, state), do: {:ok, state}
 
   defp sharing_key({:move, :up}, state),
     do: {:ok, %{state | cursor: clamp(state.cursor - 1, last_field())}}
@@ -263,6 +289,13 @@ defmodule Badge.Page.Share do
 
   defp collected_key({:move, :up}, state), do: {:ok, scroll(state, -1)}
   defp collected_key({:move, :down}, state), do: {:ok, scroll(state, 1)}
+
+  defp collected_key({:edit, :newline}, %{peers: []}), do: :ignore
+
+  defp collected_key({:edit, :newline}, state) do
+    {:ok, %{state | mode: :detail, opened: :lists.nth(state.cursor + 1, state.peers)}}
+  end
+
   defp collected_key(_event, _state), do: :ignore
 
   @doc "Moves the cursor over the collected list, the window following it."
@@ -284,6 +317,8 @@ defmodule Badge.Page.Share do
   defp clamp(index, _last), do: index
 
   @impl true
+  def render(%{mode: :detail, opened: %{profile: profile}}), do: detail_screen(profile)
+
   def render(%{screen: @share_screen} = state) do
     [art()] ++ share_screen(state) ++ dots(@share_screen)
   end
@@ -429,6 +464,37 @@ defmodule Badge.Page.Share do
   defp drop(list, 0), do: list
   defp drop([], _n), do: []
   defp drop([_head | rest], n), do: drop(rest, n - 1)
+
+  defp detail_screen(profile) do
+    lines = Text.wrap(Profile.display_name(profile), @name_columns)
+    rule_y = @name_y + length(lines) * @name_pitch + 6
+
+    name_items(lines, @name_y, []) ++
+      [{:rect, @margin, rule_y, @rule_w, @rule_h, Theme.accent()}] ++
+      detail_items(Profile.lines(profile), rule_y + 14, []) ++
+      [centred("Esc back", @hint_y, Theme.dim())]
+  end
+
+  defp name_items([], _y, acc), do: acc
+
+  defp name_items([line | rest], y, acc) do
+    item = {:text, @margin, y, @name_font, Theme.fg(), Theme.bg(), line}
+
+    name_items(rest, y + @name_pitch, [item | acc])
+  end
+
+  # Anything that will not fit above the hint is dropped rather than overlapping it.
+  defp detail_items([], _y, acc), do: acc
+  defp detail_items(_lines, y, acc) when y + @detail_pitch > @hint_y, do: acc
+
+  defp detail_items([{icon, text} | rest], y, acc) do
+    item = {:text, @detail_x, y, :default16px, Theme.muted(), Theme.bg(), text}
+
+    detail_items(rest, y + @detail_pitch, [item | badge_icon(icon, y)] ++ acc)
+  end
+
+  defp badge_icon(nil, _y), do: []
+  defp badge_icon(icon, y), do: [Icons.item(icon, @margin, y)]
 
   defp art do
     {width, _height} = Icons.size(@art)
