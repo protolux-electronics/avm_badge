@@ -625,8 +625,13 @@ defmodule Badge.Page.NameTest do
       end
     end
 
-    test "shows the chosen handle under the code" do
-      assert "gus" in texts(qrcode())
+    test "shows the chosen handle under the code, after the URL it completes" do
+      assert "github.com/gus" in texts(qrcode())
+      assert "https://goatmire.com" in texts(qrcode(%{qr: "links", links: "goatmire.com"}))
+    end
+
+    test "a handle with no URL prefix is shown as it is" do
+      assert "gus.bsky.social" in texts(qrcode(%{qr: "bluesky", bluesky: "gus.bsky.social"}))
     end
 
     test "draws the link's own icon" do

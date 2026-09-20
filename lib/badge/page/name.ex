@@ -598,7 +598,7 @@ defmodule Badge.Page.Name do
     value = Map.get(state.profile, key, "")
 
     if Profile.present?(value) do
-      link_line(key, qr_cut(value))
+      link_line(key, qr_cut(Profile.prefix(key) <> value))
     else
       []
     end
