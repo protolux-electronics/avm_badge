@@ -42,11 +42,11 @@ defmodule Badge.Profile do
   def fields, do: @fields
 
   @doc "Field keys, in order."
-  def keys, do: for({key, _label, _capacity, _prefix} <- @fields, do: key)
+  def keys, do: for({key, _label, _capacity, _icon} <- @fields, do: key)
 
   @doc "How many characters a field holds."
   @spec capacity(atom) :: pos_integer
-  def capacity(key), do: lookup(@fields, key, 3, 20)
+  def capacity(key), do: lookup(@fields, key, 2, 20)
 
   @doc "The label shown beside a field in the editor."
   @spec label(atom) :: binary

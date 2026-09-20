@@ -14,7 +14,7 @@ defmodule Badge.ProfileTest do
     test "every field has a label and a capacity" do
       for key <- Profile.keys() do
         assert byte_size(Profile.label(key)) > 0
-        assert Profile.capacity(key) > 0
+        assert is_integer(Profile.capacity(key)) and Profile.capacity(key) > 0
       end
     end
 
