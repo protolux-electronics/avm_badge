@@ -76,6 +76,15 @@ defmodule Badge.Page.ShareTest do
   end
 
   describe "the share screen" do
+    test "shows two badges meeting, whatever else it has to say" do
+      for state <- [Page.init(), loaded(), loaded(%{})] do
+        assert Enum.any?(
+                 Page.render(state),
+                 &match?({:image, 124, 92, _bg, {:rgba8888, 72, 32, _pixels}}, &1)
+               )
+      end
+    end
+
     test "shows this badge's own chip id and says what to do" do
       assert "A1B2C3D4E5F6" in texts(loaded())
       assert says?(loaded(), "hold another badge")

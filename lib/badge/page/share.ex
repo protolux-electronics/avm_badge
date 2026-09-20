@@ -10,6 +10,7 @@ defmodule Badge.Page.Share do
 
   use Badge.Page
 
+  alias Badge.Icons
   alias Badge.Identity
   alias Badge.Peers
   alias Badge.Profile
@@ -23,7 +24,7 @@ defmodule Badge.Page.Share do
   @sharing_screen 1
   @collected_screen 2
 
-  # 2400 baud carries the longest frame in 183 ms; the beam is full duplex.
+  # Between frames on the share screen.
   @beam_ms 200
   @idle_ms 333
 
@@ -32,6 +33,10 @@ defmodule Badge.Page.Share do
   @met_name_y 130
   @met_note_y 154
   @met_count_y 186
+
+  # Two badges meeting, centred between the chip id and the badge heard.
+  @art :badge_share
+  @art_y 92
 
   @dot_y 228
   @dot 6
@@ -119,7 +124,9 @@ defmodule Badge.Page.Share do
   end
 
   @impl true
-  def render(%{screen: @share_screen} = state), do: share_screen(state) ++ dots(@share_screen)
+  def render(%{screen: @share_screen} = state) do
+    [art()] ++ share_screen(state) ++ dots(@share_screen)
+  end
 
   def render(%{screen: @sharing_screen}),
     do: [centred("Sharing", @heading_y, Theme.fg())] ++ dots(@sharing_screen)
@@ -144,6 +151,12 @@ defmodule Badge.Page.Share do
       centred("Share", @heading_y, Theme.fg()),
       centred(state.chip, @chip_y, Theme.dim())
     ] ++ met_lines(state.met, Peers.count(state.peers))
+  end
+
+  defp art do
+    {width, _height} = Icons.size(@art)
+
+    Icons.item(@art, div(Theme.width() - width, 2), @art_y)
   end
 
   # Before anyone has been heard there is nothing to report but the count.
