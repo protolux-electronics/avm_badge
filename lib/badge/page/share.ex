@@ -44,9 +44,9 @@ defmodule Badge.Page.Share do
 
   @heading_y Theme.content_top() + 16
   @chip_y Theme.content_top() + 44
-  @met_name_y 130
-  @met_note_y 154
-  @met_count_y 186
+  @met_name_y 162
+  @met_note_y 182
+  @met_count_y 202
 
   @row_y Theme.content_top() + 44
   @row_pitch 18
@@ -81,7 +81,8 @@ defmodule Badge.Page.Share do
 
   # Two badges meeting, centred between the chip id and the badge heard.
   @art :badge_share
-  @art_y 92
+  @art_scale 2
+  @art_y 90
 
   @dot_y 228
   @dot 6
@@ -506,7 +507,7 @@ defmodule Badge.Page.Share do
   defp art do
     {width, _height} = Icons.size(@art)
 
-    Icons.item(@art, div(Theme.width() - width, 2), @art_y)
+    Icons.scaled(@art, div(Theme.width() - width * @art_scale, 2), @art_y, @art_scale)
   end
 
   # Before anyone has been heard there is nothing to report but the count.
