@@ -16,7 +16,7 @@ defmodule Badge.Sim.ShareNvsTest do
   end
 
   defp loaded do
-    profile = Map.put(Profile.blank(), :name, "Gus")
+    profile = Map.merge(Profile.blank(), %{name: "Gus", company: "Protolux"})
 
     Page.recycle(%{
       Page.init()

@@ -284,10 +284,18 @@ defmodule Badge.Page.Share do
   defp sharing_key({:move, :down}, state),
     do: {:ok, %{state | cursor: clamp(state.cursor + 1, last_field())}}
 
+  # An empty field cannot be ticked; a tick it already carries can still be cleared.
   defp sharing_key({:edit, :newline}, state) do
     key = :lists.nth(state.cursor + 1, Sharing.fields())
 
-    {:ok, recycle(%{state | shared: Sharing.toggle(state.shared, key)})}
+    tickable =
+      Profile.present?(Map.get(state.profile, key, "")) or Sharing.shared?(state.shared, key)
+
+    if tickable do
+      {:ok, recycle(%{state | shared: Sharing.toggle(state.shared, key)})}
+    else
+      {:ok, state}
+    end
   end
 
   defp sharing_key(_event, _state), do: :ignore

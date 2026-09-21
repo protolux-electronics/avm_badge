@@ -323,11 +323,20 @@ defmodule Badge.Page.ShareTest do
       assert press(choosing(), {:edit, :newline}).shared == [:name]
     end
 
-    test "ticking an empty field changes the set but not the cycle" do
-      ticked = choosing(%{name: "Gus"}) |> press({:move, :down}) |> press({:edit, :newline})
+    test "an empty field cannot be ticked" do
+      pressed = choosing(%{name: "Gus"}) |> press({:move, :down}) |> press({:edit, :newline})
 
-      assert ticked.shared == [:name, :company]
-      assert ticked.cycle == [{:name, "Gus"}]
+      assert pressed.shared == [:name]
+      assert pressed.cycle == [{:name, "Gus"}]
+    end
+
+    test "a tick left on a field that has since been emptied can still be cleared" do
+      cleared =
+        choosing(%{name: "Gus"}, [:name, :company])
+        |> press({:move, :down})
+        |> press({:edit, :newline})
+
+      assert cleared.shared == [:name]
     end
 
     test "the change is not written while the screen is showing" do
