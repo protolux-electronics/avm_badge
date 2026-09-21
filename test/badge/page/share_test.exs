@@ -147,6 +147,14 @@ defmodule Badge.Page.ShareTest do
   end
 
   describe "beaming the profile" do
+    test "the mask names what is beamed, not what is ticked" do
+      Process.register(self(), Badge.Ir.Link)
+      Page.tick(loaded(%{name: "Gus", company: "Protolux"}, [:name, :company, :email]))
+
+      assert_receive {:"$gen_cast", {:transmit, payload}}
+      assert Wire.decode(payload) == {:ok, :name, [:name, :company], "Gus"}
+    end
+
     test "walks the cycle one frame a tick, name first, and wraps" do
       state = loaded(%{name: "Gus", company: "Protolux"}, [:name, :company])
 
@@ -340,6 +348,21 @@ defmodule Badge.Page.ShareTest do
 
     defp images(state),
       do: for({:image, _x, _y, _bg, _img} = item <- Page.render(state), do: item)
+
+    test "a name with no icons beside it is shown whole" do
+      assert "Bartholomew Cubbins the Third" in texts(
+               collected([peer(1, "Bartholomew Cubbins the Third")])
+             )
+    end
+
+    test "a name beside every icon is cut to what fits" do
+      everything = for key <- Sharing.fields(), key != :name, into: %{}, do: {key, "x"}
+      state = collected([peer(1, "Bartholomew Cubbins the Third", everything)])
+
+      assert "Bartholomew Cubbins t" in texts(state)
+      refute "Bartholomew Cubbins the Third" in texts(state)
+      assert length(images(state)) == 7
+    end
 
     test "an empty collection says so" do
       assert says?(collected([]), "no badges yet")

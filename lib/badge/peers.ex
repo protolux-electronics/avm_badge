@@ -14,19 +14,35 @@ defmodule Badge.Peers do
 
   @key :peers
 
-  # A peer now carries up to a whole profile, and NVS is 24 kB shared with wifi.
+  # How many badges are kept.
   @limit 32
+
+  # The blob must fit one NVS page.
+  @budget 4096
 
   @doc "Every peer seen, most recently met first."
   @spec load() :: [map]
   def load, do: decode(Nvs.get(@key))
 
-  @doc "Stores the peers."
-  @spec save([map]) :: :ok
+  @doc "Stores the peers; a write that fails is logged and reported, not raised."
+  @spec save([map]) :: :ok | {:error, term}
   def save(peers) do
-    Nvs.put(@key, encode(peers))
+    try do
+      case Nvs.put(@key, encode(peers)) do
+        :ok -> :ok
+        other -> failed(other)
+      end
+    rescue
+      error -> failed(error)
+    catch
+      kind, reason -> failed({kind, reason})
+    end
+  end
 
-    :ok
+  defp failed(reason) do
+    :io.format(~c"Peers: write failed ~p~n", [reason])
+
+    {:error, reason}
   end
 
   @doc "How many distinct badges have been collected."
@@ -42,9 +58,9 @@ defmodule Badge.Peers do
   """
   @spec hear([map], binary, atom, [atom], binary) :: [map]
   def hear(peers, id, key, shared, value) do
-    profile = keep(shared, Map.put(profile_of(find(peers, id)), key, value), %{})
+    profile = keep([key | shared], Map.put(profile_of(find(peers, id)), key, value), %{})
 
-    [%{id: id, profile: profile} | reject(peers, id, [])] |> take(@limit, [])
+    [%{id: id, profile: profile} | reject(peers, id, [])] |> take(@limit, []) |> fit()
   end
 
   @doc "What hearing `value` under `key` from a badge means: unheard, unchanged, or changed."
@@ -115,4 +131,15 @@ defmodule Badge.Peers do
   defp take([], _left, acc), do: :lists.reverse(acc)
   defp take(_peers, 0, acc), do: :lists.reverse(acc)
   defp take([peer | rest], left, acc), do: take(rest, left - 1, [peer | acc])
+
+  # Drops the oldest until the blob fits.
+  defp fit([]), do: []
+
+  defp fit(peers) do
+    if byte_size(encode(peers)) > @budget do
+      fit(:lists.reverse(tl(:lists.reverse(peers))))
+    else
+      peers
+    end
+  end
 end

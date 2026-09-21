@@ -30,12 +30,25 @@ defmodule Badge.Sharing do
   @spec load() :: [atom]
   def load, do: decode(Nvs.get(@key))
 
-  @doc "Stores a share set."
-  @spec save([atom]) :: :ok
+  @doc "Stores a share set; a write that fails is logged and reported, not raised."
+  @spec save([atom]) :: :ok | {:error, term}
   def save(shared) do
-    Nvs.put(@key, encode(shared))
+    try do
+      case Nvs.put(@key, encode(shared)) do
+        :ok -> :ok
+        other -> failed(other)
+      end
+    rescue
+      error -> failed(error)
+    catch
+      kind, reason -> failed({kind, reason})
+    end
+  end
 
-    :ok
+  defp failed(reason) do
+    :io.format(~c"Sharing: write failed ~p~n", [reason])
+
+    {:error, reason}
   end
 
   @doc "A share set as stored: field names joined by spaces, in field order."

@@ -63,6 +63,12 @@ defmodule Badge.SharingTest do
     end
   end
 
+  describe "save/1" do
+    test "a write that cannot be made is reported, not raised" do
+      assert {:error, _reason} = Sharing.save([:name])
+    end
+  end
+
   describe "cycle/2" do
     test "the name goes first, then each shared field with a value, in field order" do
       profile = profile(%{name: "Gus", company: "Protolux", github: "gus"})

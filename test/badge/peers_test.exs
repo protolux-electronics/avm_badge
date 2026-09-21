@@ -2,6 +2,8 @@ defmodule Badge.PeersTest do
   use ExUnit.Case, async: true
 
   alias Badge.Peers
+  alias Badge.Profile
+  alias Badge.Sharing
 
   defp id(n), do: <<0, 0, 0, 0, 0, n>>
 
@@ -52,6 +54,10 @@ defmodule Badge.PeersTest do
       assert Peers.count(peers) == 32
       assert Peers.find(peers, id(40)) != nil
       assert Peers.find(peers, id(1)) == nil
+    end
+
+    test "the field just heard is kept even when the mask forgets it" do
+      assert Peers.hear([], id(1), :name, [], "Gus") == [%{id: id(1), profile: %{name: "Gus"}}]
     end
   end
 
@@ -121,6 +127,57 @@ defmodule Badge.PeersTest do
       old = :erlang.term_to_binary([%{id: id(1), profile: %{name: "Pat"}}])
 
       assert Peers.decode(old) == [%{id: id(1), profile: %{name: "Pat"}}]
+    end
+  end
+
+  describe "the byte budget" do
+    # Every field at capacity, heard one frame at a time, for badges 1..n.
+    defp full_peers(n) do
+      :lists.foldl(
+        fn i, acc ->
+          :lists.foldl(
+            fn key, inner ->
+              Peers.hear(
+                inner,
+                id(i),
+                key,
+                Sharing.fields(),
+                :binary.copy("x", Profile.capacity(key))
+              )
+            end,
+            acc,
+            Sharing.fields()
+          )
+        end,
+        [],
+        :lists.seq(1, n)
+      )
+    end
+
+    test "a list of full profiles is trimmed to one NVS page, newest kept" do
+      peers = full_peers(32)
+
+      assert byte_size(Peers.encode(peers)) <= 4096
+      assert Peers.count(peers) < 32
+      assert Peers.find(peers, id(32)) != nil
+      assert Peers.find(peers, id(1)) == nil
+    end
+
+    test "name-only peers fill the whole count" do
+      peers =
+        :lists.foldl(
+          fn n, acc -> Peers.hear(acc, id(n), :name, [:name], "n") end,
+          [],
+          :lists.seq(1, 40)
+        )
+
+      assert Peers.count(peers) == 32
+    end
+  end
+
+  describe "save/1" do
+    test "a write that cannot be made is reported, not raised" do
+      assert {:error, _reason} = Peers.save([])
     end
   end
 end

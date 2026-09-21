@@ -39,7 +39,7 @@ defmodule Badge.Page.Share do
   @known_hue 200
   @updated_hue 45
 
-  # One second at @beam_ms without a frame, before peers are written.
+  # Ticks without a frame before peers are written.
   @settle_ticks 5
 
   @heading_y Theme.content_top() + 16
@@ -60,8 +60,6 @@ defmodule Badge.Page.Share do
   @list_pitch 20
   @name_x 8
   @icon_pitch 18
-  @icons_x Theme.width() - 8 - 7 * @icon_pitch
-  @list_name_columns div(@icons_x - @name_x - 8, @char_w)
 
   @margin 16
 
@@ -158,12 +156,19 @@ defmodule Badge.Page.Share do
   # Screen 0 is the whole protocol: on it we beam, off it we are silent.
   defp beam(%{screen: @share_screen, mode: :show, cycle: [_frame | _rest] = cycle} = state) do
     {key, value} = :lists.nth(state.next + 1, cycle)
-    Ir.send(Wire.encode(key, state.shared, value))
+
+    case Wire.encode(key, beamed(cycle), value) do
+      {:error, reason} -> :io.format(~c"Share: cannot beam ~p: ~p~n", [key, reason])
+      payload -> Ir.send(payload)
+    end
 
     %{state | next: rem(state.next + 1, length(cycle))}
   end
 
   defp beam(state), do: %{state | next: 0}
+
+  # The mask names what goes out, not what is ticked.
+  defp beamed(cycle), do: for({key, _value} <- cycle, do: key)
 
   defp settle(state), do: %{state | quiet: min(state.quiet + 1, @settle_ticks)}
 
@@ -418,13 +423,15 @@ defmodule Badge.Page.Share do
 
   defp peer_rows([peer | rest], position, state, y, acc) do
     selected = position == state.cursor
-    name = cut(Profile.display_name(peer.profile), @list_name_columns)
+    icons = icons_for(peer.profile)
+    icons_x = Theme.width() - 8 - length(icons) * @icon_pitch
+    name = cut(Profile.display_name(peer.profile), div(icons_x - @name_x - 8, @char_w))
 
     items =
       [
         {:text, @marker_x, y, :default16px, Theme.select(), Theme.bg(), marker(selected)},
         {:text, @name_x, y, :default16px, row_colour(selected), Theme.bg(), name}
-      ] ++ icon_items(icons_for(peer.profile), @icons_x, y, [])
+      ] ++ icon_items(icons, icons_x, y, [])
 
     peer_rows(rest, position + 1, state, y + @list_pitch, items ++ acc)
   end
@@ -460,7 +467,7 @@ defmodule Badge.Page.Share do
   defp cut(value, columns) when byte_size(value) > columns, do: :binary.part(value, 0, columns)
   defp cut(value, _columns), do: value
 
-  # There is no Enum.drop on AtomVM, and the list is at most 32 long.
+  # The peers above the window.
   defp drop(list, 0), do: list
   defp drop([], _n), do: []
   defp drop([_head | rest], n), do: drop(rest, n - 1)

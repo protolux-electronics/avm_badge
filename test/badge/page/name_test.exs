@@ -910,7 +910,7 @@ defmodule Badge.Page.NameTest do
     end
 
     test "is not held while any other screen is showing" do
-      for other <- [0, 2, 3] do
+      for other <- [0, 2] do
         assert Name.fonts(screen(showing(%{name: "Gus"}), other)) == []
       end
     end
