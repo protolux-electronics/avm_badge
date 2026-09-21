@@ -34,7 +34,6 @@ defmodule Badge.IconsTest do
   @white 0xFFFFFF
   @black 0x000000
 
-
   defp alphas(name, tint), do: for(<<_r, _g, _b, a <- Icons.binary(name, tint)>>, do: a)
 
   describe "names/0" do
@@ -190,16 +189,6 @@ defmodule Badge.IconsTest do
                Icons.item(:wifi, 1, 2, @white, 0x000080)
 
       assert binary == Icons.binary(:wifi, @white)
-    end
-  end
-
-  describe "scaled/4" do
-    test "draws the whole icon enlarged, in the skin's glyph colour on its background" do
-      assert {:scaled_cropped_image, 10, 20, 144, 64, bg, 0, 0, 2, 2, [],
-              {:rgba8888, 72, 32, binary}} = Icons.scaled(:badge_share, 10, 20, 2)
-
-      assert bg == Theme.bg()
-      assert binary == Icons.binary(:badge_share, Theme.glyph())
     end
   end
 

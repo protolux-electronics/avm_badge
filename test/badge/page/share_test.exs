@@ -79,15 +79,11 @@ defmodule Badge.Page.ShareTest do
   end
 
   describe "the share screen" do
-    test "shows two badges meeting at twice their size, whatever else it has to say" do
+    test "shows two badges meeting, whatever else it has to say" do
       for state <- [Page.init(), loaded(), loaded(%{})] do
         assert Enum.any?(
                  Page.render(state),
-                 &match?(
-                   {:scaled_cropped_image, 88, 90, 144, 64, _bg, 0, 0, 2, 2, [],
-                    {:rgba8888, 72, 32, _pixels}},
-                   &1
-                 )
+                 &match?({:image, 88, 90, _bg, {:rgba8888, 144, 64, _pixels}}, &1)
                )
       end
     end

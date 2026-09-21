@@ -141,14 +141,4 @@ defmodule Badge.Icons do
 
     {:image, x, y, bg, {:rgba8888, width, height, binary(name, tint)}}
   end
-
-  @doc "A display item drawing `name` enlarged `scale` times, in the skin's glyph colour on its background."
-  @spec scaled(atom, integer, integer, pos_integer) :: tuple
-  def scaled(name, x, y, scale) do
-    {width, height} = size(name)
-    image = {:rgba8888, width, height, binary(name, Theme.glyph())}
-
-    {:scaled_cropped_image, x, y, width * scale, height * scale, Theme.bg(), 0, 0, scale, scale,
-     [], image}
-  end
 end
