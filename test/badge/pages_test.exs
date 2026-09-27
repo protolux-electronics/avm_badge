@@ -76,7 +76,7 @@ defmodule Badge.PagesTest do
                Badge.Page.Sensors,
                Badge.Page.Agent,
                Badge.Page.Cluster,
-               nil,
+               Badge.Page.ConnectFour,
                nil
              ]
     end
@@ -89,7 +89,6 @@ defmodule Badge.PagesTest do
     end
 
     test "an empty slot is nil, not a crash" do
-      assert Pages.for_key(:clover, 1) == nil
       assert Pages.for_key(:diamond, 1) == nil
       assert Pages.for_key(:square, 99) == nil
     end
@@ -123,8 +122,11 @@ defmodule Badge.PagesTest do
       end
     end
 
+    # Connect Four is the one deliberate exception: a shape key doubles as a
+    # column drop mid-game, and mid-pairing it would otherwise bounce the
+    # player to whatever app that key opens instead of just doing nothing.
     test "no page traps a shape key, since the router only sees what a page ignores" do
-      for module <- assigned(), key <- @keys do
+      for module <- assigned() -- [Badge.Page.ConnectFour], key <- @keys do
         assert module.handle_key({:nav, key}, module.init()) == :ignore
       end
     end

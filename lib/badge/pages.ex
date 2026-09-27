@@ -24,7 +24,8 @@ defmodule Badge.Pages do
     Badge.Page.Led,
     Badge.Page.Sensors,
     Badge.Page.Agent,
-    Badge.Page.Cluster
+    Badge.Page.Cluster,
+    Badge.Page.ConnectFour
   ]
 
   @per_screen length(@keys)
