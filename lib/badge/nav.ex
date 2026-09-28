@@ -126,36 +126,36 @@ defmodule Badge.Nav do
     [
       {:text, @margin, y, FontType.body(), Map.get(entry, :label_colour, Theme.dim()), Theme.bg(),
        label},
-      {:text, @value_x, y, FontType.body(), Map.get(entry, :colour, Theme.fg()), Theme.bg(), entry.value}
+      {:text, @value_x, y, FontType.body(), Map.get(entry, :colour, Theme.fg()), Theme.bg(),
+       entry.value}
     ]
   end
 
   defp label_items(entry, y) do
-    [{:text, @margin, y, FontType.body(), Map.get(entry, :colour, Theme.fg()), Theme.bg(), entry.value}]
+    [
+      {:text, @margin, y, FontType.body(), Map.get(entry, :colour, Theme.fg()), Theme.bg(),
+       entry.value}
+    ]
   end
 
   defp trailing_items(entry, y) do
-    case Map.get(entry, :trailing) do
-      nil ->
-        []
+    with trailing when is_binary(trailing) <- Map.get(entry, :trailing),
+         colour = Map.get(entry, :trailing_colour, Map.get(entry, :colour, Theme.fg())),
+         x = Readout.right_x(trailing) do
+      text = {:text, x, y, FontType.body(), colour, Theme.bg(), trailing}
 
-      trailing ->
-        colour = Map.get(entry, :trailing_colour, Map.get(entry, :colour, Theme.fg()))
-        x = Readout.right_x(trailing)
-
-        case Map.get(entry, :icon) do
-          nil ->
-            [{:text, x, y, FontType.body(), colour, Theme.bg(), trailing}]
-
-          icon ->
-            {icon_width, _height} = Icons.size(icon)
-
-            [
-              Icons.item(icon, x - icon_width - 4, y),
-              {:text, x, y, FontType.body(), colour, Theme.bg(), trailing}
-            ]
-        end
+      trailing_icon(Map.get(entry, :icon), x, y) ++ [text]
+    else
+      _ -> []
     end
+  end
+
+  defp trailing_icon(nil, _x, _y), do: []
+
+  defp trailing_icon(icon, x, y) do
+    {icon_width, _height} = Icons.size(icon)
+
+    [Icons.item(icon, x - icon_width - 4, y)]
   end
 
   defp dots_width(count), do: count * @dot + (count - 1) * (@dot_gap - @dot)
