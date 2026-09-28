@@ -11,7 +11,7 @@ defmodule Badge.ConnectFour.Protocol do
   Three frame kinds, distinguished by a leading tag byte, all far under
   `Badge.Ir.Frame.max_payload/0`:
 
-      HELLO  <<0>>            both badges, while pairing
+      HELLO  <<0>>            both badges, while unpaired or waiting on the first move
       MOVE   <<1, seq, col>>  mover -> opponent, one dropped disc
       ACK    <<2, seq>>       opponent -> mover, replies to a MOVE
 
@@ -29,6 +29,23 @@ defmodule Badge.ConnectFour.Protocol do
   HELLO instead repeats on a duty cycle, one tick in `@beam_ticks` — the same
   throttle `Badge.Page.Name` uses for its own two-way "hold badges together"
   exchange, and for the same reason.
+
+  HELLO keeps repeating on that duty cycle whenever a badge has nothing more
+  urgent to send *and no move has happened yet* (`seq == 0`), not only while
+  `:discovering`. Pairing has no reply, so if one badge's HELLO reaches the
+  other but the other's is missed even once, the first badge would otherwise
+  go quiet the moment it pairs (nothing left to send until its own turn), and
+  the second badge — still `:discovering` — would wait forever with no way to
+  catch up. A stray HELLO heard after pairing is a no-op, so the repeat costs
+  nothing during that window.
+
+  The `seq == 0` guard matters: a completed MOVE/ACK round trip is proof both
+  badges paired, so continuing to beam HELLO afterwards would only add
+  self-interference on the beam without helping anything. Two badges beaming
+  at once already meant neither could hear the other during pairing (the
+  reason HELLO is throttled at all); the same is true of a waiting player's
+  HELLO stepping on the mover's MOVE, and unlike pairing, a game keeps running
+  for many exchanges rather than one.
 
   A MOVE or its ACK, once pairing is done, is still repeated on every tick
   rather than on a timer (`Process.send_after/3` is expensive on this
@@ -76,7 +93,7 @@ defmodule Badge.ConnectFour.Protocol do
   and clears itself once spent.
   """
   @spec tick(map) :: {map, binary | nil}
-  def tick(%{phase: :discovering, beam: beam} = state) do
+  def tick(%{outgoing: nil, seq: 0, beam: beam} = state) do
     case rem(beam + 1, @beam_ticks) do
       0 -> {%{state | beam: 0}, <<@hello>>}
       next -> {%{state | beam: next}, nil}

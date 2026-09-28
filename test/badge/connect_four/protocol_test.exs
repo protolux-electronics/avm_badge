@@ -30,6 +30,44 @@ defmodule Badge.ConnectFour.ProtocolTest do
     end
   end
 
+  describe "tick/1 once paired but idle" do
+    # Found on hardware: badge B heard badge A's HELLO and paired, but badge
+    # A never heard B's, so A was stuck discovering forever while B sat
+    # silent waiting for its turn. HELLO must keep repeating whenever there
+    # is nothing more urgent to send, not just while still discovering.
+    test "keeps beaming HELLO on the duty cycle, so a peer that missed pairing can still catch up" do
+      {state, :paired} = Protocol.handle_ir(Protocol.new(), @high_id, <<0>>, @low_id)
+
+      {ticks, _state} =
+        Enum.reduce(1..6, {[], state}, fn _n, {ticks, state} ->
+          {state, frame} = Protocol.tick(state)
+          {[frame | ticks], state}
+        end)
+
+      sent = ticks |> Enum.reverse() |> Enum.reject(&is_nil/1)
+
+      assert sent == [<<0>>, <<0>>]
+    end
+
+    # A completed MOVE/ACK round trip already proves both badges paired, so
+    # the heartbeat's job is done; continuing it would only self-interfere
+    # with the mover's frames on later turns, which is what made a paired
+    # game feel slow.
+    test "stops once a move has happened, since pairing is proven by then" do
+      # Idle the way a badge is between turns: paired, nothing outgoing, but
+      # seq > 0 because a MOVE/ACK round trip already completed once.
+      idle = %{Protocol.new() | phase: :playing, peer: @high_id, player: 0, seq: 1}
+
+      {ticks, _state} =
+        Enum.reduce(1..6, {[], idle}, fn _n, {ticks, state} ->
+          {state, frame} = Protocol.tick(state)
+          {[frame | ticks], state}
+        end)
+
+      assert Enum.all?(ticks, &is_nil/1)
+    end
+  end
+
   describe "pairing" do
     test "the lower chip id becomes player 0" do
       state = Protocol.new()
