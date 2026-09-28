@@ -1,8 +1,10 @@
 defmodule Badge.ReadoutTest do
   use ExUnit.Case, async: true
 
+  alias Badge.Font
   alias Badge.Readout
   alias Badge.Theme
+  alias Badge.Type
 
   describe "rows/2" do
     test "no pairs draw nothing" do
@@ -50,6 +52,23 @@ defmodule Badge.ReadoutTest do
       ys = for {:text, _x, y, _f, _c, _b, _body} <- items, do: y
 
       assert ys == [50, 50, 50 + Readout.pitch(), 50 + Readout.pitch()]
+    end
+  end
+
+  describe "measurement" do
+    test "centre_x/2 measures in the given font" do
+      assert Readout.centre_x("AB", :dogica) ==
+               div(Theme.width() - Font.width(:dogica, "AB"), 2)
+    end
+
+    test "right_x/2 measures in the given font" do
+      assert Readout.right_x("AB", :dogica) ==
+               Theme.width() - 8 - Font.width(:dogica, "AB")
+    end
+
+    test "the one-argument calls still use the body font" do
+      assert Readout.centre_x("AB") == Readout.centre_x("AB", Type.body())
+      assert Readout.right_x("AB") == Readout.right_x("AB", Type.body())
     end
   end
 end

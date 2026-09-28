@@ -6,7 +6,9 @@ defmodule Badge.Readout do
   AtomVM does not have.
   """
 
+  alias Badge.Font
   alias Badge.Theme
+  alias Badge.Type
 
   @label_x 8
   @value_x 120
@@ -29,13 +31,13 @@ defmodule Badge.Readout do
     ]
   end
 
-  @doc "The x at which fixed-width text sits centred on the panel."
-  @spec centre_x(binary) :: integer
-  def centre_x(text), do: div(Theme.width() - @char_w * byte_size(text), 2)
+  @doc "The x at which text sits centred on the panel, measured in `font`."
+  @spec centre_x(binary, atom) :: integer
+  def centre_x(text, font \\ Type.body()), do: div(Theme.width() - width(font, text), 2)
 
-  @doc "The x at which fixed-width text ends flush with the right margin."
-  @spec right_x(binary) :: integer
-  def right_x(text), do: Theme.width() - @label_x - @char_w * byte_size(text)
+  @doc "The x at which text ends flush with the right margin, measured in `font`."
+  @spec right_x(binary, atom) :: integer
+  def right_x(text, font \\ Type.body()), do: Theme.width() - @label_x - width(font, text)
 
   @doc "A single row whose value carries a colour of its own."
   @spec row(binary, binary, integer, integer) :: [tuple]
@@ -45,6 +47,9 @@ defmodule Badge.Readout do
       {:text, @value_x, y, :default16px, colour, Theme.bg(), value}
     ]
   end
+
+  # An unknown font falls back to the body's 8 px column rather than measuring nil.
+  defp width(font, text), do: Font.width(font, text) || @char_w * byte_size(text)
 
   defp rows([], _y, acc), do: :lists.reverse(acc)
 

@@ -142,7 +142,7 @@ defmodule Badge.Page.Chat.RoomsTest do
 
       [name_x | _] = for {:text, x, _y, _f, _c, _b, "Lobby"} <- Rooms.render(listed()), do: x
 
-      assert name_x - marker_x == 16
+      assert name_x - marker_x == 8
     end
   end
 

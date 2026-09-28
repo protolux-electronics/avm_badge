@@ -13,6 +13,7 @@ defmodule Badge.Page.Settings.Display do
   use Badge.Page
 
   alias Badge.Backlight
+  alias Badge.Nav
   alias Badge.Page.Settings
   alias Badge.Readout
   alias Badge.Skin
@@ -187,7 +188,7 @@ defmodule Badge.Page.Settings.Display do
 
   @impl true
   def render(state) do
-    brightness_row(state) ++ slider(state) ++ sleep_row(state) ++ skin_row(state) ++ [help(state)]
+    brightness_row(state) ++ slider(state) ++ sleep_row(state) ++ skin_row(state) ++ help(state)
   end
 
   defp brightness_row(state) do
@@ -262,11 +263,10 @@ defmodule Badge.Page.Settings.Display do
   defp row_colour(_state, _row), do: Theme.fg()
 
   defp help(%{editing: true}) do
-    {:text, @label_x, 216, :default16px, Theme.accent(), Theme.bg(),
-     "left/right change   Enter done"}
+    Nav.hint([{"left/right", "change"}, {"Enter", "done"}], 216, Theme.accent())
   end
 
   defp help(_state) do
-    {:text, @label_x, 216, :default16px, Theme.dim(), Theme.bg(), "up/down pick   Enter change"}
+    Nav.hint([{"up/down", "pick"}, {"Enter", "change"}], 216, Theme.dim())
   end
 end

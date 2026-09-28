@@ -9,6 +9,7 @@ defmodule Badge.Page.Chat.Rooms do
 
   use Badge.Page
 
+  alias Badge.Nav
   alias Badge.Text
   alias Badge.Theme
 
@@ -92,17 +93,10 @@ defmodule Badge.Page.Chat.Rooms do
   def render(%{rooms: []} = state), do: heading() ++ [empty(state)] ++ footer(state)
 
   def render(state) do
-    heading() ++
-      rows(
-        drop(state.rooms, state.offset),
-        state.unread,
-        state.selected,
-        state.offset,
-        0,
-        @top,
-        []
-      ) ++
-      footer(state)
+    visible = :lists.sublist(drop(state.rooms, state.offset), @rows)
+    entries = entries(visible, state.unread, state.offset, state.selected, [])
+
+    heading() ++ Nav.rows(entries, state.selected - state.offset, @top, @pitch) ++ footer(state)
   end
 
   defp heading do
@@ -116,39 +110,24 @@ defmodule Badge.Page.Chat.Rooms do
   defp empty(_state),
     do: {:text, @name_x, @top, :default16px, Theme.muted(), Theme.bg(), @waiting}
 
-  defp rows([], _unread, _selected, _index, _drawn, _y, acc), do: acc
+  defp entries([], _unread, _index, _selected, acc), do: :lists.reverse(acc)
 
-  defp rows(_rooms, _unread, _selected, _index, drawn, _y, acc) when drawn >= @rows, do: acc
+  defp entries([room | rest], unread, index, selected, acc) do
+    entry = %{
+      value: Map.get(room, :name, ""),
+      colour: name_colour(index == selected),
+      trailing: count_text(Map.get(unread, Map.get(room, :slug), 0)),
+      trailing_colour: Theme.accent()
+    }
 
-  defp rows([room | rest], unread, selected, index, drawn, y, acc) do
-    items =
-      [name(room, index == selected, y) | marker(index == selected, y)] ++ count(unread, room, y)
-
-    rows(rest, unread, selected, index + 1, drawn + 1, y + @pitch, items ++ acc)
+    entries(rest, unread, index + 1, selected, [entry | acc])
   end
 
-  defp name(room, true, y),
-    do: {:text, @name_x, y, :default16px, Theme.fg(), Theme.bg(), room.name}
+  defp name_colour(true), do: Theme.fg()
+  defp name_colour(false), do: Theme.muted()
 
-  defp name(room, false, y),
-    do: {:text, @name_x, y, :default16px, Theme.muted(), Theme.bg(), room.name}
-
-  defp marker(false, _y), do: []
-  defp marker(true, y), do: [{:text, @margin, y, :default16px, Theme.select(), Theme.bg(), ">"}]
-
-  # Right-aligned, so a long room name runs under it rather than into it.
-  defp count(unread, room, y) do
-    case Map.get(unread, room.slug, 0) do
-      0 ->
-        []
-
-      n ->
-        text = :erlang.integer_to_binary(n)
-        x = Theme.width() - @margin - @char_w * byte_size(text)
-
-        [{:text, x, y, :default16px, Theme.accent(), Theme.bg(), text}]
-    end
-  end
+  defp count_text(0), do: nil
+  defp count_text(n), do: :erlang.integer_to_binary(n)
 
   defp footer(state) do
     Theme.rule(@margin, @foot_rule_y, Theme.width() - 2 * @margin) ++ description(state)

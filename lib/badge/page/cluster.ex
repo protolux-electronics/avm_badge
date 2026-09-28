@@ -18,6 +18,7 @@ defmodule Badge.Page.Cluster do
 
   alias Badge.Cluster.Link
   alias Badge.Field
+  alias Badge.Nav
   alias Badge.Readout
   alias Badge.Theme
 
@@ -111,7 +112,7 @@ defmodule Badge.Page.Cluster do
   def render(state) do
     state_row(state.status) ++
       node_row(state.status) ++
-      cookie_row(state) ++ peer_rows(state.status) ++ [help(state)]
+      cookie_row(state) ++ peer_rows(state.status) ++ help(state)
   end
 
   defp unknown do
@@ -170,13 +171,16 @@ defmodule Badge.Page.Cluster do
   defp count(peers), do: :erlang.integer_to_binary(length(peers))
 
   defp help(%{field: field}) when field != nil do
-    help("Enter save   Esc cancel   empty resets", Theme.accent())
+    Nav.hint([{"Enter", "save"}, {"Esc", "cancel"}, {"empty", "resets"}], @help_y, Theme.accent())
   end
 
-  defp help(%{status: %{state: :off}}), do: help("S start   Enter cookie", Theme.dim())
-  defp help(_state), do: help("S stop   Enter cookie", Theme.dim())
+  defp help(%{status: %{state: :off}}) do
+    Nav.hint([{"S", "start"}, {"Enter", "cookie"}], @help_y, Theme.dim())
+  end
 
-  defp help(text, colour), do: {:text, @row_x, @help_y, :default16px, colour, Theme.bg(), text}
+  defp help(_state) do
+    Nav.hint([{"S", "stop"}, {"Enter", "cookie"}], @help_y, Theme.dim())
+  end
 
   # A node name or a reason can outrun the panel; the row has to stay on it.
   defp clip(text) when byte_size(text) <= @columns, do: text

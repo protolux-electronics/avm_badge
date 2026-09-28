@@ -12,15 +12,13 @@ defmodule Badge.Page.About do
 
   alias Badge.Font
   alias Badge.Icons
+  alias Badge.Nav
   alias Badge.QR
   alias Badge.Theme
 
   @repository "https://github.com/protolux-electronics/avm_badge"
 
   @screens 3
-  @dot 6
-  @dot_gap 10
-  @dot_y 232
 
   @impl true
   def title, do: "About"
@@ -61,7 +59,7 @@ defmodule Badge.Page.About do
   def handle_key(_event, _state), do: :ignore
 
   @impl true
-  def render(%{index: index} = state), do: screen(index, state) ++ dots(index)
+  def render(%{index: index} = state), do: screen(index, state) ++ Nav.dots(@screens, index)
 
   defp screen(0, _state) do
     [
@@ -130,15 +128,5 @@ defmodule Badge.Page.About do
       Icons.item(:github, x, y),
       {:text, x + icon_width + gap, y, :pixel_operator, Theme.fg(), Theme.bg(), body}
     ]
-  end
-
-  defp dots(current) do
-    left = div(Theme.width() - (@screens * @dot + (@screens - 1) * (@dot_gap - @dot)), 2)
-
-    for index <- 0..(@screens - 1) do
-      colour = if index == current, do: Theme.fg(), else: Theme.dim()
-
-      {:rect, left + index * @dot_gap, @dot_y, @dot, @dot, colour}
-    end
   end
 end

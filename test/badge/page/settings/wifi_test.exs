@@ -197,8 +197,8 @@ defmodule Badge.Page.Settings.WifiTest do
       assert shows?(entered, "hold Fn to view")
     end
 
-    test "everything is centred", %{entered: entered} do
-      for {:text, x, _y, _f, _c, _b, body} <- Wifi.render(entered) do
+    test "everything above the footer is centred", %{entered: entered} do
+      for {:text, x, y, _f, _c, _b, body} <- Wifi.render(entered), y < 216 do
         assert x == div(320 - 8 * byte_size(body), 2)
       end
     end

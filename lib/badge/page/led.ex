@@ -11,6 +11,7 @@ defmodule Badge.Page.Led do
 
   alias Badge.Color
   alias Badge.LedMode
+  alias Badge.Nav
   alias Badge.Pixels
   alias Badge.Theme
 
@@ -104,11 +105,10 @@ defmodule Badge.Page.Led do
       {:text, @value_x, @mode_y, :default16px, Theme.fg(), Theme.bg(), name(state)},
       {:text, @label_x, @hue_y, :default16px, Theme.dim(), Theme.bg(), "hue"},
       {:text, @value_x, @hue_y, :default16px, Theme.fg(), Theme.bg(),
-       :erlang.integer_to_binary(state.hue)},
-      {:text, @label_x, @help_y, :default16px, Theme.dim(), Theme.bg(),
-       "up/down mode   left/right hue"},
-      swatch(state)
-    ]
+       :erlang.integer_to_binary(state.hue)}
+    ] ++
+      Nav.hint([{"up/down", "mode"}, {"left/right", "hue"}], @help_y, Theme.dim()) ++
+      [swatch(state)]
   end
 
   defp name(%{index: index}), do: LedMode.name(:lists.nth(index + 1, @modes))

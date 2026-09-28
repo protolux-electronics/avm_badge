@@ -13,9 +13,9 @@ defmodule Badge.Page.Settings.Wifi do
   use Badge.Page
 
   alias Badge.Field
-  alias Badge.Icons
   alias Badge.Keyboard
   alias Badge.Network
+  alias Badge.Nav
   alias Badge.Page.Settings
   alias Badge.Readout
   alias Badge.Theme
@@ -26,12 +26,7 @@ defmodule Badge.Page.Settings.Wifi do
 
   @rows 6
   @row_x 8
-  @cursor_x 0
   @help_y 216
-
-  # Signal sits between the name and the security column, both ending flush right.
-  @signal_right 272
-  @signal_x @signal_right - 16
 
   # Indexed by Badge.Network.level/1; a tuple so no atom is built at runtime.
   @signal_icons {:signal_0, :signal_1, :signal_2, :signal_3}
@@ -178,9 +173,8 @@ defmodule Badge.Page.Settings.Wifi do
   def render(%{mode: :joined} = state) do
     [
       centred(state.chosen.ssid, @name_y, joined()),
-      centred("already connected to this network", @prompt_y, Theme.warn()),
-      centred("Esc to go back", @help_y, Theme.dim())
-    ]
+      centred("already connected to this network", @prompt_y, Theme.warn())
+    ] ++ Nav.hint([{"Esc", "to go back"}], @help_y, Theme.dim())
   end
 
   def render(%{mode: :passphrase} = state) do
@@ -188,13 +182,12 @@ defmodule Badge.Page.Settings.Wifi do
       centred(state.chosen.ssid, @name_y, Theme.fg()),
       centred("enter passphrase below", @prompt_y, Theme.dim()),
       centred("hold Fn to view", @hint_y, Theme.dim()),
-      centred(entry(state), @field_y, Theme.select()),
-      centred("Enter join   Esc back", @help_y, Theme.dim())
-    ]
+      centred(entry(state), @field_y, Theme.select())
+    ] ++ Nav.hint([{"Enter", "join"}, {"Esc", "back"}], @help_y, Theme.dim())
   end
 
   def render(state) do
-    status_row(state) ++ [list_help_item(state)] ++ rows(state)
+    status_row(state) ++ list_help_item(state) ++ rows(state)
   end
 
   defp status_row(%{status: %{radio: radio}}) do
@@ -210,10 +203,6 @@ defmodule Badge.Page.Settings.Wifi do
   defp radio(:failed), do: "failed - check passphrase"
   defp radio(_radio), do: "off"
 
-  defp list_help(%{notice: notice}) when notice != nil, do: notice
-  defp list_help(%{networks: []}), do: "s scan   c forget saved network"
-  defp list_help(_state), do: "Enter join   s rescan   c forget"
-
   defp rows(%{status: %{scanning: true}}) do
     [{:text, @row_x, first_row(), :default16px, Theme.dim(), Theme.bg(), "scanning..."}]
   end
@@ -221,9 +210,15 @@ defmodule Badge.Page.Settings.Wifi do
   defp rows(%{networks: []}), do: []
 
   defp rows(state) do
-    visible = window(state.networks, first_visible(state), @rows, [])
+    first = first_visible(state)
+    visible = window(state.networks, first, @rows, [])
 
-    network_items(visible, first_visible(state), state, first_row(), [])
+    Nav.rows(
+      entries(visible, first, state, []),
+      state.cursor - first,
+      first_row(),
+      Readout.pitch()
+    )
   end
 
   defp first_row, do: Settings.content_top() + Readout.pitch() + 8
@@ -240,22 +235,21 @@ defmodule Badge.Page.Settings.Wifi do
 
   defp window([network | rest], _skip, left, acc), do: window(rest, 0, left - 1, [network | acc])
 
-  defp network_items([], _index, _state, _y, acc), do: :lists.reverse(acc)
+  defp entries([], _index, _state, acc), do: :lists.reverse(acc)
 
-  defp network_items([network | rest], index, state, y, acc) do
-    marker = if index == state.cursor, do: ">", else: " "
-
+  defp entries([network | rest], index, state, acc) do
     colour = row_colour(network, index, state)
-    security = Network.security(network)
 
-    items = [
-      {:text, @row_x, y, :default16px, colour, Theme.bg(), Network.name(network)},
-      Icons.item(signal_icon(network), @signal_x, y),
-      {:text, Readout.right_x(security), y, :default16px, colour, Theme.bg(), security},
-      {:text, @cursor_x, y, :default16px, colour, Theme.bg(), marker}
-    ]
+    entry = %{
+      value: Network.name(network),
+      colour: colour,
+      marker_colour: colour,
+      trailing: Network.security(network),
+      trailing_colour: colour,
+      icon: signal_icon(network)
+    }
 
-    network_items(rest, index + 1, state, y + Readout.pitch(), items ++ acc)
+    entries(rest, index + 1, state, [entry | acc])
   end
 
   # The network you are on reads green whether or not the cursor is on it.
@@ -282,6 +276,16 @@ defmodule Badge.Page.Settings.Wifi do
   defp entry(state), do: Field.masked(state.field) <> "_"
 
   # A notice is something the user needs to notice, so it is not dim.
-  defp list_help_item(%{notice: nil} = state), do: help(list_help(state), Theme.dim())
-  defp list_help_item(state), do: help(list_help(state), Theme.alert())
+  defp list_help_item(%{notice: notice}) when notice != nil,
+    do: [help(notice, Theme.alert())]
+
+  defp list_help_item(%{networks: []}) do
+    hint([{"s", "scan"}, {"c", "forget saved network"}], Theme.dim())
+  end
+
+  defp list_help_item(_state) do
+    hint([{"Enter", "join"}, {"s", "rescan"}, {"c", "forget"}], Theme.dim())
+  end
+
+  defp hint(pairs, colour), do: Nav.hint(pairs, @help_y, colour)
 end

@@ -11,6 +11,7 @@ defmodule Badge.Page.Name do
   alias Badge.Field
   alias Badge.Font
   alias Badge.Icons
+  alias Badge.Nav
   alias Badge.Profile
   alias Badge.QR
   alias Badge.Text
@@ -43,8 +44,6 @@ defmodule Badge.Page.Name do
 
   @row_y Theme.content_top() + 10
   @row_pitch 18
-  @marker_x 0
-  @label_x 8
   @value_x 88
   @value_columns div(Theme.width() - @value_x - 8, @char_w)
 
@@ -53,9 +52,6 @@ defmodule Badge.Page.Name do
   # The big-name screen, and what it falls back to when a name will not fit.
   @big_font :w95fa
   @big_usable Theme.width() - 2 * @margin
-  @dot_y 228
-  @dot 6
-  @dot_gap 10
 
   @entry_label_y Theme.content_top() + 30
   @entry_value_y Theme.content_top() + 70
@@ -316,24 +312,28 @@ defmodule Badge.Page.Name do
     key = selected(state)
 
     [
-      centred(Profile.label(key), @entry_label_y, Theme.dim()),
-      centred("Enter save   Esc cancel", @hint_y, Theme.dim())
-    ] ++ entry_line(key, Field.value(state.field)) ++ entry_note(Profile.note(key))
+      centred(Profile.label(key), @entry_label_y, Theme.dim())
+    ] ++
+      Nav.hint([{"Enter", "save"}, {"Esc", "cancel"}], @hint_y, Theme.dim()) ++
+      entry_line(key, Field.value(state.field)) ++ entry_note(Profile.note(key))
   end
 
   def render(%{mode: :fields} = state) do
-    rows(Profile.keys(), 0, state, @row_y, []) ++
-      [centred(fields_hint(state), @hint_y, Theme.dim())]
+    Nav.rows(field_entries(Profile.keys(), 0, state, []), state.cursor, @row_y, @row_pitch) ++
+      Nav.hint(fields_hint(state), @hint_y, Theme.dim())
   end
 
   def render(%{mode: :picking} = state) do
-    picks(Profile.qr_choices(state.profile), 0, state, @row_y, []) ++
-      [centred("up/down pick   Enter choose   Esc back", @hint_y, Theme.dim())]
+    choices = Profile.qr_choices(state.profile)
+
+    Nav.rows(pick_entries(choices, 0, state, []), state.pick, @row_y, @row_pitch) ++
+      Nav.hint([{"up/down", "pick"}, {"Enter", "choose"}, {"Esc", "back"}], @hint_y, Theme.dim())
   end
 
-  def render(%{screen: 1, profile: profile}), do: big_screen(profile) ++ dots(1)
+  def render(%{screen: 1, profile: profile}), do: big_screen(profile) ++ Nav.dots(@screens, 1)
 
-  def render(%{screen: @qr_screen} = state), do: qr_screen(state) ++ dots(@qr_screen)
+  def render(%{screen: @qr_screen} = state),
+    do: qr_screen(state) ++ Nav.dots(@screens, @qr_screen)
 
   def render(%{profile: profile} = state) do
     lines = Text.wrap(Profile.display_name(profile), @name_columns)
@@ -342,7 +342,8 @@ defmodule Badge.Page.Name do
     name_items(lines, @name_y, []) ++
       [{:rect, @margin, rule_y, @rule_w, @rule_h, Theme.accent()}] ++
       detail_items(Profile.lines(profile), rule_y + 14, []) ++
-      [hint()] ++ dots(state.screen)
+      hint() ++
+      Nav.dots(@screens, state.screen)
   end
 
   # The whole name, as large as it will go. w95fa is proportional, so it is
@@ -429,17 +430,6 @@ defmodule Badge.Page.Name do
 
   defp qr_cut(value), do: value
 
-  # Which screen you are on, so paging is discoverable without a label.
-  defp dots(current) do
-    left = div(Theme.width() - (@screens * @dot + (@screens - 1) * (@dot_gap - @dot)), 2)
-
-    for index <- 0..(@screens - 1) do
-      colour = if index == current, do: Theme.fg(), else: Theme.dim()
-
-      {:rect, left + index * @dot_gap, @dot_y, @dot, @dot, colour}
-    end
-  end
-
   defp name_items([], _y, acc), do: :lists.reverse(acc)
 
   defp name_items([line | rest], y, acc) do
@@ -463,28 +453,25 @@ defmodule Badge.Page.Name do
   defp badge_icon(nil, _y), do: []
   defp badge_icon(icon, y), do: [Icons.item(icon, @margin, y)]
 
-  defp rows([], _position, _state, _y, acc), do: :lists.reverse(acc)
+  defp field_entries([], _position, _state, acc), do: :lists.reverse(acc)
 
-  defp rows([key | rest], position, state, y, acc) do
-    colour = row_colour(state, position, key)
-    marker = if position == state.cursor, do: ">", else: " "
+  defp field_entries([key | rest], position, state, acc) do
+    entry = %{
+      label: Profile.label(key),
+      label_colour: label_colour(state, position),
+      value: field_value(state, key),
+      colour: row_colour(state, position, key)
+    }
 
-    items = [
-      {:text, @value_x, y, :default16px, colour, Theme.bg(), field_value(state, key)},
-      {:text, @label_x, y, :default16px, label_colour(state, position), Theme.bg(),
-       Profile.label(key)},
-      {:text, @marker_x, y, :default16px, Theme.select(), Theme.bg(), marker}
-    ]
-
-    rows(rest, position + 1, state, y + @row_pitch, items ++ acc)
+    field_entries(rest, position + 1, state, [entry | acc])
   end
 
   # The QR row opens a list; every other row opens an editor.
   defp fields_hint(state) do
     if selected(state) == :qr do
-      "up/down pick   Enter choose   Esc done"
+      [{"up/down", "pick"}, {"Enter", "choose"}, {"Esc", "done"}]
     else
-      "up/down pick   Enter edit   Esc done"
+      [{"up/down", "pick"}, {"Enter", "edit"}, {"Esc", "done"}]
     end
   end
 
@@ -509,19 +496,19 @@ defmodule Badge.Page.Name do
   defp shown(value), do: value
 
   # The picker lists what the code could point at, with the handle it would use.
-  defp picks([], _position, _state, _y, acc), do: :lists.reverse(acc)
+  defp pick_entries([], _position, _state, acc), do: :lists.reverse(acc)
 
-  defp picks([{key, label} | rest], position, state, y, acc) do
+  defp pick_entries([{key, label} | rest], position, state, acc) do
     colour = if position == state.pick, do: Theme.select(), else: Theme.fg()
-    marker = if position == state.pick, do: ">", else: " "
 
-    items = [
-      {:text, @value_x, y, :default16px, Theme.dim(), Theme.bg(), shown(pick_value(state, key))},
-      {:text, @label_x, y, :default16px, colour, Theme.bg(), label},
-      {:text, @marker_x, y, :default16px, Theme.select(), Theme.bg(), marker}
-    ]
+    entry = %{
+      label: label,
+      label_colour: colour,
+      value: shown(pick_value(state, key)),
+      colour: Theme.dim()
+    }
 
-    picks(rest, position + 1, state, y + @row_pitch, items ++ acc)
+    pick_entries(rest, position + 1, state, [entry | acc])
   end
 
   defp pick_value(_state, :none), do: ""
@@ -582,9 +569,6 @@ defmodule Badge.Page.Name do
   end
 
   defp hint do
-    text = "E to edit"
-
-    {:text, div(Theme.width() - @char_w * byte_size(text), 2), @hint_y, :default16px, Theme.dim(),
-     Theme.bg(), text}
+    Nav.hint([{"E", "to edit"}], @hint_y, Theme.dim())
   end
 end

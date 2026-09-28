@@ -168,7 +168,7 @@ defmodule Badge.Page.SettingsTest do
       placed =
         for {:text, x, y, _f, _c, _bg, body} <- Settings.render(Settings.init()),
             y == Theme.content_top(),
-            do: {x, x + 8 * byte_size(body)}
+            do: {x, x + Badge.Font.width(:pixel_operator, body)}
 
       {first, _} = hd(placed)
       {_, last} = :lists.last(placed)
@@ -181,7 +181,7 @@ defmodule Badge.Page.SettingsTest do
       placed =
         for {:text, x, y, _f, _c, _bg, body} <- Settings.render(Settings.init()),
             y == Theme.content_top(),
-            do: {x, x + 8 * byte_size(body)}
+            do: {x, x + Badge.Font.width(:pixel_operator, body)}
 
       gaps =
         for {{_x, ends}, {starts, _e}} <- :lists.zip(:lists.droplast(placed), tl(placed)),
@@ -195,7 +195,7 @@ defmodule Badge.Page.SettingsTest do
       placed =
         for {:text, x, y, _f, _c, _bg, body} <- Settings.render(Settings.init()),
             y == Theme.content_top(),
-            do: {x, x + 8 * byte_size(body)}
+            do: {x, x + Badge.Font.width(:pixel_operator, body)}
 
       assert Enum.all?(placed, fn {left, right} -> left >= 0 and right <= Theme.width() end)
 
