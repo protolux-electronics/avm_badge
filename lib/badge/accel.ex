@@ -48,8 +48,8 @@ defmodule Badge.Accel do
   @doc "Roll and pitch in whole degrees from a milli-g sample."
   @spec orientation(mg) :: {integer, integer}
   def orientation({x, y, z}) do
-    roll = round(:math.atan2(y, z) * 180 / :math.pi())
-    pitch = round(:math.atan2(-x, :math.sqrt(y * y + z * z)) * 180 / :math.pi())
+    roll = -round(:math.atan2(x, z) * 180 / :math.pi())
+    pitch = round(:math.atan2(-y, :math.sqrt(x * x + z * z)) * 180 / :math.pi())
     {roll, pitch}
   end
 end
