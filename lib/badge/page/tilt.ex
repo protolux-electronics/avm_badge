@@ -12,7 +12,6 @@ defmodule Badge.Page.Tilt do
 
   use Badge.Page
 
-  alias Badge.Accel
   alias Badge.Icons
   alias Badge.Sensors
   alias Badge.Theme
@@ -24,10 +23,6 @@ defmodule Badge.Page.Tilt do
 
   # Tilt that drives the marker to the edge.
   @range 45
-
-  # The sensor's roll increases toward the panel's left, so it is inverted here.
-  @roll_sign -1
-  @pitch_sign 1
 
   # 8px is about 2.6 degrees at this range, so a small wobble leaves the marker alone.
   @quantum 8
@@ -44,10 +39,6 @@ defmodule Badge.Page.Tilt do
 
   @readout_y 218
 
-  # Gravity lands on -Z with the panel upwards, so level is half a turn of roll.
-  @zero_roll elem(Accel.flat(), 0)
-  @zero_pitch elem(Accel.flat(), 1)
-
   @impl true
   def refresh(_state), do: 333
 
@@ -63,19 +54,17 @@ defmodule Badge.Page.Tilt do
   @doc """
   Moves the marker for a roll and pitch pair in whole degrees.
 
-  Angles are measured from `Badge.Accel.flat/0`, so a badge on a level
-  surface centres the marker with nothing captured and nothing pressed.
+  Angles are in the panel's frame (see `Badge.Accel.to_panel/1`), so a badge
+  on a level surface centres the marker with nothing captured and nothing
+  pressed.
   """
   def update(state, {roll, pitch}) do
-    roll_from_zero = @roll_sign * wrap(roll - @zero_roll)
-    pitch_from_zero = @pitch_sign * wrap(pitch - @zero_pitch)
-
     %{
       state
-      | x: quantise(@centre_x - @half_w + scale(roll_from_zero, @span_x)),
-        y: quantise(@centre_y - @half_h + scale(pitch_from_zero, @span_y)),
-        roll: coarse(roll_from_zero),
-        pitch: coarse(pitch_from_zero)
+      | x: quantise(@centre_x - @half_w + scale(roll, @span_x)),
+        y: quantise(@centre_y - @half_h + scale(pitch, @span_y)),
+        roll: coarse(roll),
+        pitch: coarse(pitch)
     }
   end
 
@@ -97,11 +86,6 @@ defmodule Badge.Page.Tilt do
   defp clamp(degrees) when degrees > @range, do: @range
   defp clamp(degrees) when degrees < -@range, do: -@range
   defp clamp(degrees), do: degrees
-
-  # Crossing the 180 degree seam is a small movement, not a full swing.
-  defp wrap(degrees) when degrees > 180, do: degrees - 360
-  defp wrap(degrees) when degrees < -180, do: degrees + 360
-  defp wrap(degrees), do: degrees
 
   # Rounds rather than truncates, so the steps sit symmetrically either side of centre.
   defp quantise(value), do: div(value + div(@quantum, 2), @quantum) * @quantum

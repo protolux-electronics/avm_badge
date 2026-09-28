@@ -8,9 +8,10 @@ defmodule Badge.Accel do
   little-endian pair, +-2g full scale, so 1g = 16384 counts and
   `mg = raw * 1000 / 16384`, simplified here to `raw * 125 / 2048`.
 
-  The sensor is mounted with its Z axis inverted relative to the panel, so a
-  badge lying flat with the panel upwards reads gravity on -Z rather than
-  +Z. `flat/0` is that reference; measure tilt as a difference from it.
+  The sensor is mounted turned a quarter turn about Z and with its Z axis
+  inverted relative to the panel. `to_panel/1` undoes both, so everything
+  after it, `orientation/1` included, is in the panel's frame: a badge lying
+  flat with the panel upwards reads gravity on +Z and zero roll and pitch.
   """
 
   @type mg :: {integer, integer, integer}
@@ -24,6 +25,15 @@ defmodule Badge.Accel do
   defp to_mg(raw), do: div(raw * 125, 2048)
 
   @doc """
+  Turns a sample from the sensor's axes into the panel's.
+
+  The sensor's X runs along the panel's Y, its Y along the panel's -X, and
+  its Z along the panel's -Z. Apply it once, straight after `decode/1`.
+  """
+  @spec to_panel(mg) :: mg
+  def to_panel({x, y, z}), do: {-y, x, -z}
+
+  @doc """
   Exponential moving average, alpha = 1/4, applied per axis. `nil` as the
   previous value adopts `sample` as-is.
   """
@@ -35,15 +45,6 @@ defmodule Badge.Accel do
   end
 
   defp ema(previous, new), do: previous + div(new - previous, 4)
-
-  @doc """
-  The roll and pitch `orientation/1` reports when the panel is horizontal.
-
-  Gravity lands on -Z rather than +Z, so a level badge reads half a turn of
-  roll instead of none.
-  """
-  @spec flat() :: {integer, integer}
-  def flat, do: orientation({0, 0, -1000})
 
   @doc "Roll and pitch in whole degrees from a milli-g sample."
   @spec orientation(mg) :: {integer, integer}

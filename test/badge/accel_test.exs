@@ -19,6 +19,28 @@ defmodule Badge.AccelTest do
     end
   end
 
+  describe "to_panel/1" do
+    test "the sensor's X is the panel's Y" do
+      assert Accel.to_panel({1000, 0, 0}) == {0, 1000, 0}
+    end
+
+    test "the sensor's Y is the panel's -X" do
+      assert Accel.to_panel({0, 1000, 0}) == {-1000, 0, 0}
+    end
+
+    test "the sensor's Z is the panel's -Z" do
+      assert Accel.to_panel({0, 0, 1000}) == {0, 0, -1000}
+    end
+
+    test "a badge lying panel up reads level" do
+      assert Accel.orientation(Accel.to_panel({0, 0, -1000})) == {0, 0}
+    end
+
+    test "tilting the sensor about its own X becomes pitch, not roll" do
+      assert Accel.orientation(Accel.to_panel({0, 500, -866})) == {0, 30}
+    end
+  end
+
   describe "average/2" do
     test "nil previous adopts the sample as-is" do
       assert Accel.average(nil, {100, 200, 300}) == {100, 200, 300}
@@ -46,16 +68,6 @@ defmodule Badge.AccelTest do
 
     test "one step moves a quarter of the way" do
       assert Accel.average({0, 0, 0}, {100, 200, 300}) == {25, 50, 75}
-    end
-  end
-
-  describe "flat/0" do
-    test "is what orientation/1 reports with gravity on the panel normal" do
-      assert Accel.flat() == Accel.orientation({0, 0, -1000})
-    end
-
-    test "names the mounting flip rather than leaving it to a captured zero" do
-      assert Accel.flat() == {180, 0}
     end
   end
 

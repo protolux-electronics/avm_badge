@@ -90,7 +90,7 @@ defmodule Badge.Sensors do
 
   defp read_accel(%{i2c: i2c, accel: previous}) do
     case I2C.read_bytes(i2c, @sc7a20_addr, @sc7a20_out_x_l ||| @sc7a20_auto_increment, 6) do
-      {:ok, bytes} -> Accel.average(previous, Accel.decode(bytes))
+      {:ok, bytes} -> Accel.average(previous, Accel.to_panel(Accel.decode(bytes)))
       {:error, _reason} -> previous || {0, 0, 0}
     end
   end
