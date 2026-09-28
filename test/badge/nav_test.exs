@@ -5,7 +5,7 @@ defmodule Badge.NavTest do
   alias Badge.Nav
   alias Badge.Readout
   alias Badge.Theme
-  alias Badge.Type
+  alias Badge.FontType
 
   defmodule First do
     use Badge.Page
@@ -103,7 +103,7 @@ defmodule Badge.NavTest do
       {last_x, _y2, _f2, _fg2, last_body} = List.last(texts(Nav.tabs(["A", "B", "C"], 0, 30)))
 
       assert first_x == 8
-      assert last_x + Font.width(Type.heading(), last_body) == Theme.width() - 8
+      assert last_x + Font.width(FontType.heading(), last_body) == Theme.width() - 8
     end
 
     test "the current title is selected, the rest dim" do
@@ -124,7 +124,7 @@ defmodule Badge.NavTest do
 
     test "titles are drawn in the heading font" do
       assert Enum.all?(Nav.tabs(["A", "B"], 0, 30), fn
-               {:text, _x, _y, font, _fg, _bg, _body} -> font == Type.heading()
+               {:text, _x, _y, font, _fg, _bg, _body} -> font == FontType.heading()
                _item -> false
              end)
     end
@@ -170,7 +170,7 @@ defmodule Badge.NavTest do
     end
 
     test "trailing text is right-aligned with its own colour" do
-      body_font = Type.body()
+      body_font = FontType.body()
 
       items =
         Nav.rows([%{value: "a", trailing: "3", trailing_colour: Theme.accent()}], 0, 40, 18)

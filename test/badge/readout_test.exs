@@ -4,7 +4,7 @@ defmodule Badge.ReadoutTest do
   alias Badge.Font
   alias Badge.Readout
   alias Badge.Theme
-  alias Badge.Type
+  alias Badge.FontType
 
   describe "rows/2" do
     test "no pairs draw nothing" do
@@ -67,8 +67,8 @@ defmodule Badge.ReadoutTest do
     end
 
     test "the one-argument calls still use the body font" do
-      assert Readout.centre_x("AB") == Readout.centre_x("AB", Type.body())
-      assert Readout.right_x("AB") == Readout.right_x("AB", Type.body())
+      assert Readout.centre_x("AB") == Readout.centre_x("AB", FontType.body())
+      assert Readout.right_x("AB") == Readout.right_x("AB", FontType.body())
     end
   end
 end

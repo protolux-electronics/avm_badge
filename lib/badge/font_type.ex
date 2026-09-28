@@ -1,4 +1,4 @@
-defmodule Badge.Type do
+defmodule Badge.FontType do
   @moduledoc """
   Which font a piece of text is drawn in.
 

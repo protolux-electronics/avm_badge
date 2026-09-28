@@ -8,7 +8,7 @@ defmodule Badge.Readout do
 
   alias Badge.Font
   alias Badge.Theme
-  alias Badge.Type
+  alias Badge.FontType
 
   @label_x 8
   @value_x 120
@@ -33,11 +33,11 @@ defmodule Badge.Readout do
 
   @doc "The x at which text sits centred on the panel, measured in `font`."
   @spec centre_x(binary, atom) :: integer
-  def centre_x(text, font \\ Type.body()), do: div(Theme.width() - width(font, text), 2)
+  def centre_x(text, font \\ FontType.body()), do: div(Theme.width() - width(font, text), 2)
 
   @doc "The x at which text ends flush with the right margin, measured in `font`."
   @spec right_x(binary, atom) :: integer
-  def right_x(text, font \\ Type.body()), do: Theme.width() - @label_x - width(font, text)
+  def right_x(text, font \\ FontType.body()), do: Theme.width() - @label_x - width(font, text)
 
   @doc "A single row whose value carries a colour of its own."
   @spec row(binary, binary, integer, integer) :: [tuple]

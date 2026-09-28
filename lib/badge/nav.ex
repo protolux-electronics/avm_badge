@@ -26,7 +26,7 @@ defmodule Badge.Nav do
   alias Badge.Icons
   alias Badge.Readout
   alias Badge.Theme
-  alias Badge.Type
+  alias Badge.FontType
 
   @dot 6
   @dot_gap 10
@@ -53,7 +53,7 @@ defmodule Badge.Nav do
   @doc "A tab strip: titles spread from the left margin to the right, current selected."
   @spec tabs([binary], non_neg_integer, integer) :: [tuple]
   def tabs(titles, current, y) do
-    widths = for title <- titles, do: measure(Type.heading(), title)
+    widths = for title <- titles, do: measure(FontType.heading(), title)
     slack = Theme.width() - 2 * @margin - sum(widths)
 
     tabs(titles, widths, current, 0, length(titles), slack, 0, y, [])
@@ -64,7 +64,7 @@ defmodule Badge.Nav do
   def hint([], _y, _colour), do: []
 
   def hint(pairs, y, colour) do
-    [{:text, @margin, y, Type.body(), colour, Theme.bg(), join(pairs)}]
+    [{:text, @margin, y, FontType.body(), colour, Theme.bg(), join(pairs)}]
   end
 
   @doc """
@@ -118,20 +118,20 @@ defmodule Badge.Nav do
     marker = if selected, do: ">", else: " "
     marker_colour = Map.get(entry, :marker_colour, Theme.select())
 
-    [{:text, 0, y, Type.body(), marker_colour, Theme.bg(), marker}] ++
+    [{:text, 0, y, FontType.body(), marker_colour, Theme.bg(), marker}] ++
       label_items(entry, y) ++ trailing_items(entry, y)
   end
 
   defp label_items(%{label: label} = entry, y) when is_binary(label) do
     [
-      {:text, @margin, y, Type.body(), Map.get(entry, :label_colour, Theme.dim()), Theme.bg(),
+      {:text, @margin, y, FontType.body(), Map.get(entry, :label_colour, Theme.dim()), Theme.bg(),
        label},
-      {:text, @value_x, y, Type.body(), Map.get(entry, :colour, Theme.fg()), Theme.bg(), entry.value}
+      {:text, @value_x, y, FontType.body(), Map.get(entry, :colour, Theme.fg()), Theme.bg(), entry.value}
     ]
   end
 
   defp label_items(entry, y) do
-    [{:text, @margin, y, Type.body(), Map.get(entry, :colour, Theme.fg()), Theme.bg(), entry.value}]
+    [{:text, @margin, y, FontType.body(), Map.get(entry, :colour, Theme.fg()), Theme.bg(), entry.value}]
   end
 
   defp trailing_items(entry, y) do
@@ -145,14 +145,14 @@ defmodule Badge.Nav do
 
         case Map.get(entry, :icon) do
           nil ->
-            [{:text, x, y, Type.body(), colour, Theme.bg(), trailing}]
+            [{:text, x, y, FontType.body(), colour, Theme.bg(), trailing}]
 
           icon ->
             {icon_width, _height} = Icons.size(icon)
 
             [
               Icons.item(icon, x - icon_width - 4, y),
-              {:text, x, y, Type.body(), colour, Theme.bg(), trailing}
+              {:text, x, y, FontType.body(), colour, Theme.bg(), trailing}
             ]
         end
     end
@@ -167,7 +167,7 @@ defmodule Badge.Nav do
     x = @margin + used + gap_before(position, count, slack)
 
     tabs(rest, widths, current, position + 1, count, slack, used + width, y, [
-      {:text, x, y, Type.heading(), tab_colour(position, current), Theme.bg(), title} | acc
+      {:text, x, y, FontType.heading(), tab_colour(position, current), Theme.bg(), title} | acc
     ])
   end
 
