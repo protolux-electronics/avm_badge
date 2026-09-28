@@ -108,8 +108,8 @@ defmodule Badge.ConnectFour.ProtocolTest do
     end
 
     test "MOVE fits Frame.max_payload/0" do
-      state = Protocol.move(Protocol.new(), 6)
-      assert byte_size(until_frame(state)) <= Frame.max_payload()
+      {_state, frame} = Protocol.move(Protocol.new(), 6)
+      assert byte_size(frame) <= Frame.max_payload()
     end
   end
 
@@ -125,15 +125,13 @@ defmodule Badge.ConnectFour.ProtocolTest do
     end
 
     test "a move beams MOVE with the current sequence number", %{first: first} do
-      first = Protocol.move(first, 3)
+      {_first, frame} = Protocol.move(first, 3)
 
-      {_first, frame} = Protocol.tick(first)
       assert frame == <<1, 0, 3>>
     end
 
     test "the opponent applies it once and starts acking", %{first: first, second: second} do
-      first = Protocol.move(first, 3)
-      {_first, move_frame} = Protocol.tick(first)
+      {_first, move_frame} = Protocol.move(first, 3)
 
       assert {second, {:move, 3}} = Protocol.handle_ir(second, @low_id, move_frame, @high_id)
       assert second.seq == 1
@@ -143,8 +141,7 @@ defmodule Badge.ConnectFour.ProtocolTest do
     end
 
     test "the mover stops once the ACK lands", %{first: first, second: second} do
-      first = Protocol.move(first, 3)
-      {first, move_frame} = Protocol.tick(first)
+      {first, move_frame} = Protocol.move(first, 3)
       {second, {:move, 3}} = Protocol.handle_ir(second, @low_id, move_frame, @high_id)
       {_second, ack} = Protocol.tick(second)
 
@@ -154,8 +151,7 @@ defmodule Badge.ConnectFour.ProtocolTest do
 
     test "a resend of an already-applied move is not applied twice, but is re-acked",
          %{first: first, second: second} do
-      first = Protocol.move(first, 3)
-      {_first, move_frame} = Protocol.tick(first)
+      {_first, move_frame} = Protocol.move(first, 3)
       {second, {:move, 3}} = Protocol.handle_ir(second, @low_id, move_frame, @high_id)
 
       assert {second, nil} = Protocol.handle_ir(second, @low_id, move_frame, @high_id)
@@ -167,15 +163,13 @@ defmodule Badge.ConnectFour.ProtocolTest do
 
     test "a full pairing and multi-move exchange stays in sync", %{first: first, second: second} do
       # first (player 0) moves; second applies it and acks, first clears its retry.
-      first = Protocol.move(first, 2)
-      {first, move0} = Protocol.tick(first)
+      {first, move0} = Protocol.move(first, 2)
       {second, {:move, 2}} = Protocol.handle_ir(second, @low_id, move0, @high_id)
       {second, ack0} = Protocol.tick(second)
       {first, nil} = Protocol.handle_ir(first, @high_id, ack0, @low_id)
 
       # second (player 1) moves; first applies it and acks, second clears its retry.
-      second = Protocol.move(second, 5)
-      {second, move1} = Protocol.tick(second)
+      {second, move1} = Protocol.move(second, 5)
       {first, {:move, 5}} = Protocol.handle_ir(first, @high_id, move1, @low_id)
       {first, ack1} = Protocol.tick(first)
 
@@ -184,15 +178,13 @@ defmodule Badge.ConnectFour.ProtocolTest do
     end
 
     test "frames from anyone but the paired peer are ignored", %{first: first} do
-      first = Protocol.move(first, 3)
-      {first, move_frame} = Protocol.tick(first)
+      {first, move_frame} = Protocol.move(first, 3)
 
       assert Protocol.handle_ir(first, @stranger_id, move_frame, @low_id) == {first, nil}
     end
 
     test "ACK fits Frame.max_payload/0", %{first: first, second: second} do
-      first = Protocol.move(first, 3)
-      {_first, move_frame} = Protocol.tick(first)
+      {_first, move_frame} = Protocol.move(first, 3)
       {second, {:move, 3}} = Protocol.handle_ir(second, @low_id, move_frame, @high_id)
 
       assert byte_size(until_frame(second)) <= Frame.max_payload()

@@ -79,11 +79,14 @@ defmodule Badge.ConnectFour.Protocol do
 
   Called right after the page applies the drop to its own board, with the
   column that was dropped. Keeps beaming the MOVE frame until the opponent's
-  ACK is heard.
+  ACK is heard. Returns the frame too, `tick/1`-style, so the page can send
+  it immediately rather than waiting for the next tick to notice it.
   """
-  @spec move(map, non_neg_integer) :: map
+  @spec move(map, non_neg_integer) :: {map, binary}
   def move(%{seq: seq} = state, column) do
-    %{state | seq: seq + 1, outgoing: forever(<<@move, seq, column>>)}
+    frame = <<@move, seq, column>>
+
+    {%{state | seq: seq + 1, outgoing: forever(frame)}, frame}
   end
 
   @doc """

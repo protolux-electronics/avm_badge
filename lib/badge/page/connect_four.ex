@@ -92,13 +92,20 @@ defmodule Badge.Page.ConnectFour do
 
   # The column filled up before the key landed, or a stray repeat; nothing to
   # do but wait for another key.
+  #
+  # Sends the MOVE frame here rather than waiting for the next tick to pick
+  # it up off `outgoing` — a deliberate, narrow exception to pages otherwise
+  # never touching hardware from a key handler, worth the up to 100 ms it
+  # saves given IR is the whole bottleneck of this page. `tick/1` still
+  # repeats the same frame every tick after this until the ACK lands.
   defp play(state, column) do
     case Board.drop(state.board, column, my_index(state.link)) do
       {:error, :full} ->
         state
 
       {:ok, cell, board} ->
-        link = Protocol.move(state.link, column)
+        {link, frame} = Protocol.move(state.link, column)
+        Ir.send(frame)
         finish(%{state | board: board, link: link}, cell, my_index(link))
     end
   end
