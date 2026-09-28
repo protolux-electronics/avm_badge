@@ -1,8 +1,22 @@
 defmodule Badge.Sim.Fakes do
   @moduledoc "External services and input processes that do not run on the host."
 
+  alias Badge.Bluesky
   alias Badge.Chat.Link.State
+  alias Badge.Page
   alias Badge.Sim.Fake
+
+  @feed ~s({"feed":[) <>
+          ~s({"post":{"author":{"handle":"goatmire.bsky.social","displayName":"Goatmire"},) <>
+          ~s("record":{"text":"Badges are flashed and the goats are restless. See you in Varberg! #goatmire",) <>
+          ~s("createdAt":"2026-09-28T09:12:00.000Z"},"likeCount":42,"repostCount":7,"replyCount":3}},) <>
+          ~s({"post":{"author":{"handle":"lawik.bsky.social","displayName":"Lars Wikman"},) <>
+          ~s("record":{"text":"The schedule is up.\\n\\nTwo days of Elixir by the sea.",) <>
+          ~s("createdAt":"2026-09-27T16:40:00.000Z"},"likeCount":18,"repostCount":4,"replyCount":1},) <>
+          ~s("reason":{"$type":"app.bsky.feed.defs#reasonRepost"}},) <>
+          ~s({"post":{"author":{"handle":"goatmire.bsky.social","displayName":"Goatmire"},) <>
+          ~s("record":{"text":"Tickets for the workshops are nearly gone.",) <>
+          ~s("createdAt":"2026-09-25T08:00:00.000Z"},"likeCount":9,"repostCount":1,"replyCount":0}}]})
 
   def children do
     [
@@ -50,6 +64,21 @@ defmodule Badge.Sim.Fakes do
         }
       end),
       fake(Badge.Chat.Link, fn :status, _ -> State.status(State.new("ws://sim")) end),
+      fake(
+        Badge.Bluesky.Link,
+        fn
+          :status, d ->
+            %{state: :ready, actor: Map.get(d, :actor), reason: nil, version: 1, count: 3}
+
+          :posts, _ ->
+            {:ok, posts} = Bluesky.parse(@feed, Page.Bluesky.columns())
+            Bluesky.pack(posts)
+        end,
+        fn
+          {:open, actor}, d -> Map.put(d, :actor, actor)
+          _, d -> d
+        end
+      ),
       fake(
         Badge.Cluster.Link,
         fn :status, d ->

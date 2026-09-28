@@ -75,8 +75,8 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - **SPI `peripheral:` must be a string** (`"spi2"`), not an atom
 - Use plain maps, not structs
 - `atomvm.check` has known false positives: `json:encode/1`, `json:decode/1`,
-  `erlang:binary_part/3`, `lists:keysort/2`, `lists:flatmap/2` all exist in
-  the fork; `File`, `Mix`, `String`, `System` come from Mix tasks that are
+  `cjson:decode/1`, `erlang:binary_part/3`, `lists:keysort/2`,
+  `lists:flatmap/2` all exist in the fork; `File`, `Mix`, `String`, `System` come from Mix tasks that are
   packed but never run; `GenServer`, `Supervisor`, `network`, `uart` are
   flagged because the checker cannot see AtomVM's own libraries. Compare the
   count against `main` rather than reading the list
@@ -211,6 +211,32 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - **`ssl:recv/2` with a length blocks until exactly that many bytes arrive**,
   so a read loop asking for 4096 hangs on the response's last piece; read with
   length 0
+
+## Bluesky
+
+- `Badge.Page.Bluesky` shows the feed of the profile's `:bluesky` handle,
+  read-only and text-only. `Badge.Bluesky` parses and packs, `Badge.Bluesky.Link`
+  is page-scoped like the chat link and fetches in a spawned process, and
+  `Badge.Bluesky.Link.State` holds every transition as plain data
+- The server is the `bsky_url` NVS key, falling back to
+  `https://public.api.bsky.app`. `https://` goes through `ahttp_client` over
+  this VM's `:ssl`, which the schedule fetch found broken; `http://` runs in the
+  clear for a server on the bench
+- **Decode JSON with `:cjson.decode/1`, not `:json`.** The VM's `json.erl`
+  runs at ~7 ms a byte, so a 30 kB feed takes minutes and starves the task
+  watchdog. `cjson` is a native in the fork (`avm_builtins/cjson_nif.c`) with
+  the same result shape; `sim/lib/cjson.ex` stands in for it on the host
+- Posts are held as `term_to_binary` entries, at most ten, each wrapped to the
+  panel's 38 columns and cut at eight lines
+- **The fetch must not pile up small binaries.** Anything built by appending
+  byte by byte makes one refc binary per step, and under 512 bytes those come
+  from internal RAM; off-heap, they never trigger a collection. That is the
+  suspected cause of a fetch that starved wifi and SPI DMA and ended the VM.
+  Slice with `:binary`,
+  copy chunks out of the TLS record buffers, and `garbage_collect` after each
+  read and post
+- A process that never sleeps keeps its core's idle task from running and the
+  task watchdog fires; the fetch sleeps a tick between posts
 
 ## Firmware updates
 

@@ -5,6 +5,7 @@ defmodule Badge.Sim.Nvs do
 
   @seed %{
     {"badge", "name"} => "Sim Badge",
+    {"badge", "bluesky"} => "goatmire.bsky.social",
     {"badge", "wifi_ssid"} => "SimNet",
     {"badge", "wifi_psk"} => "hunter2",
     {"badge", "brightness"} => "80",
