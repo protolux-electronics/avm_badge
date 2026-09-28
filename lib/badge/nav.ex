@@ -59,13 +59,20 @@ defmodule Badge.Nav do
     tabs(titles, widths, current, 0, length(titles), slack, 0, y, [])
   end
 
-  @doc "A footer hint built from `{key, label}` pairs."
-  @spec hint([{binary, binary}], integer, integer) :: [tuple]
-  def hint([], _y, _colour), do: []
+  @doc "A footer hint built from `{key, label}` pairs, at the left margin or centred."
+  @spec hint([{binary, binary}], integer, integer, :left | :centre) :: [tuple]
+  def hint(pairs, y, colour, align \\ :left)
 
-  def hint(pairs, y, colour) do
-    [{:text, @margin, y, FontType.body(), colour, Theme.bg(), join(pairs)}]
+  def hint([], _y, _colour, _align), do: []
+
+  def hint(pairs, y, colour, align) do
+    text = join(pairs)
+
+    [{:text, hint_x(align, text), y, FontType.body(), colour, Theme.bg(), text}]
   end
+
+  defp hint_x(:centre, text), do: Readout.centre_x(text)
+  defp hint_x(_left, _text), do: @margin
 
   @doc """
   One row per entry, marker first.

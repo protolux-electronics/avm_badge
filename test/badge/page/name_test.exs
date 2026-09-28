@@ -702,6 +702,25 @@ defmodule Badge.Page.NameTest do
     end
   end
 
+  describe "the footer hint" do
+    defp footer(state) do
+      [row] = for {:text, x, 216, _f, _c, _b, body} <- Name.render(state), do: {x, body}
+
+      row
+    end
+
+    test "is centred on the badge, the editor and the picker" do
+      editor = press(editing(), {:edit, :newline})
+      picker = press(press(editing(), {:move, :down}, 8), {:edit, :newline})
+
+      for state <- [showing(%{name: "Gus"}), editing(), editor, picker] do
+        {x, body} = footer(state)
+
+        assert x == div(320 - 8 * byte_size(body), 2)
+      end
+    end
+  end
+
   describe "hints while typing" do
     defp typing(key, overrides \\ %{name: "Gus"}) do
       index = length(:lists.takewhile(&(&1 != key), Profile.keys()))

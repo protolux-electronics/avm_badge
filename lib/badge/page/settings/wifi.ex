@@ -174,7 +174,7 @@ defmodule Badge.Page.Settings.Wifi do
     [
       centred(state.chosen.ssid, @name_y, joined()),
       centred("already connected to this network", @prompt_y, Theme.warn())
-    ] ++ Nav.hint([{"Esc", "to go back"}], @help_y, Theme.dim())
+    ] ++ Nav.hint([{"Esc", "to go back"}], @help_y, Theme.dim(), :centre)
   end
 
   def render(%{mode: :passphrase} = state) do
@@ -183,7 +183,7 @@ defmodule Badge.Page.Settings.Wifi do
       centred("enter passphrase below", @prompt_y, Theme.dim()),
       centred("hold Fn to view", @hint_y, Theme.dim()),
       centred(entry(state), @field_y, Theme.select())
-    ] ++ Nav.hint([{"Enter", "join"}, {"Esc", "back"}], @help_y, Theme.dim())
+    ] ++ Nav.hint([{"Enter", "join"}, {"Esc", "back"}], @help_y, Theme.dim(), :centre)
   end
 
   def render(state) do
@@ -287,5 +287,5 @@ defmodule Badge.Page.Settings.Wifi do
     hint([{"Enter", "join"}, {"s", "rescan"}, {"c", "forget"}], Theme.dim())
   end
 
-  defp hint(pairs, colour), do: Nav.hint(pairs, @help_y, colour)
+  defp hint(pairs, colour), do: Nav.hint(pairs, @help_y, colour, :centre)
 end

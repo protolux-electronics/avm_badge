@@ -314,20 +314,25 @@ defmodule Badge.Page.Name do
     [
       centred(Profile.label(key), @entry_label_y, Theme.dim())
     ] ++
-      Nav.hint([{"Enter", "save"}, {"Esc", "cancel"}], @hint_y, Theme.dim()) ++
+      Nav.hint([{"Enter", "save"}, {"Esc", "cancel"}], @hint_y, Theme.dim(), :centre) ++
       entry_line(key, Field.value(state.field)) ++ entry_note(Profile.note(key))
   end
 
   def render(%{mode: :fields} = state) do
     Nav.rows(field_entries(Profile.keys(), 0, state, []), state.cursor, @row_y, @row_pitch) ++
-      Nav.hint(fields_hint(state), @hint_y, Theme.dim())
+      Nav.hint(fields_hint(state), @hint_y, Theme.dim(), :centre)
   end
 
   def render(%{mode: :picking} = state) do
     choices = Profile.qr_choices(state.profile)
 
     Nav.rows(pick_entries(choices, 0, state, []), state.pick, @row_y, @row_pitch) ++
-      Nav.hint([{"up/down", "pick"}, {"Enter", "choose"}, {"Esc", "back"}], @hint_y, Theme.dim())
+      Nav.hint(
+        [{"up/down", "pick"}, {"Enter", "choose"}, {"Esc", "back"}],
+        @hint_y,
+        Theme.dim(),
+        :centre
+      )
   end
 
   def render(%{screen: 1, profile: profile}), do: big_screen(profile) ++ Nav.dots(@screens, 1)
@@ -569,6 +574,6 @@ defmodule Badge.Page.Name do
   end
 
   defp hint do
-    Nav.hint([{"E", "to edit"}], @hint_y, Theme.dim())
+    Nav.hint([{"E", "to edit"}], @hint_y, Theme.dim(), :centre)
   end
 end
