@@ -28,7 +28,8 @@ defmodule Badge.Pages do
     Badge.Page.Raycaster,
     Badge.Page.Vote,
     Badge.Page.Console,
-    Badge.Page.Agent
+    Badge.Page.Agent,
+    Badge.Page.Pong
   ]
 
   @per_screen length(@keys)
