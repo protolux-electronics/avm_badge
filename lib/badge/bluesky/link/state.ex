@@ -9,8 +9,9 @@ defmodule Badge.Bluesky.Link.State do
   The feed is wanted only while the page shows and names an account. With no
   password the posts are the account's own, read in public. With one, a
   fetch logs in if no session is held, reads the saved feeds once, and reads
-  the selected feed, Following until another is chosen. A failure drops the
-  session, so the next attempt logs in afresh.
+  the selected feed, Following until another is chosen. A session the
+  server turns away is dropped, so the next attempt logs in afresh; a
+  network failure keeps it.
 
   A different account or password drops everything held, so a handle changed
   on the Name page never shows the old owner's posts. Held posts outlive a
@@ -206,7 +207,7 @@ defmodule Badge.Bluesky.Link.State do
   end
 
   defp session_after({:ok, %{session: session}}, _state), do: session
-  defp session_after({:error, _reason}, _state), do: nil
+  defp session_after({:error, reason}, state), do: session_after_error(reason, state.session)
 
   defp settle(state, index, post, {:like, _uri, _cid}, {:ok, %{like: like}}),
     do: synced(state, index, %{post | like_uri: like})
@@ -407,7 +408,8 @@ defmodule Badge.Bluesky.Link.State do
   defp apply_post(state, {:ok, %{uri: uri, session: session}}),
     do: refresh(%{state | post: {:ok, uri}, session: session})
 
-  defp apply_post(state, {:error, reason}), do: %{state | post: {:error, reason}, session: nil}
+  defp apply_post(state, {:error, reason}),
+    do: %{state | post: {:error, reason}, session: session_after_error(reason, state.session)}
 
   defp refresh(%{state: :ready, paged: false} = state), do: %{state | state: :idle}
   defp refresh(state), do: state
@@ -579,7 +581,14 @@ defmodule Badge.Bluesky.Link.State do
   end
 
   defp apply_result(state, _cursor, {:error, reason}, now) do
-    %{state | state: :failed, session: nil, reason: reason, at: now, failures: state.failures + 1}
+    %{
+      state
+      | state: :failed,
+        session: session_after_error(reason, state.session),
+        reason: reason,
+        at: now,
+        failures: state.failures + 1
+    }
   end
 
   # A first page replaces what is held; a later one is appended, to the cap.
@@ -606,8 +615,19 @@ defmodule Badge.Bluesky.Link.State do
     }
   end
 
-  defp keep_login(state, {:error, _reason}),
-    do: %{state | state: restored(:idle, state.posts), session: nil}
+  defp keep_login(state, {:error, reason}),
+    do: %{
+      state
+      | state: restored(:idle, state.posts),
+        session: session_after_error(reason, state.session)
+    }
+
+  # Only the server turning the session away ends it; a network failure keeps
+  # it, so the retry does not pay for a login handshake as well.
+  defp session_after_error({:http, 401, _error}, _session), do: nil
+  defp session_after_error({:http, 400, "ExpiredToken"}, _session), do: nil
+  defp session_after_error({:http, 400, "InvalidToken"}, _session), do: nil
+  defp session_after_error(_reason, session), do: session
 
   defp feeds(nil, held), do: held
   defp feeds(fresh, _held), do: fresh

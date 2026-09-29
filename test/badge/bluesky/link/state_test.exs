@@ -324,13 +324,15 @@ defmodule Badge.Bluesky.Link.StateTest do
       assert {{:fetch, %{feed: {:timeline, nil}}}, _} = State.load(done, true, 2)
     end
 
-    test "a failed post drops the session and can be tried again" do
+    test "a failed post keeps the session unless it was turned away, and can be tried again" do
       {{:post, job}, posting} = State.load(State.post(logged_in(0), "Hello", 1), true, 1)
       failed = State.posted(posting, job, {:error, {:http, 400, "InvalidRequest"}})
 
       assert State.status(failed).post == {:error, {:http, 400, "InvalidRequest"}}
-      assert failed.session == nil
+      assert failed.session == @session
       assert %{post: {:queued, "Again", 2, nil}} = State.post(failed, "Again", 2)
+
+      assert State.posted(posting, job, {:error, {:http, 401, "AuthRequired"}}).session == nil
     end
   end
 
@@ -481,7 +483,7 @@ defmodule Badge.Bluesky.Link.StateTest do
         respond(State.like(holding([post_entry("at://a", nil, 3)]), "at://a", 1), :error)
 
       assert shown(failed, 0) == {false, 3}
-      assert failed.session == nil
+      assert failed.session == @session
 
       {_job, kept} =
         respond(State.like(holding([post_entry("at://a", "at://old", 4)]), "at://a", 1), :error)
@@ -551,6 +553,28 @@ defmodule Badge.Bluesky.Link.StateTest do
       full = %{logged_in(0) | handles: Map.new(1..30, &{"h#{&1}.x", :failed})}
 
       assert State.resolve(full, "new.x") == full
+    end
+  end
+
+  describe "sessions after a failure" do
+    test "a network or TLS failure keeps the session, so the retry needs no login" do
+      {{:fetch, job}, loading} = State.load(logged_in(0), true, 6 * 60_000)
+      failed = State.fetched(loading, job, {:error, {:connect, {:ssl, -29312}}}, 6 * 60_000)
+
+      assert failed.session == @session
+      assert {{:fetch, %{session: @session}}, _} = State.load(State.retry(failed), true, 1)
+    end
+
+    test "the server turning the session away ends it" do
+      {{:fetch, job}, loading} = State.load(logged_in(0), true, 6 * 60_000)
+
+      for reason <- [
+            {:http, 401, "AuthenticationRequired"},
+            {:http, 400, "ExpiredToken"},
+            {:http, 400, "InvalidToken"}
+          ] do
+        assert State.fetched(loading, job, {:error, reason}, 6 * 60_000).session == nil
+      end
     end
   end
 

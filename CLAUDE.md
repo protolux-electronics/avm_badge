@@ -235,7 +235,9 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   asking for the main password hidden. It refuses a name already in use; the
   PDS answers a duplicate with a bare 500
 - A login is 4-5 TLS handshakes, each its own connection through
-  `Badge.Bluesky.Http`. The session is held until a fetch fails, then dropped
+  `Badge.Bluesky.Http`. The session is held until the server turns it away (401, or 400
+  `ExpiredToken`/`InvalidToken`); a network or TLS failure keeps it, so a retry
+  costs no login handshake
 - **The TLS handshake to `plc.directory` corrupts the fetch process's heap**,
   like goatmire.com's: `Certificate validated`, then `LoadProhibited` in the
   GC. `public.api.bsky.app` with the same chain is fine. Provision the PDS as
