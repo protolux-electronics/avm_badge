@@ -40,4 +40,10 @@ defmodule Badge.PageTest do
                Listening.handle_ir(<<1, 2, 3, 4, 5, 6>>, "hello", Listening.init())
     end
   end
+
+  describe "the default awake? callback" do
+    test "lets the screen sleep" do
+      refute Quiet.awake?(Quiet.init())
+    end
+  end
 end

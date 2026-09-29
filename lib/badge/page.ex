@@ -9,7 +9,7 @@ defmodule Badge.Page do
 
   `use Badge.Page` supplies `handle_key/2`, `tick/1`, a 100 ms `refresh/0`, a
   placeholder `icon/0`, ignoring `handle_info/2` and `handle_ir/3`, a `fonts/1` that asks
-  for none, and a no-op `leave/1` for pages that need none of them, all overridable. Sub-pages inside
+  for none, a no-op `leave/1`, and a `false` `awake?/1` for pages that need none of them, all overridable. Sub-pages inside
   a container never reach the home grid, so they leave `icon/0` alone.
   """
 
@@ -93,6 +93,13 @@ defmodule Badge.Page do
   """
   @callback leave(state) :: :ok
 
+  @doc """
+  Whether the screen must stay on, whatever the sleep timeout says.
+
+  For a page whose content moves without a keypress, such as a game in play.
+  """
+  @callback awake?(state) :: boolean
+
   defmacro __using__(_opts) do
     quote do
       @behaviour Badge.Page
@@ -121,6 +128,9 @@ defmodule Badge.Page do
       @impl true
       def leave(_state), do: :ok
 
+      @impl true
+      def awake?(_state), do: false
+
       defoverridable handle_key: 2,
                      tick: 1,
                      refresh: 1,
@@ -128,7 +138,8 @@ defmodule Badge.Page do
                      leave: 1,
                      handle_info: 2,
                      handle_ir: 3,
-                     fonts: 1
+                     fonts: 1,
+                     awake?: 1
     end
   end
 end

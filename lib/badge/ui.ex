@@ -19,7 +19,8 @@ defmodule Badge.UI do
   redraws its data asks for; keys skip it and are held only to the panel's
   own write time. `tick/1` still runs on every base tick regardless, so a
   page that smooths its readings keeps averaging at full rate while
-  repainting slowly.
+  repainting slowly. A page asking for frames faster than 100 ms makes the
+  ticker run at 50 ms while it is on screen.
 
   After the sleep timeout the panel and the LED chain go dark and no frame is
   drawn, though pages keep ticking so nothing resets behind the blank screen.
@@ -59,8 +60,11 @@ defmodule Badge.UI do
   # Ticker rate. A page renders at its own `refresh/0`, which must be a multiple of this.
   @base_interval 100
 
+  # The rate for a page that asks to refresh faster than the base.
+  @fast_interval 50
+
   # The clock in the title bar needs a second; battery and wifi change far more slowly.
-  @status_ticks div(1_000, @base_interval)
+  @status_ms 1_000
 
   # Shortest gap between frames drawn for a key, in milliseconds: about one
   # full-panel write at 40 MHz. Closer frames would only queue up in AtomGL,
@@ -147,7 +151,9 @@ defmodule Badge.UI do
       napping: false,
       drawn_at: now(),
       inflight: nil,
-      pending: nil
+      pending: nil,
+      interval: @base_interval,
+      ticker: nil
     }
 
     Skin.activate(Skin.load())
@@ -155,9 +161,7 @@ defmodule Badge.UI do
     # Renders once immediately so the home grid is up before the first tick.
     push(state, frame(state))
 
-    start_ticker()
-
-    {:ok, state}
+    {:ok, pace(%{state | ticker: start_ticker(@base_interval)})}
   end
 
   @impl true
@@ -272,7 +276,7 @@ defmodule Badge.UI do
         dirty: dirty
     }
 
-    next = drowse(next)
+    next = next |> pace() |> drowse()
 
     # Nothing is visible while asleep, and a repaint is the costliest thing here.
     case not next.asleep and dirty and next.countdown <= 0 do
@@ -300,7 +304,7 @@ defmodule Badge.UI do
     %{
       drawn
       | dirty: false,
-        countdown: reload(drawn.page, drawn.page_state),
+        countdown: reload(drawn),
         drawn_at: now(),
         inflight: now(),
         pending: nil
@@ -313,7 +317,7 @@ defmodule Badge.UI do
     %{
       drawn
       | dirty: false,
-        countdown: reload(drawn.page, drawn.page_state),
+        countdown: reload(drawn),
         pending: frame(drawn)
     }
   end
@@ -351,6 +355,24 @@ defmodule Badge.UI do
   @spec key_due?(integer, integer) :: boolean
   def key_due?(drawn_at, now), do: now - drawn_at >= @key_gap
 
+  @doc false
+  # The ticker interval for a page refreshing every `refresh` ms.
+  @spec interval(pos_integer) :: pos_integer
+  def interval(refresh) when refresh < @base_interval, do: @fast_interval
+  def interval(_refresh), do: @base_interval
+
+  # Retimes the ticker when the page on screen wants a different rate.
+  defp pace(state) do
+    case interval(state.page.refresh(state.page_state)) do
+      interval when interval == state.interval ->
+        state
+
+      interval ->
+        send(state.ticker, {:interval, interval})
+        %{state | interval: interval}
+    end
+  end
+
   # The home grid opens a page from `tick/1`, a tick after the key. Its tick is
   # pure, so it runs here to open the page with the key rather than after it.
   defp opened(%{page: Home} = state) do
@@ -386,7 +408,7 @@ defmodule Badge.UI do
   defp drowse(%{asleep: true} = state) do
     idle = state.idle + 1
 
-    case idle >= Sleep.ticks(@base_interval) and Sleep.allowed?(holds()) do
+    case idle >= Sleep.ticks(state.interval) and Sleep.allowed?(holds()) do
       true -> nap(state)
       false -> %{state | idle: idle}
     end
@@ -394,9 +416,9 @@ defmodule Badge.UI do
 
   # A badge set never to sleep counts on without ever reaching the timeout.
   defp drowse(state) do
-    idle = state.idle + 1
+    idle = if state.page.awake?(state.page_state), do: 0, else: state.idle + 1
 
-    case Backlight.sleep_ticks(Backlight.settings().sleep, @base_interval) do
+    case Backlight.sleep_ticks(Backlight.settings().sleep, state.interval) do
       ticks when is_integer(ticks) and idle >= ticks -> sleep(state)
       _awake -> %{state | idle: idle}
     end
@@ -470,12 +492,13 @@ defmodule Badge.UI do
     _, _ -> nil
   end
 
-  defp reload(page, page_state), do: max(div(page.refresh(page_state), @base_interval), 1) - 1
+  defp reload(state),
+    do: max(div(state.page.refresh(state.page_state), state.interval), 1) - 1
 
   # Retries next tick while a source is down, rather than calling a process that is not there.
   defp refresh_status(%{status_countdown: 0} = state) do
     case sources_up?() do
-      true -> {read_status(), @status_ticks - 1}
+      true -> {read_status(), div(@status_ms, state.interval) - 1}
       false -> {state.status, 0}
     end
   end
@@ -520,7 +543,7 @@ defmodule Badge.UI do
     state.page.leave(state.page_state)
     :io.format(~c"UI: page ~p~n", [page])
 
-    %{state | page: page, page_state: page.init(), dirty: true, countdown: 0, pending: nil}
+    pace(%{state | page: page, page_state: page.init(), dirty: true, countdown: 0, pending: nil})
   end
 
   defp frame(%{page: page, page_state: page_state, status: status}) do
@@ -533,14 +556,18 @@ defmodule Badge.UI do
   end
 
   # Waits in a linked process, so this GenServer never sleeps in a callback and a dead ticker crashes loudly.
-  defp start_ticker do
+  defp start_ticker(interval) do
     ui = self()
-    spawn_link(fn -> tick_loop(ui) end)
+    spawn_link(fn -> tick_loop(ui, interval) end)
   end
 
-  defp tick_loop(ui) do
-    Process.sleep(@base_interval)
-    send(ui, :render_tick)
-    tick_loop(ui)
+  defp tick_loop(ui, interval) do
+    receive do
+      {:interval, next} -> tick_loop(ui, next)
+    after
+      interval ->
+        send(ui, :render_tick)
+        tick_loop(ui, interval)
+    end
   end
 end
