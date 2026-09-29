@@ -147,6 +147,28 @@ defmodule Badge.BlueskyTest do
       refute root.repost
     end
 
+    test "thread posts carry what a reply to them needs" do
+      body =
+        ~s({"thread":{"post":{"uri":"at://a/p/2","cid":"c2","author":{"handle":"a.b"},) <>
+          ~s("record":{"text":"Mid","reply":{"root":{"uri":"at://a/p/1","cid":"c1"},) <>
+          ~s("parent":{"uri":"at://a/p/1","cid":"c1"}}}},"replies":[]}})
+
+      assert {:ok, {[post], nil}} = Bluesky.parse_thread(body, 38, fn -> :ok end)
+      assert {post.cid, post.root} == {"c2", {"at://a/p/1", "c1"}}
+
+      assert Bluesky.reply_to(post) == %{
+               root: {"at://a/p/1", "c1"},
+               parent: {"at://a/p/2", "c2"}
+             }
+    end
+
+    test "a reply to a thread's first post has it as root and parent" do
+      post = %{uri: "at://a/p/1", cid: "c1", root: nil}
+
+      assert Bluesky.reply_to(post) == %{root: {"at://a/p/1", "c1"}, parent: {"at://a/p/1", "c1"}}
+      assert Bluesky.reply_to(%{uri: "at://a/p/1", cid: nil}) == nil
+    end
+
     test "at most twenty replies are kept" do
       reply = ~s({"post":{"author":{"handle":"r.s"},"record":{"text":"r"}}})
 

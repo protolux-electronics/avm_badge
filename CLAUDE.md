@@ -262,7 +262,9 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   internal RAM
 - The Post tab composes with `Badge.Bluesky.Draft` and posts through
   `com.atproto.repo.createRecord`; `#tags` get facets. Tab sends, after a
-  second Tab to confirm
+  second Tab to confirm. Opened from a thread it is the Reply tab, answering
+  the post at the top: thread answers decode `cid` and `record.reply.root`
+  for that, feed answers do not
 - **Decode JSON with `:cjson.decode/1`, not `:json`.** The VM's `json.erl`
   runs at ~7 ms a byte, so a 30 kB feed takes minutes and starves the task
   watchdog. `cjson` is a native in the fork (`avm_builtins/cjson_nif.c`) with

@@ -639,6 +639,39 @@ defmodule Badge.Page.BlueskyTest do
       assert Page.tab(press(state, {:move, :left})) == :feeds
     end
 
+    test "writing from a thread replies to the post at the top", %{state: state} do
+      thread = press(Page.apply_login("pw", state), {:edit, :newline})
+
+      replies =
+        Page.apply_posts(
+          Bluesky.pack([
+            post(%{uri: "at://a/p/2", cid: "c2", root: nil}),
+            post(%{uri: "at://r/1", cid: "c3", root: {"at://a/p/2", "c2"}, who: "Lars"})
+          ]),
+          5,
+          thread
+        )
+
+      compose = press(press(replies, {:move, :down}), {:move, :right})
+
+      assert row(Page.render(compose), @head_y) == ["Feeds", "Thread", "Reply", "0/300"]
+      assert row(Page.render(compose), @top) == ["Reply to Lars"]
+      assert row(Page.render(compose), 216) == ["Tab reply   Enter new line"]
+
+      assert compose.reply_to.reply == %{root: {"at://a/p/2", "c2"}, parent: {"at://r/1", "c3"}}
+
+      sending = press(press(press(compose, {:char, ?y}), {:edit, :tab}), {:edit, :tab})
+
+      assert row(Page.render(sending), 216) == ["Replying..."]
+    end
+
+    test "writing from a feed is a new post", %{state: state} do
+      compose = press(Page.apply_login("pw", state), {:move, :right})
+
+      assert compose.reply_to == nil
+      assert row(Page.render(compose), @top) == ["Type a post"]
+    end
+
     test "a post without a URI opens nothing" do
       assert Page.handle_key({:edit, :newline}, shown([post(%{})])) == :ignore
     end

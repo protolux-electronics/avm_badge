@@ -46,12 +46,15 @@ defmodule Badge.Bluesky do
     "replyCount"
   ]
 
-  # A thread answer: the post, and its direct replies.
+  # A thread answer: the post, and its direct replies, with what a reply needs.
   @thread_keys [
     "thread",
     "replies",
     "post",
     "uri",
+    "cid",
+    "reply",
+    "root",
     "author",
     "handle",
     "displayName",
@@ -72,8 +75,12 @@ defmodule Badge.Bluesky do
   # 1970-01-01 as gregorian seconds.
   @epoch 62_167_219_200
 
+  @type ref :: {binary, binary}
+
   @type post :: %{
           uri: binary | nil,
+          cid: binary | nil,
+          root: ref | nil,
           who: binary,
           handle: binary,
           repost: boolean,
@@ -215,6 +222,8 @@ defmodule Badge.Bluesky do
         [
           %{
             uri: text(post, "uri"),
+            cid: text(post, "cid"),
+            root: root(Map.get(record, "reply")),
             who: Text.cp437(text(author, "displayName") || handle),
             handle: Text.cp437(handle),
             repost: repost,
@@ -229,6 +238,25 @@ defmodule Badge.Bluesky do
   end
 
   defp post_item(_post, _repost, _columns), do: []
+
+  # The root of the thread a post replies in, when it is a reply.
+  defp root(%{"root" => %{"uri" => uri, "cid" => cid}}) when is_binary(uri) and is_binary(cid),
+    do: {uri, cid}
+
+  defp root(_reply), do: nil
+
+  @doc """
+  What a reply to `post` names: its thread's root and the post itself, as
+  `{uri, cid}`, or nil when the post lacks either.
+  """
+  @spec reply_to(post) :: %{root: ref, parent: ref} | nil
+  def reply_to(%{uri: uri, cid: cid} = post) when is_binary(uri) and is_binary(cid) do
+    parent = {uri, cid}
+
+    %{root: Map.get(post, :root) || parent, parent: parent}
+  end
+
+  def reply_to(_post), do: nil
 
   @doc """
   Reads a thread answer into its post followed by its direct replies, at most

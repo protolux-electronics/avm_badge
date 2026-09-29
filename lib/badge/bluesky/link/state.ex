@@ -96,7 +96,7 @@ defmodule Badge.Bluesky.Link.State do
     }
   end
 
-  defp posting({:queued, _text, _now}), do: :posting
+  defp posting({:queued, _text, _now, _reply}), do: :posting
   defp posting(post), do: post
 
   @doc "The key of the feed shown: the one chosen, else Following, else the account's own."
@@ -192,22 +192,27 @@ defmodule Badge.Bluesky.Link.State do
   defp restored(_state, {}), do: :idle
   defp restored(_state, _posts), do: :ready
 
-  @doc "Queues `text` to be posted, dated `now` in epoch seconds. One post at a time."
-  @spec post(map, binary, integer) :: map
-  def post(%{post: :posting} = state, _text, _now), do: state
-  def post(%{post: {:queued, _text, _at}} = state, _text2, _now), do: state
-  def post(state, text, now), do: %{state | post: {:queued, text, now}}
+  @doc """
+  Queues `text` to be posted, dated `now` in epoch seconds, as a reply when
+  `reply` names one as `Badge.Bluesky.reply_to/1` does. One post at a time.
+  """
+  @spec post(map, binary, integer, map | nil) :: map
+  def post(state, text, now, reply \\ nil)
+  def post(%{post: :posting} = state, _text, _now, _reply), do: state
+  def post(%{post: {:queued, _text, _at, _to}} = state, _text2, _now, _reply), do: state
+  def post(state, text, now, reply), do: %{state | post: {:queued, text, now, reply}}
 
   @doc "What a post for the current want is asked to do, as `Badge.Bluesky.Account.post/2` takes it."
   @spec post_job(map) :: map
-  def post_job(%{post: {:queued, text, now}} = state) do
+  def post_job(%{post: {:queued, text, now, reply}} = state) do
     %{
       actor: state.actor,
       password: state.password,
       session: state.session,
       pds: state.pds,
       text: text,
-      now: now
+      now: now,
+      reply: reply
     }
   end
 
@@ -302,7 +307,7 @@ defmodule Badge.Bluesky.Link.State do
   def load(%{post: :posting} = state, _ready, _now), do: {:wait, state}
   def load(%{state: :loading} = state, _ready, _now), do: {:wait, state}
 
-  def load(%{post: {:queued, _text, _at}} = state, true, _now),
+  def load(%{post: {:queued, _text, _at, _reply}} = state, true, _now),
     do: {{:post, post_job(state)}, %{state | post: :posting}}
 
   def load(%{state: :failed} = state, ready, now) do

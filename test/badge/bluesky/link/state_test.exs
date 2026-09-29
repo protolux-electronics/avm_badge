@@ -278,7 +278,8 @@ defmodule Badge.Bluesky.Link.StateTest do
                session: @session,
                pds: nil,
                text: "Hello",
-               now: 100
+               now: 100,
+               reply: nil
              }
 
       assert posting.post == :posting
@@ -298,7 +299,14 @@ defmodule Badge.Bluesky.Link.StateTest do
     test "waits for the network" do
       state = State.post(logged_in(0), "Hello", 100)
 
-      assert {:wait, %{post: {:queued, "Hello", 100}}} = State.load(state, false, 1)
+      assert {:wait, %{post: {:queued, "Hello", 100, nil}}} = State.load(state, false, 1)
+    end
+
+    test "a reply carries what it answers into the job" do
+      reply = %{root: {"at://r", "c1"}, parent: {"at://p", "c2"}}
+      state = State.post(logged_in(0), "Yes!", 100, reply)
+
+      assert {{:post, %{reply: ^reply}}, _} = State.load(state, true, 1)
     end
 
     test "one post at a time" do
@@ -321,7 +329,7 @@ defmodule Badge.Bluesky.Link.StateTest do
 
       assert State.status(failed).post == {:error, {:http, 400, "InvalidRequest"}}
       assert failed.session == nil
-      assert %{post: {:queued, "Again", 2}} = State.post(failed, "Again", 2)
+      assert %{post: {:queued, "Again", 2, nil}} = State.post(failed, "Again", 2)
     end
   end
 

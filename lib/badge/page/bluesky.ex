@@ -70,13 +70,26 @@ defmodule Badge.Page.Bluesky do
   @log_in "Set an app password under"
   @log_in_where "Settings > Bluesky"
   @feeds_tab "Feeds"
-  @post_tab "Post"
-  @compose_prompt "Type a post"
-  @compose_hint "Tab post   Enter new line"
-  @confirm_hint "Tab again to post, any key edits"
-  @sending "Posting..."
-  @sent "Posted"
-  @post_failed "Post failed: "
+  # What the composer says, for a new post and for a reply.
+  @post_words %{
+    tab: "Post",
+    prompt: "Type a post",
+    hint: "Tab post   Enter new line",
+    confirm: "Tab again to post, any key edits",
+    sending: "Posting...",
+    sent: "Posted",
+    failed: "Post failed: "
+  }
+
+  @reply_words %{
+    tab: "Reply",
+    prompt: "Reply to ",
+    hint: "Tab reply   Enter new line",
+    confirm: "Tab again to reply, any key edits",
+    sending: "Replying...",
+    sent: "Replied",
+    failed: "Reply failed: "
+  }
   @hint_y 216
   @own_tab "Posts"
   @thread_tab "Thread"
@@ -112,6 +125,7 @@ defmodule Badge.Page.Bluesky do
       draft: Draft.new(),
       stage: :editing,
       back_cursor: 0,
+      reply_to: nil,
       now: nil
     }
   end
@@ -229,7 +243,9 @@ defmodule Badge.Page.Bluesky do
   end
 
   def handle_key({:move, :right}, %{tab: :feeds} = state), do: {:ok, %{state | tab: :posts}}
-  def handle_key({:move, :right}, %{tab: :posts} = state), do: {:ok, %{state | tab: :compose}}
+
+  def handle_key({:move, :right}, %{tab: :posts} = state),
+    do: {:ok, %{state | tab: :compose, reply_to: reply_target(state)}}
 
   def handle_key(event, %{tab: :compose} = state), do: compose_key(event, state)
 
@@ -257,6 +273,25 @@ defmodule Badge.Page.Bluesky do
   def handle_key({:edit, :newline}, %{status: %{state: :failed}} = state), do: retry(state)
 
   def handle_key(_event, _state), do: :ignore
+
+  # Inside a thread, what is written answers the post at the top.
+  defp reply_target(%{posts: posts} = state) when posts != {} do
+    post = Bluesky.unpack(posts, state.cursor)
+
+    case thread?(state) and Bluesky.reply_to(post) do
+      false -> nil
+      nil -> nil
+      reply -> %{reply: reply, who: post.who}
+    end
+  end
+
+  defp reply_target(_state), do: nil
+
+  defp reply(nil), do: nil
+  defp reply(%{reply: reply}), do: reply
+
+  defp words(%{reply_to: nil}), do: @post_words
+  defp words(_state), do: @reply_words
 
   # Esc outside a thread is the router's; Left is the Feeds tab.
   defp left_of_posts({:move, :left}, state), do: {:ok, %{state | tab: :feeds}}
@@ -322,7 +357,7 @@ defmodule Badge.Page.Bluesky do
   defp compose_key(_event, %{stage: :sending} = state), do: {:ok, state}
 
   defp compose_key({:edit, :tab}, %{stage: :confirm} = state) do
-    Link.post(Draft.text(state.draft))
+    Link.post(Draft.text(state.draft), reply(state.reply_to))
 
     {:ok, %{state | stage: :sending}}
   end
@@ -399,7 +434,8 @@ defmodule Badge.Page.Bluesky do
   # Feeds, the name of the feed shown, then Post; the active tab lit, and where it stands.
   defp head(state) do
     place = place(state)
-    room = @columns - byte_size(@feeds_tab) - 2 - byte_size(@post_tab) - 2 - byte_size(place) - 1
+    tab = words(state).tab
+    room = @columns - byte_size(@feeds_tab) - 2 - byte_size(tab) - 2 - byte_size(place) - 1
     name = clip(feed_name(state), room)
     second = @margin + (byte_size(@feeds_tab) + 2) * @char_w
     third = second + (byte_size(name) + 2) * @char_w
@@ -408,8 +444,7 @@ defmodule Badge.Page.Bluesky do
       {:text, @margin, @head_y, :default16px, tab_colour(state.tab, :feeds), Theme.bg(),
        @feeds_tab},
       {:text, second, @head_y, :default16px, tab_colour(state.tab, :posts), Theme.bg(), name},
-      {:text, third, @head_y, :default16px, tab_colour(state.tab, :compose), Theme.bg(),
-       @post_tab},
+      {:text, third, @head_y, :default16px, tab_colour(state.tab, :compose), Theme.bg(), tab},
       {:text, Readout.right_x(place), @head_y, :default16px, Theme.muted(), Theme.bg(), place}
     ]
   end
@@ -467,7 +502,7 @@ defmodule Badge.Page.Bluesky do
     visible = :lists.nthtail(min(first, length(rows)), rows)
 
     [cursor(column, row - first)] ++
-      draft_rows(visible, state.draft, @top, []) ++ compose_hint(state)
+      prompt(state) ++ draft_rows(visible, state.draft, @top, []) ++ compose_hint(state)
   end
 
   defp cursor(column, row) do
@@ -476,20 +511,31 @@ defmodule Badge.Page.Bluesky do
     {:rect, x, @top + row * @pitch + 14, @char_w, 2, Theme.fg()}
   end
 
-  defp draft_rows(_rows, %{count: 0}, y, _acc), do: [left(y, Theme.muted(), @compose_prompt)]
+  defp draft_rows(_rows, %{count: 0}, _y, _acc), do: []
   defp draft_rows([], _draft, _y, acc), do: :lists.reverse(acc)
   defp draft_rows([<<>> | rest], draft, y, acc), do: draft_rows(rest, draft, y + @pitch, acc)
 
   defp draft_rows([line | rest], draft, y, acc),
     do: draft_rows(rest, draft, y + @pitch, [left(y, Theme.fg(), line) | acc])
 
-  defp compose_hint(%{stage: :editing}), do: [left(@hint_y, Theme.dim(), @compose_hint)]
-  defp compose_hint(%{stage: :confirm}), do: [left(@hint_y, Theme.select(), @confirm_hint)]
-  defp compose_hint(%{stage: :sending}), do: [left(@hint_y, Theme.muted(), @sending)]
-  defp compose_hint(%{stage: :sent}), do: [left(@hint_y, Theme.ok(), @sent)]
+  # An empty draft says what it will be: a post, or a reply and to whom.
+  defp prompt(%{draft: %{count: 0}} = state),
+    do: [left(@top, Theme.muted(), clip(prompt_text(state), @columns))]
 
-  defp compose_hint(%{stage: {:failed, reason}}),
-    do: [left(@hint_y, Theme.alert(), clip(@post_failed <> Bluesky.describe(reason), @columns))]
+  defp prompt(_state), do: []
+
+  defp prompt_text(%{reply_to: nil}), do: @post_words.prompt
+  defp prompt_text(%{reply_to: %{who: who}}), do: @reply_words.prompt <> who
+
+  defp compose_hint(state), do: [hint_item(state.stage, words(state))]
+
+  defp hint_item(:editing, words), do: left(@hint_y, Theme.dim(), words.hint)
+  defp hint_item(:confirm, words), do: left(@hint_y, Theme.select(), words.confirm)
+  defp hint_item(:sending, words), do: left(@hint_y, Theme.muted(), words.sending)
+  defp hint_item(:sent, words), do: left(@hint_y, Theme.ok(), words.sent)
+
+  defp hint_item({:failed, reason}, words),
+    do: left(@hint_y, Theme.alert(), clip(words.failed <> Bluesky.describe(reason), @columns))
 
   defp notice(%{status: %{state: :failed, reason: reason}}, _empty) do
     [

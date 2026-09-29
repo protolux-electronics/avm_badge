@@ -49,9 +49,12 @@ defmodule Badge.Bluesky.Link do
   @spec check_status() :: term
   def check_status, do: GenServer.call(__MODULE__, :check_status)
 
-  @doc "Posts `text` as the account, after any fetch under way. See `status/0`'s `post`."
-  @spec post(binary) :: :ok
-  def post(text), do: GenServer.cast(__MODULE__, {:post, text})
+  @doc """
+  Posts `text` as the account, after any fetch under way; with `reply`, as
+  `Badge.Bluesky.reply_to/1` gives it, a reply. See `status/0`'s `post`.
+  """
+  @spec post(binary, map | nil) :: :ok
+  def post(text, reply \\ nil), do: GenServer.cast(__MODULE__, {:post, text, reply})
 
   @doc "Shows the thread of the post at `uri`, keeping the feed for `close_thread/0`."
   @spec open_thread(binary) :: :ok
@@ -106,8 +109,8 @@ defmodule Badge.Bluesky.Link do
   def handle_cast({:open_thread, uri}, state), do: {:noreply, State.open_thread(state, uri)}
   def handle_cast(:close_thread, state), do: {:noreply, State.close_thread(state)}
 
-  def handle_cast({:post, text}, state),
-    do: {:noreply, State.post(state, text, :erlang.system_time(:second))}
+  def handle_cast({:post, text, reply}, state),
+    do: {:noreply, State.post(state, text, :erlang.system_time(:second), reply)}
 
   def handle_cast({:check, actor, password}, state) do
     link = self()
@@ -187,7 +190,11 @@ defmodule Badge.Bluesky.Link do
   end
 
   defp start_post(state, job) do
-    :io.format(~c"Bluesky: posting ~p bytes as ~s~n", [byte_size(job.text), job.actor])
+    :io.format(~c"Bluesky: posting ~p bytes as ~s, reply ~p~n", [
+      byte_size(job.text),
+      job.actor,
+      job.reply != nil
+    ])
 
     link = self()
     base = state.base

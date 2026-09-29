@@ -166,6 +166,17 @@ defmodule Badge.Bluesky.AccountTest do
       assert Account.facets("no tags") == []
     end
 
+    test "a reply names its root and parent" do
+      reply = %{root: {"at://r", "c1"}, parent: {"at://p", "c2"}}
+
+      assert Account.record("Yes", 0, reply)["reply"] == %{
+               "root" => %{"uri" => "at://r", "cid" => "c1"},
+               "parent" => %{"uri" => "at://p", "cid" => "c2"}
+             }
+
+      refute Map.has_key?(Account.record("Yes", 0), "reply")
+    end
+
     test "the timestamp pads every field" do
       assert Account.timestamp(0) == "1970-01-01T00:00:00.000Z"
     end

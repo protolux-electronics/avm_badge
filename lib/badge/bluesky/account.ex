@@ -229,13 +229,13 @@ defmodule Badge.Bluesky.Account do
   Publishes `text` as a new post by the session's account, dated `now` in
   epoch seconds, and answers the new post's URI. Hashtags become facets.
   """
-  @spec create_post(session, binary, integer) :: {:ok, binary} | {:error, term}
-  def create_post(session, text, now) do
+  @spec create_post(session, binary, integer, map | nil) :: {:ok, binary} | {:error, term}
+  def create_post(session, text, now, reply \\ nil) do
     body =
       json(%{
         "repo" => session.did,
         "collection" => "app.bsky.feed.post",
-        "record" => record(text, now)
+        "record" => record(text, now, reply)
       })
 
     Http.post(
@@ -251,21 +251,31 @@ defmodule Badge.Bluesky.Account do
   @spec post(map, binary) :: {:ok, map} | {:error, term}
   def post(job, base) do
     with {:ok, session} <- session(job, base),
-         {:ok, uri} <- create_post(session, job.text, job.now) do
+         {:ok, uri} <- create_post(session, job.text, job.now, Map.get(job, :reply)) do
       {:ok, %{uri: uri, session: session}}
     end
   end
 
-  @doc "The record a post is written as."
-  @spec record(binary, integer) :: map
-  def record(text, now) do
-    base = %{"$type" => "app.bsky.feed.post", "text" => text, "createdAt" => timestamp(now)}
-
-    case facets(text) do
-      [] -> base
-      facets -> Map.put(base, "facets", facets)
-    end
+  @doc """
+  The record a post is written as; with `reply`, as
+  `Badge.Bluesky.reply_to/1` gives it, a reply in that thread.
+  """
+  @spec record(binary, integer, map | nil) :: map
+  def record(text, now, reply \\ nil) do
+    %{"$type" => "app.bsky.feed.post", "text" => text, "createdAt" => timestamp(now)}
+    |> with_facets(facets(text))
+    |> with_reply(reply)
   end
+
+  defp with_facets(record, []), do: record
+  defp with_facets(record, facets), do: Map.put(record, "facets", facets)
+
+  defp with_reply(record, nil), do: record
+
+  defp with_reply(record, %{root: root, parent: parent}),
+    do: Map.put(record, "reply", %{"root" => strong(root), "parent" => strong(parent)})
+
+  defp strong({uri, cid}), do: %{"uri" => uri, "cid" => cid}
 
   @doc """
   A tag facet for every `#tag` in `text`, by byte range.

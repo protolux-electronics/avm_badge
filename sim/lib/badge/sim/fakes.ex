@@ -102,7 +102,7 @@ defmodule Badge.Sim.Fakes do
           {:open, actor, password}, d ->
             Map.merge(d, %{actor: actor, password: password})
 
-          {:post, _text}, d ->
+          {:post, _text, _reply}, d ->
             Map.put(d, :post, {:ok, "at://did:plc:sim/app.bsky.feed.post/sim"})
 
           {:select, key}, d ->
