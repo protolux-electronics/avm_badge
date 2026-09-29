@@ -53,7 +53,8 @@ defmodule Badge do
       {Badge.Chat.Link, :ok},
       {Badge.Update.Link, :ok},
       {Badge.Cluster.Link, :ok},
-      {Badge.Schedule.Link, :ok}
+      {Badge.Schedule.Link, :ok},
+      {Badge.Bluesky.Link, :ok}
     ]
 
     {:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)

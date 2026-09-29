@@ -40,6 +40,12 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - Two packbeam slots: `main.avm` at `0x2B8000` and `alt.avm` at `0x35C000`,
   656K each. NervesHub writes whichever is not running and flips
   `atomvm`/`boot_path` in NVS
+- **Nothing stops an oversized `main.avm` from flashing.** It is cut at the
+  partition end and the VM panics right after `Loaded BEAM partition main.avm`
+  (`Cache error`, `MMU entry fault`). Check `avm_badge.avm` with
+  `check_partitions.py` after adding code; the flash layout has no free tail
+- Mix tasks live in `tools/mix_tasks`, a `runtime: false` path dependency, so
+  the packer leaves them out of `main.avm`
 - `assets.avm` at `0x278000` holds the rickroll frames, the `.uf` fonts and
   the splash logo, mounted by `Badge.start/0`. `tools/flashassets.sh` packs
   and writes it; it is **not** updated over the air
@@ -75,9 +81,8 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - **SPI `peripheral:` must be a string** (`"spi2"`), not an atom
 - Use plain maps, not structs
 - `atomvm.check` has known false positives: `json:encode/1`, `json:decode/1`,
-  `erlang:binary_part/3`, `lists:keysort/2`, `lists:flatmap/2` all exist in
-  the fork; `File`, `Mix`, `String`, `System` come from Mix tasks that are
-  packed but never run; `GenServer`, `Supervisor`, `network`, `uart` are
+  `cjson:decode/1`, `cjson:decode/2`, `erlang:binary_part/3`, `lists:keysort/2`,
+  `lists:flatmap/2`, `binary:match/2` all exist in the fork; `GenServer`, `Supervisor`, `network`, `uart` are
   flagged because the checker cannot see AtomVM's own libraries. Compare the
   count against `main` rather than reading the list
 
@@ -122,7 +127,9 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   `Badge.Skin.Dark` unless they call `Badge.Skin.activate/1`
 - Monochrome icons are `.mask` files baked once per colour in
   `Badge.Icons.tints/0`; a skin's `glyph/0` picks one, and a new glyph colour
-  must be added to that list or the icon draws nothing
+  must be added to that list or the icon draws nothing. Every mask is kept as
+  a mask and baked on first draw, cached in the drawing process's
+  dictionary, since each baked tint costs 4 bytes a pixel of flash
 
 ## Pages
 
@@ -211,6 +218,97 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - **`ssl:recv/2` with a length blocks until exactly that many bytes arrive**,
   so a read loop asking for 4096 hangs on the response's last piece; read with
   length 0
+
+## Bluesky
+
+- `Badge.Page.Bluesky` shows the feed of the profile's `:bluesky` handle,
+  read-only and text-only. `Badge.Bluesky` parses and packs, `Badge.Bluesky.Link`
+  is page-scoped like the chat link and fetches in a spawned process, and
+  `Badge.Bluesky.Link.State` holds every transition as plain data
+- With an app password in the `bsky_pass` NVS key (typed on Settings >
+  Bluesky), `Badge.Bluesky.Account` logs in: handle to DID at the AppView,
+  DID to PDS at plc.directory, `createSession` on the PDS. The page then
+  shows Following, and a Feeds tab lists the saved feeds from
+  `getPreferences`; Enter shows one. Without a password it is the handle's own
+  posts, in public
+- `mix badge.app_password <handle>` creates an app password on the host,
+  asking for the main password hidden. It refuses a name already in use; the
+  PDS answers a duplicate with a bare 500
+- A login is 4-5 TLS handshakes, each its own connection through
+  `Badge.Bluesky.Http`. The session is held until the server turns it away (401, or 400
+  `ExpiredToken`/`InvalidToken`); a network or TLS failure keeps it, so a retry
+  costs no login handshake
+- **The TLS handshake to `plc.directory` corrupts the fetch process's heap**,
+  like goatmire.com's: `Certificate validated`, then `LoadProhibited` in the
+  GC. `public.api.bsky.app` with the same chain is fine. Provision the PDS as
+  `bsky_pds` (`tools/provision.py --bsky-pds`) and the login skips both
+  lookups. Unprovisioned, the login tries `https://eurosky.social` first and
+  looks the PDS up only when that answers with an HTTP error
+- The server is the `bsky_url` NVS key, falling back to
+  `https://public.api.bsky.app`. `https://` goes through `ahttp_client` over
+  this VM's `:ssl`, which the schedule fetch found broken; `http://` runs in the
+  clear for a server on the bench
+- **Decode Bluesky answers with `Http.decode/2` and the keys a parser reads.**
+  `cjson:decode/2` prunes every other member before building terms; each
+  string over 64 bytes is a refc binary, and up to 512 bytes those come from
+  internal RAM. A full timeline decode starved the display's SPI DMA
+- Internal RAM reads as `esp32_internal_free_size` and
+  `esp32_internal_largest_free_block` in `system_info`, logged on each
+  `Power:` line and after each Bluesky request. **The fork's
+  `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` is 64**: at 512 every refc binary a
+  Bluesky session held (posts, feeds, TLS read chunks) landed in internal
+  RAM, which fell to ~10K (5K largest block) and stalled every handshake
+  30 s (`-29312`). At 64 it holds ~148K free, 73K largest, through paging,
+  threads and lookups. Still only one TLS connection at a time: the link
+  never overlaps requests
+- Enter on a post opens its thread as the feed `{:thread, uri}`
+  (`getPostThread`, `depth=1`, at most 20 replies); the link keeps the feed
+  it came from and `close_thread` restores it without a fetch. Every answer
+  past 64 KB is refused as `:too_large`, since a popular thread would starve
+  internal RAM
+- The Post tab composes with `Badge.Bluesky.Draft` and posts through
+  `com.atproto.repo.createRecord`; `#tags` get facets. Tab sends, after a
+  second Tab to confirm. Opened from a thread it is the Reply tab, answering
+  the post at the top: thread answers decode `cid` and `record.reply.root`
+  for that, feed answers do not
+- `r` on the posts tab fetches the feed or thread shown again from its
+  first page and puts the cursor at the top, showing `Refreshing...` in the
+  corner until the link's version moves or the fetch fails; asked during a
+  fetch, it follows once that lands
+- `l` toggles the owner's like of the post at the top. A post keeps what
+  shows (`liked`) apart from what the server holds (`like_uri`); a press
+  flips only what shows, and the link sends `createRecord`/`deleteRecord`
+  one at a time until the two agree. **Never drop a press while a request
+  is out** — requests can stall 30 s, and dropped presses read as "behind
+  by one". A failure shows the server's state again. Whether a post is liked comes from
+  `viewer.like`, only in logged-in answers; a liked post shows `<3` in
+  `Theme.alert()`
+- Mentions: no suggestions, no search, nothing looked up or highlighted
+  while typing. Down checks every unchecked `@handle` (one with a dot) with
+  `resolveHandle`; the link keeps up to 30 answers per session. A checked
+  mention shows muted while checking, `Theme.alert()` when not found,
+  `Theme.select()` when found. A post links only the DID its exact handle
+  resolved to, and looks up at post time only what was never checked.
+  **Do not preload follows or search**: 50 follows are 33 KB with profiles,
+  and one page took internal RAM from 13K to 8K and hung the next handshake
+- **`ssl.erl` retried `want_write` at once, never yielding**, so with
+  internal RAM short a handshake spun until the task watchdog fired. The
+  fork's copy waits a tick; it lives in `boot.avm`, not the VM image
+- **Decode JSON with `:cjson.decode/1`, not `:json`.** The VM's `json.erl`
+  runs at ~7 ms a byte, so a 30 kB feed takes minutes and starves the task
+  watchdog. `cjson` is a native in the fork (`avm_builtins/cjson_nif.c`) with
+  the same result shape; `sim/lib/cjson.ex` stands in for it on the host
+- Posts are held as `term_to_binary` entries, at most five, each wrapped to the
+  panel's 38 columns and cut at eight lines
+- **The fetch must not pile up small binaries.** Anything built by appending
+  byte by byte makes one refc binary per step, and under 512 bytes those come
+  from internal RAM; off-heap, they never trigger a collection. That is the
+  suspected cause of a fetch that starved wifi and SPI DMA and ended the VM.
+  Slice with `:binary`,
+  copy chunks out of the TLS record buffers, and `garbage_collect` after each
+  read and post
+- A process that never sleeps keeps its core's idle task from running and the
+  task watchdog fires; the fetch sleeps a tick between posts
 
 ## Firmware updates
 

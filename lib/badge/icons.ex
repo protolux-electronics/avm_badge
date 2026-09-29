@@ -4,11 +4,10 @@ defmodule Badge.Icons do
 
   Files are named `<name>@<width>x<height>` with one of two suffixes. `.rgba`
   is straight-alpha `rgba8888` and is drawn as it is. `.mask` is one alpha
-  byte per pixel for monochrome art, and is baked here once per tint in
-  `tints/0`, so a skin's `glyph/0` picks the colour at draw time without any
-  work on the badge. A tint no skin uses costs flash for nothing, and one a
-  skin asks for without being listed here draws nothing, which
-  `Badge.SkinTest` catches.
+  byte per pixel for monochrome art, kept as a mask and baked in a tint from
+  `tints/0` on its first draw, into the drawing process's dictionary, so a
+  skin's `glyph/0` picks the colour at draw time. A tint a skin asks for
+  without being listed here draws nothing, which `Badge.SkinTest` catches.
 
   AtomGL blends every pixel that is not fully opaque against the background
   colour the item names, so an icon sits cleanly on any skin.
@@ -112,16 +111,44 @@ defmodule Badge.Icons do
     def binary(unquote(name), _tint), do: unquote(data)
   end
 
-  for {name, {_width, _height, :mask, mask}} <- @icons, tint <- @tints do
-    r = div(tint, 0x10000)
-    g = div(rem(tint, 0x10000), 0x100)
-    b = rem(tint, 0x100)
-    data = for <<alpha <- mask>>, into: <<>>, do: <<r, g, b, alpha>>
-
-    def binary(unquote(name), unquote(tint)), do: unquote(data)
+  for {name, {width, _height, :mask, mask}} <- @icons, tint <- @tints do
+    def binary(unquote(name), unquote(tint)),
+      do: cached(unquote(name), unquote(tint), unquote(mask), unquote(width))
   end
 
   def binary(_name, _tint), do: nil
+
+  defp cached(name, tint, mask, width) do
+    key = {__MODULE__, name, tint}
+
+    case :erlang.get(key) do
+      :undefined -> put_baked(key, bake(mask, width, tint))
+      data -> data
+    end
+  end
+
+  defp put_baked(key, data) do
+    :erlang.put(key, data)
+
+    data
+  end
+
+  # A row at a time, so neither a whole-icon list nor a binary per pixel is built.
+  defp bake(mask, width, tint) do
+    rgb = [div(tint, 0x10000), div(rem(tint, 0x10000), 0x100), rem(tint, 0x100)]
+
+    :erlang.iolist_to_binary(bake_rows(mask, width, rgb, 0, []))
+  end
+
+  defp bake_rows(mask, _width, _rgb, offset, acc) when offset >= byte_size(mask),
+    do: :lists.reverse(acc)
+
+  defp bake_rows(mask, width, rgb, offset, acc) do
+    row = :binary.part(mask, offset, width)
+    pixels = :erlang.list_to_binary(for <<alpha <- row>>, do: [rgb, alpha])
+
+    bake_rows(mask, width, rgb, offset + width, [pixels | acc])
+  end
 
   @doc "The icon's `{width, height}` in pixels, or nil if there is no such icon."
   def size(name)

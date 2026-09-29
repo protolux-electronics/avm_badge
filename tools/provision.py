@@ -16,6 +16,7 @@ badge.
     --wifi-psk    BADGE_WIFI_PSK      prompted for, hidden, when a network is named
     --utc-offset  BADGE_UTC_OFFSET    minutes, -720..840; a fallback for time_zone
     --chat-url    AVM_BADGE_SERVER_URL
+    --bsky-pds    BADGE_BSKY_PDS      the account's PDS, e.g. https://eurosky.social
 
 `--forget-wifi` drops the saved network, keeping everything else.
 
@@ -43,7 +44,7 @@ NAMESPACE = "badge"
 CHIP = "esp32s3"
 
 # Never printed back, whether they were supplied or read off the badge.
-SECRET = {"nh_key", "nh_secret", "wifi_psk"}
+SECRET = {"nh_key", "nh_secret", "wifi_psk", "bsky_pass"}
 
 SETTINGS = [
     ("nh_key", "--nh-key", "BADGE_NH_KEY"),
@@ -53,6 +54,7 @@ SETTINGS = [
     ("wifi_psk", "--wifi-psk", "BADGE_WIFI_PSK"),
     ("chat_url", "--chat-url", "AVM_BADGE_SERVER_URL"),
     ("utc_offset_m", "--utc-offset", "BADGE_UTC_OFFSET"),
+    ("bsky_pds", "--bsky-pds", "BADGE_BSKY_PDS"),
 ]
 
 WIFI = ("wifi_ssid", "wifi_psk")
