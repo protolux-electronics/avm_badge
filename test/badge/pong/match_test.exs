@@ -224,4 +224,97 @@ defmodule Badge.Pong.MatchTest do
       assert server.ball != nil
     end
   end
+
+  # Steps `server` until its ball is missed, without the other badge.
+  defp miss(match, now) do
+    {match, _payload} =
+      Match.step(%{match | paddle: 0, ball: %{match.ball | vy: 40, x: 300 * 256}}, now + 50, 0)
+
+    if match.phase == :rally and match.ball != nil,
+      do: miss(match, now + 50),
+      else: {match, now + 50}
+  end
+
+  describe "a point" do
+    test "the badge that missed tells the other, and both agree" do
+      {server, other, now, _id} = rally()
+      {server, now} = miss(server, now)
+
+      assert server.them == 1
+      assert server.phase == :serving
+      assert server.server == :me
+
+      {server, other, _now} = play2(server, other, now, 10)
+      assert other.me == 1 and other.them == 0
+      assert other.server == :them
+      assert server.out_score == nil
+    end
+
+    test "the score survives dropped frames" do
+      {server, other, now, _id} = rally()
+      {server, now} = miss(server, now)
+      score? = fn p -> match?({:ok, {:score, _, _, _}}, Wire.decode(p)) end
+      {server, other, now} = play2(server, other, now, 10, drop?: score?)
+      assert other.me == 0
+
+      {_server, other, _now} = play2(server, other, now, 10)
+      assert other.me == 1
+    end
+
+    test "the fifth point ends the match on both badges" do
+      {server, other, now, _id} = rally()
+      {server, now} = miss(%{server | them: Match.win() - 1}, now)
+      {server, other, _now} = play2(server, other, now, 10)
+
+      assert server.phase == :over and other.phase == :over
+      assert other.me == Match.win()
+    end
+
+    test "conceding clears a pending out_ball, so the score frame goes next" do
+      {server, _other, now, _id} = rally()
+      pending = %{server | out_ball: 1}
+      {conceded, now} = miss(pending, now)
+
+      assert conceded.out_ball == nil
+
+      assert {_match, payload} = Match.step(conceded, now + 200, 0)
+      assert match?({:ok, {:score, _, _, _}}, Wire.decode(payload))
+    end
+  end
+
+  describe "the link" do
+    test "is lost after 3 s without a frame, and the ball stops" do
+      {server, other, now, _id} = rally()
+      {server, _other, _now} = play2(server, other, now, 70, drop?: fn _ -> true end)
+
+      assert server.lost
+      {still, _payload} = Match.step(server, server.clock + 50, 0)
+      assert still.ball == server.ball
+    end
+
+    test "comes back when frames do" do
+      {server, other, now, _id} = rally()
+      {server, other, now} = play2(server, other, now, 70, drop?: fn _ -> true end)
+      {server, _other, _now} = play2(server, other, now, 5)
+
+      refute server.lost
+    end
+
+    test "a bye means the opponent left" do
+      {a, _b, _now} = pair()
+      assert {:ok, %{phase: :left}} = Match.hear(a, @b, Wire.encode(:bye), 0)
+    end
+
+    test "a searching hello from the peer restarts the match" do
+      {server, other, now, id} = rally()
+      {server, now} = miss(server, now)
+      {_server, other, now} = play2(server, other, now, 10)
+      assert other.me == 1
+
+      assert {:ok, restarted} = Match.hear(other, id, Wire.encode({:hello, 3, 0, "Ana"}), now)
+      assert restarted.phase == :pairing
+      assert {restarted.me, restarted.them} == {0, 0}
+      assert restarted.peer == id
+    end
+  end
 end

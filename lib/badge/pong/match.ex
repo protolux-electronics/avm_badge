@@ -113,6 +113,14 @@ defmodule Badge.Pong.Match do
     flip(%{match | peer_coin: coin}, now)
   end
 
+  # A peer searching again has restarted; so does the match.
+  defp from_peer(%{phase: phase} = match, {:hello, coin, 0, name}, now)
+       when phase != :searching and phase != :pairing do
+    fresh = new(match.id, match.name, match.coin, now)
+
+    enter(%{fresh | peer: match.peer, peer_coin: coin, peer_name: name}, :pairing, now)
+  end
+
   defp from_peer(match, {:hello, _coin, _ready, _name}, _now), do: match
 
   defp from_peer(%{phase: phase} = match, {:ball, seq, wire}, now)
@@ -138,6 +146,30 @@ defmodule Badge.Pong.Match do
     if match.out_score == seq, do: %{match | out_score: nil}, else: match
   end
 
+  defp from_peer(match, {:score, seq, theirs, mine}, now) do
+    match = ack(match, seq)
+
+    case seq == match.last_score do
+      true ->
+        match
+
+      false ->
+        %{
+          match
+          | me: mine,
+            them: theirs,
+            last_score: seq,
+            server: :them,
+            ball: nil,
+            handed: false,
+            out_ball: nil
+        }
+        |> decide(now)
+    end
+  end
+
+  defp from_peer(match, :bye, now), do: enter(%{match | ball: nil}, :left, now)
+
   defp from_peer(match, _message, _now), do: match
 
   defp ack(match, seq), do: %{match | acks: match.acks ++ [seq]}
@@ -159,8 +191,11 @@ defmodule Badge.Pong.Match do
 
   defp enter(match, phase, now), do: %{match | phase: phase, since: now}
 
-  # Task 7 replaces this with the real link watch.
-  defp watch_link(match, _now), do: match
+  defp watch_link(match, now) do
+    playing = :lists.member(match.phase, @playing)
+
+    %{match | lost: playing and now - match.heard_at > @lost_ms}
+  end
 
   defp advance(%{lost: true} = match, _now, _dt, _direction), do: match
 
@@ -242,8 +277,29 @@ defmodule Badge.Pong.Match do
     {seq, %{match | seq: seq}}
   end
 
-  # Task 7 completes the score.
-  defp concede(match), do: %{match | ball: nil, handed: false}
+  # A point ends every ball in flight, so both the ball and any handoff go.
+  defp concede(match) do
+    {seq, match} = next_seq(match)
+
+    %{
+      match
+      | ball: nil,
+        handed: false,
+        out_ball: nil,
+        them: match.them + 1,
+        server: :me,
+        out_score: seq
+    }
+    |> Map.put(:score_sent_at, nil)
+    |> decide(match.clock)
+  end
+
+  defp decide(match, now) do
+    case match.me >= @win or match.them >= @win do
+      true -> enter(match, :over, now)
+      false -> enter(match, :serving, now)
+    end
+  end
 
   defp transmit(match, now) do
     case due?(match.sent_at, now, @send_gap_ms) do
