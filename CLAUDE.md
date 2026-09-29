@@ -40,6 +40,12 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - Two packbeam slots: `main.avm` at `0x2B8000` and `alt.avm` at `0x35C000`,
   656K each. NervesHub writes whichever is not running and flips
   `atomvm`/`boot_path` in NVS
+- **Nothing stops an oversized `main.avm` from flashing.** It is cut at the
+  partition end and the VM panics right after `Loaded BEAM partition main.avm`
+  (`Cache error`, `MMU entry fault`). Check `avm_badge.avm` with
+  `check_partitions.py` after adding code; the flash layout has no free tail
+- Mix tasks live in `tools/mix_tasks`, a `runtime: false` path dependency, so
+  the packer leaves them out of `main.avm`
 - `assets.avm` at `0x278000` holds the rickroll frames, the `.uf` fonts and
   the splash logo, mounted by `Badge.start/0`. `tools/flashassets.sh` packs
   and writes it; it is **not** updated over the air
@@ -76,8 +82,7 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - Use plain maps, not structs
 - `atomvm.check` has known false positives: `json:encode/1`, `json:decode/1`,
   `cjson:decode/1`, `erlang:binary_part/3`, `lists:keysort/2`,
-  `lists:flatmap/2` all exist in the fork; `File`, `Mix`, `String`, `System` come from Mix tasks that are
-  packed but never run; `GenServer`, `Supervisor`, `network`, `uart` are
+  `lists:flatmap/2`, `binary:match/2` all exist in the fork; `GenServer`, `Supervisor`, `network`, `uart` are
   flagged because the checker cannot see AtomVM's own libraries. Compare the
   count against `main` rather than reading the list
 
@@ -122,7 +127,9 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   `Badge.Skin.Dark` unless they call `Badge.Skin.activate/1`
 - Monochrome icons are `.mask` files baked once per colour in
   `Badge.Icons.tints/0`; a skin's `glyph/0` picks one, and a new glyph colour
-  must be added to that list or the icon draws nothing
+  must be added to that list or the icon draws nothing. Masks above 32x32 are
+  kept as masks and baked on first draw, cached in the drawing process's
+  dictionary, since each baked tint costs 4 bytes a pixel of flash
 
 ## Pages
 
@@ -218,6 +225,23 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   read-only and text-only. `Badge.Bluesky` parses and packs, `Badge.Bluesky.Link`
   is page-scoped like the chat link and fetches in a spawned process, and
   `Badge.Bluesky.Link.State` holds every transition as plain data
+- With an app password in the `bsky_pass` NVS key (typed on Settings >
+  Bluesky), `Badge.Bluesky.Account` logs in: handle to DID at the AppView,
+  DID to PDS at plc.directory, `createSession` on the PDS. The page then
+  shows Following, and a Feeds tab lists the saved feeds from
+  `getPreferences`; Enter shows one. Without a password it is the handle's own
+  posts, in public
+- `mix badge.app_password <handle>` creates an app password on the host,
+  asking for the main password hidden. It refuses a name already in use; the
+  PDS answers a duplicate with a bare 500
+- A login is 4-5 TLS handshakes, each its own connection through
+  `Badge.Bluesky.Http`. The session is held until a fetch fails, then dropped
+- **The TLS handshake to `plc.directory` corrupts the fetch process's heap**,
+  like goatmire.com's: `Certificate validated`, then `LoadProhibited` in the
+  GC. `public.api.bsky.app` with the same chain is fine. Provision the PDS as
+  `bsky_pds` (`tools/provision.py --bsky-pds`) and the login skips both
+  lookups. Unprovisioned, the login tries `https://eurosky.social` first and
+  looks the PDS up only when that answers with an HTTP error
 - The server is the `bsky_url` NVS key, falling back to
   `https://public.api.bsky.app`. `https://` goes through `ahttp_client` over
   this VM's `:ssl`, which the schedule fetch found broken; `http://` runs in the
@@ -226,7 +250,7 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   runs at ~7 ms a byte, so a 30 kB feed takes minutes and starves the task
   watchdog. `cjson` is a native in the fork (`avm_builtins/cjson_nif.c`) with
   the same result shape; `sim/lib/cjson.ex` stands in for it on the host
-- Posts are held as `term_to_binary` entries, at most ten, each wrapped to the
+- Posts are held as `term_to_binary` entries, at most five, each wrapped to the
   panel's 38 columns and cut at eight lines
 - **The fetch must not pile up small binaries.** Anything built by appending
   byte by byte makes one refc binary per step, and under 512 bytes those come

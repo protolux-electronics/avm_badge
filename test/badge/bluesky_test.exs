@@ -40,24 +40,9 @@ defmodule Badge.BlueskyTest do
       assert Bluesky.base_url("http://bench:8080") == "http://bench:8080"
     end
 
-    test "the scheme picks the port and a trailing slash is dropped" do
-      assert Bluesky.endpoint("https://public.api.bsky.app") ==
-               {:https, "public.api.bsky.app", 443}
-
-      assert Bluesky.endpoint("http://192.168.1.10/") == {:http, "192.168.1.10", 80}
-      assert Bluesky.endpoint("http://bench:8080/proxy") == {:http, "bench", 8080}
-    end
-
-    test "anything else is not an endpoint" do
-      assert Bluesky.endpoint("ftp://x") == nil
-      assert Bluesky.endpoint("https://") == nil
-      assert Bluesky.endpoint("http://bench:port") == nil
-      assert Bluesky.endpoint("http://bench:70000") == nil
-    end
-
     test "the path asks for a few top-level posts of the account" do
       assert Bluesky.path("goat.bsky.social") ==
-               "/xrpc/app.bsky.feed.getAuthorFeed?actor=goat.bsky.social&limit=10&filter=posts_no_replies"
+               "/xrpc/app.bsky.feed.getAuthorFeed?actor=goat.bsky.social&limit=5&filter=posts_no_replies"
     end
   end
 

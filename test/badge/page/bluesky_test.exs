@@ -14,6 +14,9 @@ defmodule Badge.Page.BlueskyTest do
   @pitch 18
   @notice_y @top + 2 * @pitch
 
+  @hot "at://did:plc:sim/app.bsky.feed.generator/whats-hot"
+  @list "at://did:plc:sim/app.bsky.graph.list/goats"
+
   defp post(overrides) do
     Map.merge(
       %{
@@ -85,6 +88,7 @@ defmodule Badge.Page.BlueskyTest do
 
     test "every key is left for the router" do
       assert Page.handle_key({:move, :down}, named("")) == :ignore
+      assert Page.handle_key({:move, :left}, named("")) == :ignore
       assert Page.handle_key({:edit, :newline}, named("")) == :ignore
       assert Page.handle_key({:nav, :home}, named("")) == :ignore
     end
@@ -95,10 +99,10 @@ defmodule Badge.Page.BlueskyTest do
   end
 
   describe "before the posts arrive" do
-    test "names the account and says it is fetching" do
+    test "shows the tabs and says whose posts it is fetching" do
       items = Page.render(Page.apply_status(status(%{state: :loading}), named(), nil))
 
-      assert row(items, @head_y) == ["@" <> @actor, ""]
+      assert row(items, @head_y) == ["Feeds", "Posts", ""]
       assert row(items, @notice_y) == ["Fetching @" <> @actor]
     end
 
@@ -118,7 +122,8 @@ defmodule Badge.Page.BlueskyTest do
       state = Page.apply_status(status(%{state: :failed, reason: {:ssl, :closed}}), named(), nil)
 
       assert texts(Page.render(state)) == [
-               "@" <> @actor,
+               "Feeds",
+               "Posts",
                "",
                "Feed unavailable",
                "{ssl,closed}",
@@ -179,10 +184,14 @@ defmodule Badge.Page.BlueskyTest do
       %{state: shown(posts), posts: posts}
     end
 
-    test "the head names the account and where the top post is", %{state: state} do
+    test "the head shows the tabs, Posts lit, and where the top post is", %{state: state} do
       items = Page.render(state)
 
-      assert row(items, @head_y) == ["@" <> @actor, "1/3"]
+      assert coloured(items, @head_y) == [
+               {"Feeds", Theme.dim()},
+               {"Posts", Theme.select()},
+               {"1/3", Theme.muted()}
+             ]
     end
 
     test "a post is who wrote it and when, the text, then the counts", %{state: state} do
@@ -233,7 +242,7 @@ defmodule Badge.Page.BlueskyTest do
       down = press(state, {:move, :down})
 
       assert Page.current(down) == 1
-      assert row(Page.render(down), @head_y) == ["@" <> @actor, "2/3"]
+      assert row(Page.render(down), @head_y) == ["Feeds", "Posts", "2/3"]
       assert row(Page.render(down), @top) == ["repost: Lars Wikman", "3d"]
       assert Page.current(press(down, {:move, :up})) == 0
     end
@@ -265,6 +274,174 @@ defmodule Badge.Page.BlueskyTest do
     end
   end
 
+  describe "the Feeds tab, logged out" do
+    test "Left turns to it and Right back" do
+      state = press(shown([post(%{})]), {:move, :left})
+
+      assert Page.tab(Page.init()) == :posts
+      assert Page.tab(state) == :feeds
+      assert Page.tab(press(state, {:move, :right})) == :posts
+      assert Page.handle_key({:move, :left}, state) == :ignore
+    end
+
+    test "says where to log in" do
+      state = press(shown([post(%{})]), {:move, :left})
+
+      assert texts(Page.render(state)) == [
+               "Feeds",
+               "Posts",
+               "",
+               "Not logged in",
+               "Set an app password under",
+               "Settings > Bluesky"
+             ]
+
+      assert Page.handle_key({:edit, :newline}, state) == :ignore
+    end
+  end
+
+  describe "logged in" do
+    setup do
+      feeds = [
+        %{kind: :timeline, uri: nil, name: "Following"},
+        %{kind: :feed, uri: @hot, name: "Discover"},
+        %{kind: :list, uri: @list, name: "Goatmire folks"}
+      ]
+
+      state = Page.apply_login("abcd-efgh", named())
+      status = status(%{count: 1, account: true, feed: {:timeline, nil}})
+      state = Page.apply_status(status, state, @now)
+
+      state =
+        Page.apply_posts(
+          Bluesky.pack([post(%{})]),
+          1,
+          Page.apply_feeds(Bluesky.pack(feeds), state)
+        )
+
+      %{state: state, feeds: press(state, {:move, :left})}
+    end
+
+    test "an empty password is no password" do
+      assert Page.apply_login("", named()).password == nil
+      assert Page.apply_login(nil, named()).password == nil
+    end
+
+    test "the posts tab is named after the feed shown", %{state: state} do
+      assert row(Page.render(state), @head_y) == ["Feeds", "Following", "1/1"]
+    end
+
+    test "Feeds lists the saved feeds, the one shown starred", %{feeds: feeds} do
+      items = Page.render(feeds)
+
+      assert coloured(items, @head_y) == [
+               {"Feeds", Theme.select()},
+               {"Following", Theme.dim()},
+               {"1/3", Theme.muted()}
+             ]
+
+      assert row(items, @top) == [">", "Following", "*"]
+      assert coloured(items, @top + @pitch) == [{"Discover", Theme.fg()}]
+      assert row(items, @top + 2 * @pitch) == ["Goatmire folks"]
+    end
+
+    test "Up and Down pick a feed and stop at the ends", %{feeds: feeds} do
+      assert Page.handle_key({:move, :up}, feeds) == :ignore
+
+      down = press(feeds, {:move, :down})
+
+      assert Page.current(down) == 1
+
+      assert coloured(Page.render(down), @top) == [
+               {"Following", Theme.accent()},
+               {"*", Theme.accent()}
+             ]
+
+      assert row(Page.render(down), @top + @pitch) == [">", "Discover"]
+
+      last = press(down, {:move, :down})
+
+      assert Page.handle_key({:move, :down}, last) == :ignore
+    end
+
+    test "Enter on the feed shown just turns back to it", %{feeds: feeds} do
+      back = press(feeds, {:edit, :newline})
+
+      assert Page.tab(back) == :posts
+      assert row(Page.render(back), @top + @pitch) == ["Badges are flashed."]
+    end
+
+    test "Enter on another feed shows it and waits for its posts", %{feeds: feeds} do
+      chosen = press(press(feeds, {:move, :down}), {:edit, :newline})
+
+      assert Page.tab(chosen) == :posts
+      assert Page.shown(chosen) == {:feed, @hot}
+      assert row(Page.render(chosen), @head_y) == ["Feeds", "Discover", ""]
+      assert row(Page.render(chosen), @notice_y) == ["Fetching Discover"]
+    end
+
+    test "the posts tab keeps its place while feeds are picked", %{state: state} do
+      state = Page.apply_posts(Bluesky.pack([post(%{}), post(%{})]), 2, state)
+      down = press(state, {:move, :down})
+      turned = press(press(press(down, {:move, :left}), {:move, :down}), {:move, :right})
+
+      assert Page.current(turned) == 1
+      assert Page.current(press(turned, {:move, :left})) == 1
+    end
+
+    test "the loading notice names the feed", %{state: state} do
+      loading = Page.apply_posts({}, 2, %{state | status: %{state.status | state: :loading}})
+
+      assert row(Page.render(loading), @notice_y) == ["Fetching Following"]
+    end
+
+    test "no saved feeds yet reads as the fetch under way", %{state: state} do
+      empty =
+        press(
+          Page.apply_feeds({}, %{state | status: %{state.status | state: :loading}}),
+          {:move, :left}
+        )
+
+      assert row(Page.render(empty), @notice_y) == ["Fetching Following"]
+      assert Page.handle_key({:edit, :newline}, empty) == :ignore
+    end
+
+    test "fewer feeds pull the pick back", %{feeds: feeds} do
+      last = press(press(feeds, {:move, :down}), {:move, :down})
+
+      assert Page.current(Page.apply_feeds({}, last)) == 0
+    end
+
+    test "a long list scrolls with the pick, none below the panel" do
+      many =
+        for n <- 1..14,
+            do: %{
+              kind: :feed,
+              uri: "u" <> :erlang.integer_to_binary(n),
+              name: "F" <> :erlang.integer_to_binary(n)
+            }
+
+      state = Page.apply_feeds(Bluesky.pack(many), Page.apply_login("pw", shown([post(%{})])))
+
+      state =
+        :lists.foldl(
+          fn _n, acc -> press(acc, {:move, :down}) end,
+          press(state, {:move, :left}),
+          :lists.seq(1, 12)
+        )
+
+      items = Page.render(state)
+
+      assert Page.current(state) == 12
+      assert row(items, @top) == ["F4"]
+      assert row(items, @top + 9 * @pitch) == [">", "F13"]
+
+      for {:text, _x, y, _font, _fg, _bg, _body} <- items do
+        assert y + 16 <= Theme.height()
+      end
+    end
+  end
+
   describe "a long post" do
     test "is cut where the rows run out, and the next post is not started" do
       long = post(%{lines: for(n <- 1..9, do: "Line " <> :erlang.integer_to_binary(n))})
@@ -273,7 +450,7 @@ defmodule Badge.Page.BlueskyTest do
       assert row(items, @top + 9 * @pitch) == ["Line 9"]
       assert row(items, @top + 10 * @pitch) == []
       refute "42 likes  7 reposts  3 replies" in texts(items)
-      assert length(texts(items)) == 2 + 2 + 9
+      assert length(texts(items)) == 3 + 2 + 9
     end
 
     test "a post that just fits leaves room for nothing else" do
@@ -283,7 +460,7 @@ defmodule Badge.Page.BlueskyTest do
       assert row(items, @top) == ["Goatmire", "2h"]
       assert row(items, @top + 8 * @pitch) == ["Line 8"]
       assert row(items, @top + 9 * @pitch) == ["42 likes  7 reposts  3 replies"]
-      assert length(texts(items)) == 2 + 2 + 8 + 1
+      assert length(texts(items)) == 3 + 2 + 8 + 1
     end
   end
 end

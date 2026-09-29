@@ -1,44 +1,34 @@
 defmodule Badge.Bluesky do
   @moduledoc """
-  An account's posts from Bluesky, as lines the panel draws.
+  Posts from Bluesky, as lines the panel draws.
 
-  `fetch/3` asks the public AppView for the account's author feed and
-  `parse/2` turns the answer into posts: who wrote it, when, the text wrapped
-  to `columns` and folded to the panel font's bytes, and the counts under it.
-  Text only: images, links cards and quotes are left out.
+  `fetch/3` asks the public AppView for an account's author feed and
+  `parse/2` turns any feed answer into posts: who wrote it, when, the text
+  wrapped to `columns` and folded to the panel font's bytes, and the counts
+  under it. Text only: images, links cards and quotes are left out. Feeds
+  that need a login are `Badge.Bluesky.Account`'s.
 
   What a process holds is `pack/1`'s tuple, one binary per post, so a frame
-  reaches the posts it draws by index and unpacks only those. Read-only:
-  nothing here signs in, so the feed is whatever the account shows the world.
+  reaches the posts it draws by index and unpacks only those.
 
   The server is the `bsky_url` NVS key, falling back to the public API. Its
   scheme picks the transport: `https://` verifies against the VM's CA store,
   `http://` runs in the clear for a proxy on the bench.
 
   `fetch/3` blocks on the network and belongs in a process of its own;
-  everything else is pure. It collects garbage after every read and every
-  post, and sleeps a tick between posts.
+  everything else is pure.
   """
 
+  alias Badge.Bluesky.Http
   alias Badge.Text
-
-  @compile {:no_warn_undefined, [:ahttp_client, :cjson, :ssl]}
 
   @default_url "https://public.api.bsky.app"
   @path "/xrpc/app.bsky.feed.getAuthorFeed"
-  @limit 10
+  @limit 5
   @filter "posts_no_replies"
 
   # How many wrapped lines of one post are kept; the rest is cut with an ellipsis.
   @max_lines 8
-
-  # A read of zero returns whatever has arrived; asking for a length would
-  # block until exactly that much had, which the last piece never does.
-  @chunk 0
-  @reads 512
-
-  # One FreeRTOS tick, so the idle task gets the core between posts.
-  @breath 10
 
   # 1970-01-01 as gregorian seconds.
   @epoch 62_167_219_200
@@ -66,36 +56,19 @@ defmodule Badge.Bluesky do
   def base_url(""), do: @default_url
   def base_url(url), do: url
 
-  @doc """
-  Where a base URL points, as `{scheme, host, port}`, or nil when it is not one.
-
-  The port falls back to the scheme's own, and a trailing slash is dropped.
-  """
-  @spec endpoint(binary) :: {:http | :https, binary, pos_integer} | nil
-  def endpoint(<<"https://", rest::binary>>), do: host_port(rest, :https, 443)
-  def endpoint(<<"http://", rest::binary>>), do: host_port(rest, :http, 80)
-  def endpoint(_url), do: nil
-
-  defp host_port(rest, scheme, default) do
-    authority = hd(:binary.split(rest, "/"))
-
-    case :binary.split(authority, ":") do
-      [""] -> nil
-      [host] -> {scheme, host, default}
-      [host, port] -> with_port(scheme, host, digits(port))
-    end
-  end
-
-  defp with_port(_scheme, _host, nil), do: nil
-  defp with_port(scheme, host, port) when port > 0 and port < 65_536, do: {scheme, host, port}
-  defp with_port(_scheme, _host, _port), do: nil
+  @doc "How many posts a feed is asked for."
+  @spec limit() :: pos_integer
+  def limit, do: @limit
 
   @doc "The request path for an account's feed."
   @spec path(binary) :: binary
   def path(actor) do
     @path <>
-      "?actor=" <>
-      actor <> "&limit=" <> :erlang.integer_to_binary(@limit) <> "&filter=" <> @filter
+      Http.query([
+        {"actor", actor},
+        {"limit", :erlang.integer_to_binary(@limit)},
+        {"filter", @filter}
+      ])
   end
 
   @doc """
@@ -124,123 +97,7 @@ defmodule Badge.Bluesky do
   """
   @spec fetch(binary, binary, pos_integer) :: {:ok, [post]} | {:error, term}
   def fetch(base, actor, columns) do
-    case endpoint(base) do
-      nil ->
-        {:error, {:bad_url, base}}
-
-      {scheme, host, port} ->
-        timed(:connect, fn -> connect(scheme, host, port, actor, columns) end)
-    end
-  catch
-    kind, error -> {:error, {kind, error}}
-  end
-
-  defp connect(:https, host, port, actor, columns) do
-    :ssl.start()
-
-    case :ahttp_client.connect(:https, host, port, active: false, verify: :verify_peer) do
-      {:ok, conn} -> request(conn, actor, columns)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp connect(:http, host, port, actor, columns) do
-    case :ahttp_client.connect(:http, host, port, active: false) do
-      {:ok, conn} -> request(conn, actor, columns)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp request(conn, actor, columns) do
-    case :ahttp_client.request(conn, "GET", path(actor), [{"accept", "application/json"}], nil) do
-      {:ok, conn, _ref} -> collect(conn, columns, [], nil, 0, @reads)
-      {:error, reason} -> close(conn, {:error, reason})
-    end
-  end
-
-  # Chunks are kept as a list until the end, since appending binaries copies.
-  defp collect(conn, _columns, _chunks, _status, _size, 0),
-    do: close(conn, {:error, :too_many_reads})
-
-  defp collect(conn, columns, chunks, status, size, left) do
-    case :ahttp_client.recv(conn, @chunk) do
-      {:ok, conn, responses} ->
-        {chunks, status, size, done} = harvest(responses, chunks, status, size, false)
-        :erlang.garbage_collect()
-
-        continue(conn, columns, chunks, status, size, done, left)
-
-      {:error, reason} ->
-        close(conn, {:error, reason})
-    end
-  end
-
-  defp continue(conn, columns, chunks, status, size, true, left) do
-    :io.format(~c"Bluesky: ~p bytes in ~p reads~n", [size, @reads - left + 1])
-
-    body = :erlang.iolist_to_binary(:lists.reverse(chunks))
-    :ahttp_client.close(conn)
-    :erlang.garbage_collect()
-
-    timed(:parse, fn -> answered(status, body, columns) end)
-  end
-
-  defp continue(conn, columns, chunks, status, size, false, left),
-    do: collect(conn, columns, chunks, status, size, left - 1)
-
-  defp harvest([], chunks, status, size, done), do: {chunks, status, size, done}
-
-  defp harvest([{:status, _ref, code} | rest], chunks, _status, size, done),
-    do: harvest(rest, chunks, code, size, done)
-
-  # A chunk is a slice of a whole TLS record buffer; copied, the buffer can go.
-  defp harvest([{:data, _ref, chunk} | rest], chunks, status, size, done),
-    do: harvest(rest, [:binary.copy(chunk) | chunks], status, size + byte_size(chunk), done)
-
-  defp harvest([{:done, _ref} | rest], chunks, status, size, _done),
-    do: harvest(rest, chunks, status, size, true)
-
-  defp harvest([:done | rest], chunks, status, size, _done),
-    do: harvest(rest, chunks, status, size, true)
-
-  defp harvest([_other | rest], chunks, status, size, done),
-    do: harvest(rest, chunks, status, size, done)
-
-  # The AppView answers a bad handle with a 400 and a JSON error, not a feed.
-  defp answered(status, body, columns) when status == nil or status == 200 do
-    case parse(body, columns, &breathe/0) do
-      {:ok, posts} -> {:ok, posts}
-      :error -> {:error, :unreadable}
-    end
-  end
-
-  defp answered(status, body, _columns), do: {:error, {:http, status, error_text(body)}}
-
-  defp error_text(body) do
-    case decode(body) do
-      {:ok, %{"error" => error}} when is_binary(error) -> error
-      _other -> ""
-    end
-  end
-
-  defp close(conn, result) do
-    :ahttp_client.close(conn)
-
-    result
-  end
-
-  defp breathe do
-    :erlang.garbage_collect()
-    Process.sleep(@breath)
-  end
-
-  defp timed(phase, fun) do
-    started = :erlang.monotonic_time(:millisecond)
-    result = fun.()
-    elapsed = :erlang.monotonic_time(:millisecond) - started
-    :io.format(~c"Bluesky: ~p took ~p ms~n", [phase, elapsed])
-
-    result
+    Http.get(base, path(actor), [], fn body -> parse(body, columns, &Http.breathe/0) end)
   end
 
   @doc """
@@ -251,9 +108,10 @@ defmodule Badge.Bluesky do
   @spec parse(binary, pos_integer) :: {:ok, [post]} | :error
   def parse(body, columns), do: parse(body, columns, fn -> :ok end)
 
-  # `between` runs after the decode and after each post, for the fetch to breathe.
-  defp parse(body, columns, between) do
-    case decode(body) do
+  @doc "As `parse/2`, running `between` after the decode and after each post."
+  @spec parse(binary, pos_integer, (-> term)) :: {:ok, [post]} | :error
+  def parse(body, columns, between) do
+    case Http.decode(body) do
       {:ok, %{"feed" => feed}} when is_list(feed) ->
         between.()
         {:ok, items(feed, columns, between, [])}
@@ -270,12 +128,6 @@ defmodule Badge.Bluesky do
     between.()
 
     items(rest, columns, between, posts ++ acc)
-  end
-
-  defp decode(body) do
-    {:ok, :cjson.decode(body)}
-  catch
-    _kind, _error -> :error
   end
 
   # An item without a post text cannot be shown, so it is left out.
@@ -416,11 +268,11 @@ defmodule Badge.Bluesky do
   defp plural(1, one, _many), do: "1 " <> one
   defp plural(count, _one, many), do: :erlang.integer_to_binary(count) <> " " <> many
 
-  @doc "Posts as a tuple, each packed into a binary of its own."
-  @spec pack([post]) :: posts
+  @doc "Entries as a tuple, each packed into a binary of its own."
+  @spec pack([term]) :: posts
   def pack(posts), do: :erlang.list_to_tuple(for post <- posts, do: :erlang.term_to_binary(post))
 
-  @doc "The post at a zero-based index."
-  @spec unpack(posts, non_neg_integer) :: post
+  @doc "The entry at a zero-based index."
+  @spec unpack(posts, non_neg_integer) :: term
   def unpack(posts, index), do: :erlang.binary_to_term(:erlang.element(index + 1, posts))
 end

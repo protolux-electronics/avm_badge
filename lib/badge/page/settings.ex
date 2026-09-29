@@ -17,6 +17,7 @@ defmodule Badge.Page.Settings do
   use Badge.Page
 
   alias Badge.Nav
+  alias Badge.Page.Settings.Bluesky
   alias Badge.Page.Settings.Display
   alias Badge.Page.Settings.Log
   alias Badge.Page.Settings.Sudo
@@ -25,7 +26,7 @@ defmodule Badge.Page.Settings do
   alias Badge.Theme
 
   @margin 8
-  @subpages [Display, Wifi, Update, Log, Sudo]
+  @subpages [Display, Wifi, Bluesky, Update, Log, Sudo]
   @count length(@subpages)
 
   @strip_y Theme.content_top()

@@ -18,6 +18,13 @@ defmodule Badge.Sim.Fakes do
           ~s("record":{"text":"Tickets for the workshops are nearly gone.",) <>
           ~s("createdAt":"2026-09-25T08:00:00.000Z"},"likeCount":9,"repostCount":1,"replyCount":0}}]})
 
+  @feeds [
+    %{kind: :timeline, uri: nil, name: "Following"},
+    %{kind: :feed, uri: "at://did:plc:sim/app.bsky.feed.generator/whats-hot", name: "Discover"},
+    %{kind: :feed, uri: "at://did:plc:sim/app.bsky.feed.generator/elixir", name: "Elixir"},
+    %{kind: :list, uri: "at://did:plc:sim/app.bsky.graph.list/goats", name: "Goatmire folks"}
+  ]
+
   def children do
     [
       fake(
@@ -68,14 +75,29 @@ defmodule Badge.Sim.Fakes do
         Badge.Bluesky.Link,
         fn
           :status, d ->
-            %{state: :ready, actor: Map.get(d, :actor), reason: nil, version: 1, count: 3}
+            password = Map.get(d, :password)
+            default = if password, do: {:timeline, nil}, else: {:author, Map.get(d, :actor)}
+
+            %{
+              state: :ready,
+              actor: Map.get(d, :actor),
+              account: password != nil,
+              feed: Map.get(d, :feed, default),
+              reason: nil,
+              version: Map.get(d, :version, 1),
+              count: 3
+            }
 
           :posts, _ ->
             {:ok, posts} = Bluesky.parse(@feed, Page.Bluesky.columns())
             Bluesky.pack(posts)
+
+          :feeds, d ->
+            if Map.get(d, :password), do: Bluesky.pack(@feeds), else: {}
         end,
         fn
-          {:open, actor}, d -> Map.put(d, :actor, actor)
+          {:open, actor, password}, d -> Map.merge(d, %{actor: actor, password: password})
+          {:select, key}, d -> Map.merge(d, %{feed: key, version: Map.get(d, :version, 1) + 1})
           _, d -> d
         end
       ),

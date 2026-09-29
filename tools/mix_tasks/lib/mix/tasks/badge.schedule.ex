@@ -10,11 +10,16 @@ defmodule Mix.Tasks.Badge.Schedule do
 
   use Mix.Task
 
+  # Compiled before the badge project and its deps, which it runs alongside.
+  @compile {:no_warn_undefined, [Badge.Page.Schedule, Badge.Schedule]}
+
   @url "https://goatmire.com/schedule.json"
   @out "assets/schedule.json"
 
   @impl Mix.Task
   def run(_args) do
+    Mix.Task.run("compile")
+
     case System.cmd("curl", ["-sSf", "-m", "30", @url], stderr_to_stdout: true) do
       {body, 0} -> keep(body)
       {output, _status} -> Mix.raise("could not fetch #{@url}: #{String.trim(output)}")

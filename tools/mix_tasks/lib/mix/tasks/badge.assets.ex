@@ -9,6 +9,9 @@ defmodule Mix.Tasks.Badge.Assets do
 
   use Mix.Task
 
+  # Compiled before the badge project and its deps, which it runs alongside.
+  @compile {:no_warn_undefined, [:packbeam_api]}
+
   @out "assets.avm"
 
   @impl Mix.Task
