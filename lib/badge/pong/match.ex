@@ -113,8 +113,12 @@ defmodule Badge.Pong.Match do
     flip(%{match | peer_coin: coin}, now)
   end
 
-  # A peer that already flipped sends pings, not hellos; its coin came from its first hello.
+  # A peer that already flipped sends pings, not hellos; use its last-known coin.
   defp from_peer(%{phase: :pairing} = match, :ping, now), do: flip(match, now)
+
+  defp from_peer(%{phase: :pairing} = match, {:hello, coin, 0, name}, _now) do
+    %{match | peer_coin: coin, peer_name: name}
+  end
 
   # A peer searching again (ready 0), or one whose hello coin has changed
   # (its session id, so it reopened), has restarted; so does the match.

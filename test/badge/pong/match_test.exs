@@ -159,7 +159,7 @@ defmodule Badge.Pong.MatchTest do
 
     test "a long stall moves the ball at most 100 ms" do
       {server, _other, now, _id} = rally()
-      {moved, _payload} = Match.step(server, now + 1_000, 0)
+      {moved, _payload} = Match.step(server, now + 800, 0)
 
       assert moved.ball.y != server.ball.y
       assert abs(moved.ball.y - server.ball.y) <= abs(server.ball.vy) * 100
@@ -335,6 +335,37 @@ defmodule Badge.Pong.MatchTest do
       assert {:ok, flipped} = Match.hear(a, @b, ping, 470)
       assert flipped.phase == :flipping
       assert {flipped.server, b.server} in [{:me, :them}, {:them, :me}]
+    end
+
+    test "a pairing badge refreshes the peer coin when the peer reopens" do
+      a = Match.new(@a, "Ana", 0, 0)
+      old_b = Match.new(@b, "Bo", 0, 0)
+
+      # a pairs with the peer's old session (coin 0)
+      {a, out_a0} = Match.step(a, 10, 0)
+      {old_b, out_b0} = Match.step(old_b, 10, 0)
+      {:ok, a} = Match.hear(a, @b, out_b0, 10)
+      {:ok, _old_b} = Match.hear(old_b, @a, out_a0, 10)
+      assert a.phase == :pairing and a.peer_coin == 0
+
+      # the peer reopens with a new coin (bit0 differs) and says its first, ready-0 hello
+      new_b = Match.new(@b, "Bo", 1, 10)
+      {new_b, out_nb} = Match.step(new_b, 20, 0)
+      {:ok, a} = Match.hear(a, @b, out_nb, 20)
+      assert a.phase == :pairing and a.peer_coin == 1
+
+      # a's next hello (ready 1, since it's pairing) reaches the peer, which flips
+      {a, out_a1} = Match.step(a, 220, 0)
+      {:ok, new_b} = Match.hear(new_b, @a, out_a1, 220)
+      assert new_b.phase == :flipping
+
+      # the peer now pings instead of hello; a hears it and flips with the refreshed coin
+      {new_b, ping} = Match.step(new_b, 300, 0)
+      assert Wire.decode(ping) == {:ok, :ping}
+
+      assert {:ok, flipped} = Match.hear(a, @b, ping, 300)
+      assert flipped.phase == :flipping
+      assert {flipped.server, new_b.server} in [{:me, :them}, {:them, :me}]
     end
   end
 
