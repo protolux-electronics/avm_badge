@@ -200,6 +200,35 @@ defmodule Badge.BlueskyTest do
     end
   end
 
+  describe "likes" do
+    test "a logged-in answer says which posts the owner likes" do
+      body =
+        ~s({"feed":[{"post":{"uri":"at://a/p/1","cid":"c1","author":{"handle":"a.b"},) <>
+          ~s("record":{"text":"Hi"},"likeCount":3,"viewer":{"like":"at://me/app.bsky.feed.like/k1"}}},) <>
+          ~s({"post":{"uri":"at://a/p/2","cid":"c2","author":{"handle":"a.b"},"record":{"text":"Yo"},"viewer":{}}}]})
+
+      assert {:ok, [liked, plain]} = Bluesky.parse(body, 38)
+      assert liked.liked == "at://me/app.bsky.feed.like/k1"
+      assert liked.like_uri == "at://me/app.bsky.feed.like/k1"
+      assert liked.cid == "c1"
+      assert Bluesky.liked?(liked)
+      refute Bluesky.liked?(plain)
+    end
+
+    test "showing a like moves the count only when what shows changes" do
+      assert Bluesky.show_like(%{liked: nil, likes: 3}, :pending) == %{liked: :pending, likes: 4}
+
+      assert Bluesky.show_like(%{liked: :pending, likes: 4}, "at://l") == %{
+               liked: "at://l",
+               likes: 4
+             }
+
+      assert Bluesky.show_like(%{liked: "at://l", likes: 4}, nil) == %{liked: nil, likes: 3}
+      assert Bluesky.show_like(%{liked: "at://l", likes: 0}, nil) == %{liked: nil, likes: 0}
+      assert Bluesky.show_like(%{liked: nil, likes: 3}, nil) == %{liked: nil, likes: 3}
+    end
+  end
+
   describe "parse_page/3" do
     test "carries the next page's cursor" do
       assert {:ok, {posts, "2026-09-14T19:47:12.655Z"}} =

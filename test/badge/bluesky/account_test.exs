@@ -177,6 +177,16 @@ defmodule Badge.Bluesky.AccountTest do
       refute Map.has_key?(Account.record("Yes", 0), "reply")
     end
 
+    test "mentions join the tags, in byte order" do
+      mention = %{
+        "index" => %{"byteStart" => 0, "byteEnd" => 4},
+        "features" => [%{"$type" => "app.bsky.richtext.facet#mention", "did" => "did:plc:a"}]
+      }
+
+      assert [%{"index" => %{"byteStart" => 0}}, %{"index" => %{"byteStart" => 5}}] =
+               Account.record("@a.b #tag", 0, nil, [mention])["facets"]
+    end
+
     test "the timestamp pads every field" do
       assert Account.timestamp(0) == "1970-01-01T00:00:00.000Z"
     end

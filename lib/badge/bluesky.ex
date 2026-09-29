@@ -33,6 +33,9 @@ defmodule Badge.Bluesky do
     "cursor",
     "post",
     "uri",
+    "cid",
+    "viewer",
+    "like",
     "reason",
     "$type",
     "author",
@@ -53,6 +56,8 @@ defmodule Badge.Bluesky do
     "post",
     "uri",
     "cid",
+    "viewer",
+    "like",
     "reply",
     "root",
     "author",
@@ -81,6 +86,8 @@ defmodule Badge.Bluesky do
           uri: binary | nil,
           cid: binary | nil,
           root: ref | nil,
+          liked: binary | :pending | nil,
+          like_uri: binary | nil,
           who: binary,
           handle: binary,
           repost: boolean,
@@ -224,6 +231,8 @@ defmodule Badge.Bluesky do
             uri: text(post, "uri"),
             cid: text(post, "cid"),
             root: root(Map.get(record, "reply")),
+            liked: liked(Map.get(post, "viewer")),
+            like_uri: liked(Map.get(post, "viewer")),
             who: Text.cp437(text(author, "displayName") || handle),
             handle: Text.cp437(handle),
             repost: repost,
@@ -238,6 +247,30 @@ defmodule Badge.Bluesky do
   end
 
   defp post_item(_post, _repost, _columns), do: []
+
+  # The owner's like of a post, as its record URI; only a logged-in answer says.
+  defp liked(%{"like" => like}) when is_binary(like), do: like
+  defp liked(_viewer), do: nil
+
+  @doc "Whether the owner likes `post`, or is about to."
+  @spec liked?(post) :: boolean
+  def liked?(post), do: Map.get(post, :liked) != nil
+
+  @doc """
+  `post` shown as liked by `like` (a like's URI, or `:pending` before it has
+  one) or not liked (nil), with the count moved when that changes what shows.
+  """
+  @spec show_like(post, binary | :pending | nil) :: post
+  def show_like(post, like) do
+    likes =
+      case {liked?(post), like != nil} do
+        {same, same} -> post.likes
+        {false, true} -> post.likes + 1
+        {true, false} -> max(post.likes - 1, 0)
+      end
+
+    %{post | liked: like, likes: likes}
+  end
 
   # The root of the thread a post replies in, when it is a reply.
   defp root(%{"root" => %{"uri" => uri, "cid" => cid}}) when is_binary(uri) and is_binary(cid),

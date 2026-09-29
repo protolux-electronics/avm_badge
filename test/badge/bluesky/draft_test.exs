@@ -43,6 +43,11 @@ defmodule Badge.Bluesky.DraftTest do
       assert Draft.rows(typed("abcd"), 4) == {["abcd"], {0, 1}}
     end
 
+    test "rows_at gives each row with where it starts in the text" do
+      assert Draft.rows_at(typed("abcdefg\nhi"), 4) == [{0, "abcd"}, {4, "efg"}, {8, "hi"}]
+      assert Draft.rows_at(typed("ab\n"), 4) == [{0, "ab"}, {3, ""}]
+    end
+
     test "an empty draft is one empty row" do
       assert Draft.rows(Draft.new(), 4) == {[""], {0, 0}}
     end

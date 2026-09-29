@@ -31,10 +31,23 @@ defmodule Badge.Bluesky.Link.State do
   keeping the feed it came from; `close_thread/1` puts that feed back as it
   was, paging and all, without fetching it again.
 
+  `resolve/2` queues a mention's handle to be looked up while the post is
+  typed; `resolved/3` keeps the answer, a DID or `:failed`, which the page
+  colours the handle by and a post links with. At most thirty are kept.
+
+  `like/3` toggles the owner's like of a held post as shown, at once, and
+  marks the post; a marked post whose shown like differs from the server's
+  gets a request, one at a time, until the two agree. `liked/3` takes the
+  answer, and a failure shows the server's like again.
+
+  `reload/1` fetches the feed shown again from its first page.
+
   `more/1` asks for the page after the held posts, appended to them, up to
   50 in all. Once a feed has been paged it is not refreshed until it is
   opened or chosen again, so reading further down never jumps back to the top.
   """
+
+  alias Badge.Bluesky
 
   # How old held posts may be before they are fetched again.
   @stale 5 * 60_000
@@ -66,6 +79,13 @@ defmodule Badge.Bluesky.Link.State do
       check: :none,
       post: :none,
       back: nil,
+      liking: nil,
+      dirty: [],
+      like_at: 0,
+      reload: false,
+      handles: %{},
+      to_resolve: [],
+      resolving: nil,
       reason: nil,
       version: 0,
       at: nil,
@@ -92,12 +112,136 @@ defmodule Badge.Bluesky.Link.State do
       count: tuple_size(state.posts),
       more: more?(state),
       append: state.append,
-      post: posting(state.post)
+      post: posting(state.post),
+      handles: state.handles
     }
   end
 
   defp posting({:queued, _text, _now, _reply}), do: :posting
   defp posting(post), do: post
+
+  @doc """
+  Toggles the owner's like of the held post at `uri` as shown, at once, and
+  marks it for the server, dated `now`. Presses while a request is out are
+  kept, not dropped: whatever shows last is what the server is brought to.
+  Without a password, or for a post not held or lacking its CID, nothing
+  changes.
+  """
+  @spec like(map, binary, integer) :: map
+  def like(%{password: nil} = state, _uri, _now), do: state
+
+  def like(state, uri, now) do
+    case find(state.posts, uri, 0) do
+      nil ->
+        state
+
+      {_index, %{cid: nil}} ->
+        state
+
+      {index, post} ->
+        %{put_post(state, index, flipped(post)) | dirty: mark(state.dirty, uri), like_at: now}
+    end
+  end
+
+  # Showing it liked again reuses a like the server still holds.
+  defp flipped(post) do
+    case Bluesky.liked?(post) do
+      true -> Bluesky.show_like(post, nil)
+      false -> Bluesky.show_like(post, Map.get(post, :like_uri) || :pending)
+    end
+  end
+
+  defp mark(dirty, uri) do
+    case :lists.member(uri, dirty) do
+      true -> dirty
+      false -> dirty ++ [uri]
+    end
+  end
+
+  # The first marked post whose shown like differs from the server's, as a job.
+  defp next_like(%{dirty: []} = state), do: {:none, state}
+
+  defp next_like(%{dirty: [uri | rest]} = state) do
+    state = %{state | dirty: rest}
+
+    case find(state.posts, uri, 0) do
+      nil -> next_like(state)
+      {_index, post} -> like_job(state, post, Bluesky.liked?(post), Map.get(post, :like_uri))
+    end
+  end
+
+  defp like_job(state, post, true, nil),
+    do: {:ok, like_job(state, post, {:like, post.uri, post.cid}), state}
+
+  defp like_job(state, post, false, like) when is_binary(like),
+    do: {:ok, like_job(state, post, {:unlike, like}), state}
+
+  defp like_job(state, _post, _shown, _server), do: next_like(state)
+
+  defp like_job(state, post, action) do
+    %{
+      actor: state.actor,
+      password: state.password,
+      session: state.session,
+      pds: state.pds,
+      action: action,
+      uri: post.uri,
+      now: state.like_at
+    }
+  end
+
+  @doc """
+  Takes what a like process brought back for `job`. The server's like is
+  kept on the post; a press since then marks it again, and a failure puts
+  what shows back to what the server holds.
+  """
+  @spec liked(map, map, {:ok, map} | {:error, term}) :: map
+  def liked(state, job, result) do
+    state = %{state | liking: nil, session: session_after(result, state)}
+
+    case find(state.posts, job.uri, 0) do
+      nil -> state
+      {index, post} -> settle(state, index, post, job.action, result)
+    end
+  end
+
+  defp session_after({:ok, %{session: session}}, _state), do: session
+  defp session_after({:error, _reason}, _state), do: nil
+
+  defp settle(state, index, post, {:like, _uri, _cid}, {:ok, %{like: like}}),
+    do: synced(state, index, %{post | like_uri: like})
+
+  defp settle(state, index, post, {:unlike, _like}, {:ok, _result}),
+    do: synced(state, index, %{post | like_uri: nil})
+
+  defp settle(state, index, post, _action, {:error, _reason}),
+    do: put_post(state, index, Bluesky.show_like(post, post.like_uri))
+
+  # Still shown liked: it shows the server's like. Pressed again since: marked again.
+  defp synced(state, index, post) do
+    case {Bluesky.liked?(post), post.like_uri} do
+      {true, like} when is_binary(like) -> put_post(state, index, %{post | liked: like})
+      {false, nil} -> put_post(state, index, post)
+      _differs -> %{put_post(state, index, post) | dirty: mark(state.dirty, post.uri)}
+    end
+  end
+
+  defp find(posts, _uri, index) when index >= tuple_size(posts), do: nil
+
+  defp find(posts, uri, index) do
+    post = Bluesky.unpack(posts, index)
+
+    case Map.get(post, :uri) == uri do
+      true -> {index, post}
+      false -> find(posts, uri, index + 1)
+    end
+  end
+
+  defp put_post(state, index, post) do
+    posts = :erlang.setelement(index + 1, state.posts, :erlang.term_to_binary(post))
+
+    %{state | posts: posts, version: state.version + 1}
+  end
 
   @doc "The key of the feed shown: the one chosen, else Following, else the account's own."
   @spec shown(map) :: tuple | nil
@@ -127,6 +271,11 @@ defmodule Badge.Bluesky.Link.State do
         paged: false,
         post: :none,
         back: nil,
+        liking: nil,
+        dirty: [],
+        handles: %{},
+        to_resolve: [],
+        resolving: nil,
         reason: nil,
         version: state.version + 1,
         at: nil,
@@ -192,6 +341,29 @@ defmodule Badge.Bluesky.Link.State do
   defp restored(_state, {}), do: :idle
   defp restored(_state, _posts), do: :ready
 
+  # Mentions looked up per session; past this, a handle is left to the post.
+  @max_handles 30
+
+  @doc "Queues `handle` to be looked up, unless it is known, queued, or the cache is full."
+  @spec resolve(map, binary) :: map
+  def resolve(state, handle) do
+    cond do
+      Map.has_key?(state.handles, handle) -> state
+      state.resolving == handle -> state
+      :lists.member(handle, state.to_resolve) -> state
+      map_size(state.handles) + length(state.to_resolve) >= @max_handles -> state
+      true -> %{state | to_resolve: state.to_resolve ++ [handle]}
+    end
+  end
+
+  @doc "Takes what looking up `handle` found: its DID, or `:failed`."
+  @spec resolved(map, binary, {:ok, binary} | {:error, term}) :: map
+  def resolved(state, handle, {:ok, did}),
+    do: %{state | resolving: nil, handles: Map.put(state.handles, handle, {:ok, did})}
+
+  def resolved(state, handle, {:error, _reason}),
+    do: %{state | resolving: nil, handles: Map.put(state.handles, handle, :failed)}
+
   @doc """
   Queues `text` to be posted, dated `now` in epoch seconds, as a reply when
   `reply` names one as `Badge.Bluesky.reply_to/1` does. One post at a time.
@@ -212,7 +384,8 @@ defmodule Badge.Bluesky.Link.State do
       pds: state.pds,
       text: text,
       now: now,
-      reply: reply
+      reply: reply,
+      people: for({handle, {:ok, did}} <- :maps.to_list(state.handles), do: {handle, did})
     }
   end
 
@@ -301,14 +474,27 @@ defmodule Badge.Bluesky.Link.State do
   `Badge.Bluesky.Account.load/3` takes it; `:wait` means there is nothing to
   do yet, or posts fresh enough on hand.
   """
-  @spec load(map, boolean, integer) :: {{:fetch, map} | {:post, map} | :wait, map}
+  @spec load(map, boolean, integer) ::
+          {{:fetch, map} | {:post, map} | {:like, map} | {:resolve, binary} | :wait, map}
   def load(%{want: false} = state, _ready, _now), do: {:wait, state}
   def load(%{actor: nil} = state, _ready, _now), do: {:wait, state}
   def load(%{post: :posting} = state, _ready, _now), do: {:wait, state}
+  def load(%{liking: liking} = state, _ready, _now) when liking != nil, do: {:wait, state}
+  def load(%{resolving: handle} = state, _ready, _now) when handle != nil, do: {:wait, state}
   def load(%{state: :loading} = state, _ready, _now), do: {:wait, state}
 
   def load(%{post: {:queued, _text, _at, _reply}} = state, true, _now),
     do: {{:post, post_job(state)}, %{state | post: :posting}}
+
+  def load(%{to_resolve: [handle | rest]} = state, true, _now),
+    do: {{:resolve, handle}, %{state | resolving: handle, to_resolve: rest}}
+
+  def load(%{dirty: [_ | _]} = state, true, now) do
+    case next_like(state) do
+      {:ok, job, state} -> {{:like, job}, %{state | liking: job}}
+      {:none, state} -> load(state, true, now)
+    end
+  end
 
   def load(%{state: :failed} = state, ready, now) do
     case now - state.at < backoff(state.failures) do
@@ -366,8 +552,8 @@ defmodule Badge.Bluesky.Link.State do
         now
       ) do
     case job.feed == shown(state) do
-      true -> apply_result(state, Map.get(job, :cursor), result, now)
-      false -> keep_login(state, result)
+      true -> reloaded(apply_result(state, Map.get(job, :cursor), result, now))
+      false -> reloaded(keep_login(state, result))
     end
   end
 
@@ -425,6 +611,21 @@ defmodule Badge.Bluesky.Link.State do
 
   defp feeds(nil, held), do: held
   defp feeds(fresh, _held), do: fresh
+
+  @doc """
+  Fetches the feed shown again from its first page, replacing what is held
+  once it lands. A fetch under way finishes first, then this one follows.
+  """
+  @spec reload(map) :: map
+  def reload(%{state: :loading} = state), do: %{state | reload: true}
+
+  def reload(state) do
+    %{state | state: :idle, cursor: nil, append: false, paged: false, failures: 0, reload: false}
+  end
+
+  # A reload asked for while a fetch was out goes now that it has landed.
+  defp reloaded(%{reload: true} = state), do: reload(%{state | reload: false})
+  defp reloaded(state), do: state
 
   @doc "Clears a failure so the next tick fetches at once."
   @spec retry(map) :: map

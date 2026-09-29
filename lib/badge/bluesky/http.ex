@@ -123,19 +123,28 @@ defmodule Badge.Bluesky.Http do
 
       {scheme, host, port} ->
         request = %{method: method, path: path, headers: headers, body: body}
+        :io.format(~c"Bluesky: ~s ~s~s~n", [method, host, path])
 
-        timed(path, fn -> connect(scheme, host, port, request, parser) end)
+        logged(timed(path, fn -> connect(scheme, host, port, request, parser) end))
     end
   catch
-    kind, error -> {:error, {kind, error}}
+    kind, error -> logged({:error, {kind, error}})
   end
+
+  defp logged({:error, reason} = error) do
+    :io.format(~c"Bluesky: request failed ~p~n", [reason])
+
+    error
+  end
+
+  defp logged(result), do: result
 
   defp connect(:https, host, port, request, parser) do
     :ssl.start()
 
     case :ahttp_client.connect(:https, host, port, active: false, verify: :verify_peer) do
       {:ok, conn} -> request(conn, request, parser)
-      {:error, reason} -> {:error, reason}
+      {:error, reason} -> {:error, {:connect, reason}}
     end
   end
 
@@ -151,7 +160,7 @@ defmodule Badge.Bluesky.Http do
 
     case :ahttp_client.request(conn, request.method, request.path, headers, request.body) do
       {:ok, conn, _ref} -> collect(conn, parser, [], nil, 0, @reads)
-      {:error, reason} -> close(conn, {:error, reason})
+      {:error, reason} -> close(conn, {:error, {:send, reason}})
     end
   end
 
@@ -168,7 +177,7 @@ defmodule Badge.Bluesky.Http do
         continue(conn, parser, chunks, status, size, done, left)
 
       {:error, reason} ->
-        close(conn, {:error, reason})
+        close(conn, {:error, {:recv, reason}})
     end
   end
 

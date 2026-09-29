@@ -600,7 +600,7 @@ defmodule Badge.Page.BlueskyTest do
 
       assert Page.shown(thread) == {:thread, "at://a/p/2"}
       assert thread.posts == {}
-      assert row(Page.render(thread), @head_y) == ["Feeds", "Thread", "Post", ""]
+      assert row(Page.render(thread), @head_y) == ["Feeds", "Thread", "Reply", ""]
       assert row(Page.render(thread), @notice_y) == ["Fetching thread"]
     end
 
@@ -665,6 +665,18 @@ defmodule Badge.Page.BlueskyTest do
       assert row(Page.render(sending), 216) == ["Replying..."]
     end
 
+    test "the tab says Reply as soon as a thread opens, and Post once it closes", %{state: state} do
+      assert row(Page.render(state), @head_y) == ["Feeds", "Posts", "Post", "2/2"]
+
+      thread = press(state, {:edit, :newline})
+
+      assert row(Page.render(thread), @head_y) == ["Feeds", "Thread", "Reply", ""]
+
+      back = press(thread, {:nav, :home})
+
+      assert [_feeds, _name, "Post", _place] = row(Page.render(back), @head_y)
+    end
+
     test "writing from a feed is a new post", %{state: state} do
       compose = press(Page.apply_login("pw", state), {:move, :right})
 
@@ -674,6 +686,129 @@ defmodule Badge.Page.BlueskyTest do
 
     test "a post without a URI opens nothing" do
       assert Page.handle_key({:edit, :newline}, shown([post(%{})])) == :ignore
+    end
+  end
+
+  describe "mentions while writing" do
+    setup do
+      state = Page.apply_login("pw", shown([post(%{})], %{post: :none, handles: %{}}))
+
+      %{compose: press(state, {:move, :right})}
+    end
+
+    defp handles(state, handles), do: %{state | status: %{state.status | handles: handles}}
+
+    test "typing looks nothing up and highlights nothing", %{compose: compose} do
+      typed = typing(compose, "Hi @a.b and more")
+
+      assert typed.asked == []
+      assert coloured(Page.render(typed), @top) == [{"Hi @a.b and more", Theme.fg()}]
+      assert press(typed, {:edit, :tab}).asked == []
+    end
+
+    test "unchecked mentions are offered to Down, which checks them all", %{compose: compose} do
+      typed = typing(compose, "Hi @a.b @c.d")
+
+      assert row(Page.render(typed), 216) == ["Down check mentions   Tab post"]
+
+      checked = press(typed, {:move, :down})
+
+      assert checked.asked == ["a.b", "c.d"]
+      assert row(Page.render(checked), 216) == ["Tab post   Enter new line"]
+      assert press(checked, {:move, :down}).asked == ["a.b", "c.d"]
+    end
+
+    test "a checked mention shows how its check went", %{compose: compose} do
+      checked = press(typing(compose, "Hi @a.b @c.d @e.f!"), {:move, :down})
+
+      items = Page.render(handles(checked, %{"a.b" => {:ok, "did:plc:a"}, "c.d" => :failed}))
+
+      assert coloured(items, @top) == [
+               {"Hi ", Theme.fg()},
+               {"@a.b", Theme.select()},
+               {" ", Theme.fg()},
+               {"@c.d", Theme.alert()},
+               {" ", Theme.fg()},
+               {"@e.f", Theme.muted()},
+               {"!", Theme.fg()}
+             ]
+    end
+
+    test "editing a checked handle makes it unchecked again", %{compose: compose} do
+      checked = press(typing(compose, "Hi @a.b"), {:move, :down})
+      edited = typing(checked, "c")
+      items = Page.render(handles(edited, %{"a.b" => {:ok, "did:plc:a"}}))
+
+      assert coloured(items, @top) == [{"Hi @a.bc", Theme.fg()}]
+      assert row(items, 216) == ["Down check mentions   Tab post"]
+    end
+
+    test "a checked mention broken across rows keeps its colour on both", %{compose: compose} do
+      long = press(typing(compose, :binary.copy("x", 36) <> " @a.b"), {:move, :down})
+      items = Page.render(handles(long, %{"a.b" => {:ok, "did:plc:a"}}))
+
+      assert {"@", Theme.select()} in coloured(items, @top)
+      assert {"a.b", Theme.select()} in coloured(items, @top + @pitch)
+    end
+
+    test "a reply offers the check too" do
+      thread =
+        Page.apply_login(
+          "pw",
+          shown([post(%{uri: "at://a", cid: "c", root: nil})], %{
+            post: :none,
+            handles: %{},
+            feed: {:thread, "at://a"}
+          })
+        )
+
+      compose = typing(press(thread, {:move, :right}), "@a.b")
+
+      assert row(Page.render(compose), 216) == ["Down check mentions   Tab reply"]
+    end
+  end
+
+  describe "likes" do
+    test "a liked post shows a heart in the alert colour before its counts" do
+      items = Page.render(shown([post(%{liked: "at://l"})]))
+
+      assert coloured(items, @top + 3 * @pitch) == [
+               {"<3", Theme.alert()},
+               {"42 likes  7 reposts  3 replies", Theme.dim()}
+             ]
+    end
+
+    test "a post not liked has no heart" do
+      assert row(Page.render(shown([post(%{liked: nil})])), @top + 3 * @pitch) == [
+               "42 likes  7 reposts  3 replies"
+             ]
+    end
+
+    test "l toggles the like when logged in, and is left alone otherwise" do
+      state = Page.apply_login("pw", shown([post(%{uri: "at://a"})]))
+
+      assert {:ok, ^state} = Page.handle_key({:char, ?l}, state)
+      assert Page.handle_key({:char, ?l}, shown([post(%{uri: "at://a"})])) == :ignore
+    end
+  end
+
+  describe "reload" do
+    test "r goes back to the top of the feed and asks for it again" do
+      state = press(shown([post(%{}), post(%{}), post(%{})]), {:move, :down})
+
+      assert Page.current(state) == 1
+
+      reloaded = press(state, {:char, ?r})
+
+      assert Page.current(reloaded) == 0
+      assert Page.tab(reloaded) == :posts
+      assert Page.current(press(state, {:char, ?R})) == 0
+    end
+
+    test "r in the composer is typed, not a reload" do
+      compose = press(Page.apply_login("pw", shown([post(%{})], %{post: :none})), {:move, :right})
+
+      assert Draft.text(press(compose, {:char, ?r}).draft) == "r"
     end
   end
 

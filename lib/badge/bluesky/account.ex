@@ -22,6 +22,7 @@ defmodule Badge.Bluesky.Account do
 
   alias Badge.Bluesky
   alias Badge.Bluesky.Http
+  alias Badge.Bluesky.Mention
   alias Badge.Text
 
   @plc "https://plc.directory"
@@ -229,13 +230,13 @@ defmodule Badge.Bluesky.Account do
   Publishes `text` as a new post by the session's account, dated `now` in
   epoch seconds, and answers the new post's URI. Hashtags become facets.
   """
-  @spec create_post(session, binary, integer, map | nil) :: {:ok, binary} | {:error, term}
-  def create_post(session, text, now, reply \\ nil) do
+  @spec create_post(session, binary, integer, map | nil, [map]) :: {:ok, binary} | {:error, term}
+  def create_post(session, text, now, reply \\ nil, mentions \\ []) do
     body =
       json(%{
         "repo" => session.did,
         "collection" => "app.bsky.feed.post",
-        "record" => record(text, now, reply)
+        "record" => record(text, now, reply, mentions)
       })
 
     Http.post(
@@ -247,25 +248,97 @@ defmodule Badge.Bluesky.Account do
     )
   end
 
-  @doc "Logs in if `job` holds no session, then publishes its `:text`. See `load/3`."
+  @doc """
+  Logs in if `job` holds no session, then publishes its `:text`. See `load/3`.
+
+  Each written `@handle` is linked to the DID that exact handle resolves to:
+  from the job's `:people` when it was resolved while typing, else resolved
+  at the AppView now. One that does not resolve stays text.
+  """
   @spec post(map, binary) :: {:ok, map} | {:error, term}
   def post(job, base) do
+    people = Map.get(job, :people, [])
+
+    missing =
+      for handle <- Mention.handles(job.text), not :lists.keymember(handle, 1, people), do: handle
+
+    mentions = Mention.facets(job.text, people ++ resolve_all(base, missing))
+
     with {:ok, session} <- session(job, base),
-         {:ok, uri} <- create_post(session, job.text, job.now, Map.get(job, :reply)) do
+         {:ok, uri} <- create_post(session, job.text, job.now, Map.get(job, :reply), mentions) do
       {:ok, %{uri: uri, session: session}}
     end
+  end
+
+  @doc "The DID `handle` resolves to at the AppView, exactly as written."
+  @spec resolve_handle(binary, binary) :: {:ok, binary} | {:error, term}
+  def resolve_handle(base, handle), do: resolve(base, handle)
+
+  defp resolve_all(base, handles) do
+    for handle <- handles, {:ok, did} <- [resolve(base, handle)], do: {handle, did}
+  end
+
+  @doc """
+  Likes or unlikes a post, logging in if `job` holds no session. `job.action`
+  is `{:like, uri, cid}` or `{:unlike, like_uri}`; the answer carries the new
+  like's URI, or nil after an unlike.
+  """
+  @spec like(map, binary) :: {:ok, %{like: binary | nil, session: session}} | {:error, term}
+  def like(job, base) do
+    with {:ok, session} <- session(job, base),
+         {:ok, like} <- like_action(session, job.action, job.now) do
+      {:ok, %{like: like, session: session}}
+    end
+  end
+
+  defp like_action(session, {:like, uri, cid}, now) do
+    record = %{
+      "$type" => "app.bsky.feed.like",
+      "subject" => %{"uri" => uri, "cid" => cid},
+      "createdAt" => timestamp(now)
+    }
+
+    body =
+      json(%{"repo" => session.did, "collection" => "app.bsky.feed.like", "record" => record})
+
+    Http.post(
+      session.pds,
+      "/xrpc/com.atproto.repo.createRecord",
+      [Http.bearer(session.access)],
+      body,
+      &parse_created/1
+    )
+  end
+
+  defp like_action(session, {:unlike, like}, _now) do
+    body =
+      json(%{"repo" => session.did, "collection" => "app.bsky.feed.like", "rkey" => rkey(like)})
+
+    Http.post(
+      session.pds,
+      "/xrpc/com.atproto.repo.deleteRecord",
+      [Http.bearer(session.access)],
+      body,
+      fn _body -> {:ok, nil} end
+    )
   end
 
   @doc """
   The record a post is written as; with `reply`, as
   `Badge.Bluesky.reply_to/1` gives it, a reply in that thread.
   """
-  @spec record(binary, integer, map | nil) :: map
-  def record(text, now, reply \\ nil) do
+  @spec record(binary, integer, map | nil, [map]) :: map
+  def record(text, now, reply \\ nil, mentions \\ []) do
     %{"$type" => "app.bsky.feed.post", "text" => text, "createdAt" => timestamp(now)}
-    |> with_facets(facets(text))
+    |> with_facets(by_start(facets(text) ++ mentions))
     |> with_reply(reply)
   end
+
+  defp by_start(facets) do
+    :lists.sort(fn a, b -> start(a) <= start(b) end, facets)
+  end
+
+  defp start(facet), do: Map.get(Map.get(facet, "index"), "byteStart")
 
   defp with_facets(record, []), do: record
   defp with_facets(record, facets), do: Map.put(record, "facets", facets)

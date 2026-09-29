@@ -88,7 +88,8 @@ defmodule Badge.Sim.Fakes do
               count: 3,
               more: false,
               append: false,
-              post: Map.get(d, :post, :none)
+              post: Map.get(d, :post, :none),
+              handles: Map.get(d, :handles, %{})
             }
 
           :posts, _ ->
@@ -101,6 +102,16 @@ defmodule Badge.Sim.Fakes do
         fn
           {:open, actor, password}, d ->
             Map.merge(d, %{actor: actor, password: password})
+
+          {:like, _uri}, d ->
+            d
+
+          :reload, d ->
+            Map.put(d, :version, Map.get(d, :version, 1) + 1)
+
+          {:resolve, handle}, d ->
+            found = if handle == "nobody.invalid", do: :failed, else: {:ok, "did:plc:sim"}
+            Map.put(d, :handles, Map.put(Map.get(d, :handles, %{}), handle, found))
 
           {:post, _text, _reply}, d ->
             Map.put(d, :post, {:ok, "at://did:plc:sim/app.bsky.feed.post/sim"})

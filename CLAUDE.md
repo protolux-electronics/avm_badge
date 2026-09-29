@@ -127,8 +127,8 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   `Badge.Skin.Dark` unless they call `Badge.Skin.activate/1`
 - Monochrome icons are `.mask` files baked once per colour in
   `Badge.Icons.tints/0`; a skin's `glyph/0` picks one, and a new glyph colour
-  must be added to that list or the icon draws nothing. Masks above 32x32 are
-  kept as masks and baked on first draw, cached in the drawing process's
+  must be added to that list or the icon draws nothing. Every mask is kept as
+  a mask and baked on first draw, cached in the drawing process's
   dictionary, since each baked tint costs 4 bytes a pixel of flash
 
 ## Pages
@@ -265,6 +265,28 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   second Tab to confirm. Opened from a thread it is the Reply tab, answering
   the post at the top: thread answers decode `cid` and `record.reply.root`
   for that, feed answers do not
+- `r` on the posts tab fetches the feed or thread shown again from its
+  first page and puts the cursor at the top; asked during a fetch, it
+  follows once that lands
+- `l` toggles the owner's like of the post at the top. A post keeps what
+  shows (`liked`) apart from what the server holds (`like_uri`); a press
+  flips only what shows, and the link sends `createRecord`/`deleteRecord`
+  one at a time until the two agree. **Never drop a press while a request
+  is out** — requests can stall 30 s, and dropped presses read as "behind
+  by one". A failure shows the server's state again. Whether a post is liked comes from
+  `viewer.like`, only in logged-in answers; a liked post shows `<3` in
+  `Theme.alert()`
+- Mentions: no suggestions, no search, nothing looked up or highlighted
+  while typing. Down checks every unchecked `@handle` (one with a dot) with
+  `resolveHandle`; the link keeps up to 30 answers per session. A checked
+  mention shows muted while checking, `Theme.alert()` when not found,
+  `Theme.select()` when found. A post links only the DID its exact handle
+  resolved to, and looks up at post time only what was never checked.
+  **Do not preload follows or search**: 50 follows are 33 KB with profiles,
+  and one page took internal RAM from 13K to 8K and hung the next handshake
+- **`ssl.erl` retried `want_write` at once, never yielding**, so with
+  internal RAM short a handshake spun until the task watchdog fired. The
+  fork's copy waits a tick; it lives in `boot.avm`, not the VM image
 - **Decode JSON with `:cjson.decode/1`, not `:json`.** The VM's `json.erl`
   runs at ~7 ms a byte, so a 30 kB feed takes minutes and starves the task
   watchdog. `cjson` is a native in the fork (`avm_builtins/cjson_nif.c`) with

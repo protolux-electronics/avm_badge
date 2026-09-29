@@ -64,9 +64,21 @@ defmodule Badge.Bluesky.Link do
   @spec close_thread() :: :ok
   def close_thread, do: GenServer.cast(__MODULE__, :close_thread)
 
+  @doc "Looks up a mention's `handle` while the post is typed. See `status/0`'s `handles`."
+  @spec resolve(binary) :: :ok
+  def resolve(handle), do: GenServer.cast(__MODULE__, {:resolve, handle})
+
+  @doc "Toggles the owner's like of the held post at `uri`."
+  @spec like(binary) :: :ok
+  def like(uri), do: GenServer.cast(__MODULE__, {:like, uri})
+
   @doc "Fetches the page after the held posts, when there is one."
   @spec more() :: :ok
   def more, do: GenServer.cast(__MODULE__, :more)
+
+  @doc "Fetches the feed or thread shown again, from the top."
+  @spec reload() :: :ok
+  def reload, do: GenServer.cast(__MODULE__, :reload)
 
   @doc "Drops a failure so the next tick fetches again."
   @spec retry() :: :ok
@@ -105,7 +117,14 @@ defmodule Badge.Bluesky.Link do
   def handle_cast({:select, key}, state), do: {:noreply, State.select(state, key)}
   def handle_cast(:close, state), do: {:noreply, State.close(state)}
   def handle_cast(:retry, state), do: {:noreply, State.retry(state)}
+  def handle_cast(:reload, state), do: {:noreply, State.reload(state)}
   def handle_cast(:more, state), do: {:noreply, State.more(state)}
+
+  def handle_cast({:resolve, handle}, state), do: {:noreply, State.resolve(state, handle)}
+
+  def handle_cast({:like, uri}, state),
+    do: {:noreply, State.like(state, uri, :erlang.system_time(:second))}
+
   def handle_cast({:open_thread, uri}, state), do: {:noreply, State.open_thread(state, uri)}
   def handle_cast(:close_thread, state), do: {:noreply, State.close_thread(state)}
 
@@ -128,6 +147,8 @@ defmodule Badge.Bluesky.Link do
     case State.load(state, ready?(), :erlang.monotonic_time(:millisecond)) do
       {{:fetch, job}, state} -> {:noreply, start_fetch(state, job)}
       {{:post, job}, state} -> {:noreply, start_post(state, job)}
+      {{:like, job}, state} -> {:noreply, start_like(state, job)}
+      {{:resolve, handle}, state} -> {:noreply, start_resolve(state, handle)}
       {:wait, state} -> {:noreply, state}
     end
   end
@@ -136,6 +157,18 @@ defmodule Badge.Bluesky.Link do
     report(job, result)
 
     {:noreply, State.fetched(state, job, result, :erlang.monotonic_time(:millisecond))}
+  end
+
+  def handle_info({:resolved, handle, result}, state) do
+    :io.format(~c"Bluesky: @~s resolved ~p~n", [handle, result])
+
+    {:noreply, State.resolved(state, handle, result)}
+  end
+
+  def handle_info({:liked, job, result}, state) do
+    report_like(job, result)
+
+    {:noreply, State.liked(state, job, result)}
   end
 
   def handle_info({:posted, job, result}, state) do
@@ -203,6 +236,30 @@ defmodule Badge.Bluesky.Link do
 
     state
   end
+
+  defp start_resolve(state, handle) do
+    link = self()
+    base = state.base
+
+    spawn(fn -> send(link, {:resolved, handle, Account.resolve_handle(base, handle)}) end)
+
+    state
+  end
+
+  defp start_like(state, job) do
+    link = self()
+    base = state.base
+
+    spawn(fn -> send(link, {:liked, job, Account.like(job, base)}) end)
+
+    state
+  end
+
+  defp report_like(job, {:ok, _result}),
+    do: :io.format(~c"Bluesky: ~p done for ~s~n", [elem(job.action, 0), job.uri])
+
+  defp report_like(job, {:error, reason}),
+    do: :io.format(~c"Bluesky: ~p failed ~p~n", [elem(job.action, 0), reason])
 
   defp report_post({:ok, %{uri: uri}}), do: :io.format(~c"Bluesky: posted ~s~n", [uri])
   defp report_post({:error, reason}), do: :io.format(~c"Bluesky: post failed ~p~n", [reason])

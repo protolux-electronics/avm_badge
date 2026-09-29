@@ -279,7 +279,8 @@ defmodule Badge.Bluesky.Link.StateTest do
                pds: nil,
                text: "Hello",
                now: 100,
-               reply: nil
+               reply: nil,
+               people: []
              }
 
       assert posting.post == :posting
@@ -373,6 +374,218 @@ defmodule Badge.Bluesky.Link.StateTest do
 
     test "outside a thread, closing does nothing" do
       assert State.close_thread(ready(0)) == ready(0)
+    end
+  end
+
+  describe "likes" do
+    defp post_entry(uri, like, likes),
+      do: :erlang.term_to_binary(%{uri: uri, cid: "c", liked: like, like_uri: like, likes: likes})
+
+    defp holding(posts), do: %{logged_in(0) | posts: :erlang.list_to_tuple(posts)}
+
+    defp held(state, index), do: :erlang.binary_to_term(elem(state.posts, index))
+
+    defp shown(state, index) do
+      post = held(state, index)
+      {post.liked != nil, post.likes}
+    end
+
+    # Runs the next like request to the end, answering it as the server would.
+    defp respond(state, result \\ :ok) do
+      {{:like, job}, sending} = State.load(state, true, 1)
+
+      reply =
+        case {result, job.action} do
+          {:ok, {:like, _uri, _cid}} ->
+            {:ok, %{like: "at://l" <> :erlang.integer_to_binary(job.now), session: @session}}
+
+          {:ok, {:unlike, _like}} ->
+            {:ok, %{like: nil, session: @session}}
+
+          {:error, _action} ->
+            {:error, :closed}
+        end
+
+      {job, State.liked(sending, job, reply)}
+    end
+
+    defp requests?(state), do: match?({{:like, _job}, _state}, State.load(state, true, 1))
+
+    test "a like shows at once, goes out, and keeps the server's like" do
+      state = State.like(holding([post_entry("at://a", nil, 3)]), "at://a", 100)
+
+      assert shown(state, 0) == {true, 4}
+      assert State.status(state).version > State.status(logged_in(0)).version
+
+      {job, done} = respond(state)
+
+      assert job.action == {:like, "at://a", "c"}
+      assert job.now == 100
+      assert held(done, 0).like_uri == "at://l100"
+      assert held(done, 0).liked == "at://l100"
+      refute requests?(done)
+    end
+
+    test "a post liked before is unliked with one press" do
+      state = State.like(holding([post_entry("at://a", "at://old", 4)]), "at://a", 100)
+
+      assert shown(state, 0) == {false, 3}
+
+      {job, done} = respond(state)
+
+      assert job.action == {:unlike, "at://old"}
+      assert held(done, 0).like_uri == nil
+      assert shown(done, 0) == {false, 3}
+    end
+
+    test "presses while a request is out are kept, and the server follows the last" do
+      state = State.like(holding([post_entry("at://a", nil, 3)]), "at://a", 1)
+      {{:like, job}, sending} = State.load(state, true, 1)
+
+      pressed = State.like(sending, "at://a", 2)
+
+      assert shown(pressed, 0) == {false, 3}
+
+      landed = State.liked(pressed, job, {:ok, %{like: "at://l1", session: @session}})
+
+      assert shown(landed, 0) == {false, 3}
+
+      {again, done} = respond(landed)
+
+      assert again.action == {:unlike, "at://l1"}
+      assert shown(done, 0) == {false, 3}
+      assert held(done, 0).like_uri == nil
+    end
+
+    test "pressing twice before anything goes out sends nothing" do
+      state =
+        holding([post_entry("at://a", nil, 3)])
+        |> State.like("at://a", 1)
+        |> State.like("at://a", 2)
+
+      assert shown(state, 0) == {false, 3}
+      refute requests?(state)
+    end
+
+    test "presses on other posts wait their turn" do
+      state = holding([post_entry("at://a", nil, 3), post_entry("at://b", nil, 5)])
+      {{:like, _first}, sending} = State.load(State.like(state, "at://a", 1), true, 1)
+      both = State.like(sending, "at://b", 2)
+
+      assert shown(both, 1) == {true, 6}
+      assert State.load(both, true, 2) == {:wait, both}
+    end
+
+    test "a failure shows what the server holds again" do
+      {_job, failed} =
+        respond(State.like(holding([post_entry("at://a", nil, 3)]), "at://a", 1), :error)
+
+      assert shown(failed, 0) == {false, 3}
+      assert failed.session == nil
+
+      {_job, kept} =
+        respond(State.like(holding([post_entry("at://a", "at://old", 4)]), "at://a", 1), :error)
+
+      assert shown(kept, 0) == {true, 4}
+      assert held(kept, 0).liked == "at://old"
+    end
+
+    test "liking again what the server still holds needs no request" do
+      state =
+        holding([post_entry("at://a", "at://old", 4)])
+        |> State.like("at://a", 1)
+        |> State.like("at://a", 2)
+
+      assert held(state, 0).liked == "at://old"
+      assert shown(state, 0) == {true, 4}
+      refute requests?(state)
+    end
+
+    test "nothing changes logged out, for a post not held, or one without a CID" do
+      assert State.like(ready(0), "at://a", 1) == ready(0)
+      assert State.like(holding([post_entry("at://a", nil, 3)]), "at://b", 1).dirty == []
+
+      no_cid = %{
+        logged_in(0)
+        | posts:
+            {:erlang.term_to_binary(%{
+               uri: "at://a",
+               cid: nil,
+               liked: nil,
+               like_uri: nil,
+               likes: 0
+             })}
+      }
+
+      assert State.like(no_cid, "at://a", 1) == no_cid
+    end
+  end
+
+  describe "resolving mentions" do
+    test "a handle is queued, looked up one at a time, and kept" do
+      state = logged_in(0) |> State.resolve("a.b") |> State.resolve("c.d") |> State.resolve("a.b")
+
+      assert state.to_resolve == ["a.b", "c.d"]
+      assert {{:resolve, "a.b"}, looking} = State.load(state, true, 1)
+      assert State.load(looking, true, 2) == {:wait, looking}
+
+      found = State.resolved(looking, "a.b", {:ok, "did:plc:a"})
+
+      assert State.status(found).handles == %{"a.b" => {:ok, "did:plc:a"}}
+      assert {{:resolve, "c.d"}, looking} = State.load(found, true, 3)
+
+      missed = State.resolved(looking, "c.d", {:error, {:http, 400, "InvalidRequest"}})
+
+      assert State.status(missed).handles["c.d"] == :failed
+      assert State.resolve(missed, "c.d") == missed
+    end
+
+    test "a post links what was found while typing" do
+      found = State.resolved(%{logged_in(0) | resolving: "a.b"}, "a.b", {:ok, "did:plc:a"})
+
+      assert {{:post, %{people: [{"a.b", "did:plc:a"}]}}, _} =
+               State.load(State.post(found, "Hi @a.b", 1), true, 1)
+    end
+
+    test "the cache stops at thirty" do
+      full = %{logged_in(0) | handles: Map.new(1..30, &{"h#{&1}.x", :failed})}
+
+      assert State.resolve(full, "new.x") == full
+    end
+  end
+
+  describe "reload/1" do
+    test "fetches the feed shown again from its first page, keeping its posts meanwhile" do
+      {{:fetch, job}, loading} = State.load(State.more(first_page_of_list()), true, 1)
+      paged = State.fetched(loading, job, paged_answer({<<9>>}, "c2"), 2)
+      reloading = State.reload(paged)
+
+      assert reloading.posts == paged.posts
+      assert {{:fetch, %{feed: @hot, cursor: nil}}, fetching} = State.load(reloading, true, 3)
+
+      fresh = State.fetched(fetching, State.job(fetching), paged_answer(@posts, "c9"), 4)
+
+      assert fresh.posts == @posts
+      refute fresh.paged
+    end
+
+    test "asked for during a fetch, it follows once that lands" do
+      {{:fetch, job}, loading} = State.load(State.more(first_page_of_list()), true, 1)
+      asked = State.reload(loading)
+
+      assert State.load(asked, true, 2) == {:wait, asked}
+
+      landed = State.fetched(asked, job, paged_answer({<<9>>}, "c2"), 3)
+
+      assert {{:fetch, %{cursor: nil}}, _} = State.load(landed, true, 4)
+    end
+
+    test "works in a thread too" do
+      {{:fetch, job}, loading} = State.load(State.open_thread(ready(0), "at://t"), true, 1)
+      thread = State.fetched(loading, job, answer(), 2)
+
+      assert {{:fetch, %{feed: {:thread, "at://t"}}}, _} =
+               State.load(State.reload(thread), true, 3)
     end
   end
 

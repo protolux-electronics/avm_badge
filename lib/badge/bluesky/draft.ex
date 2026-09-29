@@ -66,6 +66,26 @@ defmodule Badge.Bluesky.Draft do
     ]
   end
 
+  @doc "The rows `rows/2` gives, each with the byte offset in `text/1` it starts at."
+  @spec rows_at(map, pos_integer) :: [{non_neg_integer, binary}]
+  def rows_at(draft, columns) do
+    at(:binary.split(text(draft), "\n", [:global]), 0, columns, [])
+  end
+
+  defp at([], _offset, _columns, acc), do: :lists.reverse(acc)
+
+  defp at([line | rest], offset, columns, acc),
+    do: at(rest, offset + byte_size(line) + 1, columns, cut_at(line, offset, columns, acc))
+
+  defp cut_at(line, offset, columns, acc) when byte_size(line) <= columns,
+    do: [{offset, line} | acc]
+
+  defp cut_at(line, offset, columns, acc) do
+    rest = :binary.part(line, columns, byte_size(line) - columns)
+
+    cut_at(rest, offset + columns, columns, [{offset, :binary.part(line, 0, columns)} | acc])
+  end
+
   # A full last row puts the cursor at the start of the next.
   defp cursor(rows, columns) do
     last = :lists.last(rows)

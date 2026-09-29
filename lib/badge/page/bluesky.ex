@@ -12,6 +12,9 @@ defmodule Badge.Page.Bluesky do
   one, Enter shows it. Posts run down the panel newest first, each as who
   wrote it and how long ago, the text, and the counts under it; Up and Down
   move the post at the top, and Down on the last post fetches the next page.
+  `r` fetches the feed or thread again and goes back to its top. `l` likes
+  the post at the top, or takes the like back; a liked post shows a
+  `<3` in the skin's alert colour before its counts.
 
   Enter on the post at the top opens its thread: the post, then its direct
   replies, loaded as the feed `{:thread, uri}`. Enter on a reply opens that
@@ -34,6 +37,7 @@ defmodule Badge.Page.Bluesky do
   alias Badge.Bluesky.Account
   alias Badge.Bluesky.Draft
   alias Badge.Bluesky.Link
+  alias Badge.Bluesky.Mention
   alias Badge.Nvs
   alias Badge.Profile
   alias Badge.Readout
@@ -75,6 +79,7 @@ defmodule Badge.Page.Bluesky do
     tab: "Post",
     prompt: "Type a post",
     hint: "Tab post   Enter new line",
+    check: "Down check mentions   Tab post",
     confirm: "Tab again to post, any key edits",
     sending: "Posting...",
     sent: "Posted",
@@ -85,6 +90,7 @@ defmodule Badge.Page.Bluesky do
     tab: "Reply",
     prompt: "Reply to ",
     hint: "Tab reply   Enter new line",
+    check: "Down check mentions   Tab reply",
     confirm: "Tab again to reply, any key edits",
     sending: "Replying...",
     sent: "Replied",
@@ -94,6 +100,8 @@ defmodule Badge.Page.Bluesky do
   @own_tab "Posts"
   @thread_tab "Thread"
   @repost "repost: "
+
+  @heart "<3"
 
   @impl true
   def title, do: "Bluesky"
@@ -125,6 +133,7 @@ defmodule Badge.Page.Bluesky do
       draft: Draft.new(),
       stage: :editing,
       back_cursor: 0,
+      asked: [],
       reply_to: nil,
       now: nil
     }
@@ -267,6 +276,19 @@ defmodule Badge.Page.Bluesky do
     {:ok, %{state | status: Map.merge(status, %{state: :loading, append: true})}}
   end
 
+  def handle_key({:char, char}, %{tab: :posts} = state) when char == ?r or char == ?R do
+    Link.reload()
+
+    {:ok, %{state | cursor: 0}}
+  end
+
+  def handle_key({:char, char}, %{tab: :posts, posts: posts, password: password} = state)
+      when (char == ?l or char == ?L) and posts != {} and password != nil do
+    Link.like(Map.get(Bluesky.unpack(posts, state.cursor), :uri))
+
+    {:ok, state}
+  end
+
   def handle_key({:edit, :newline}, %{tab: :posts, posts: posts} = state) when posts != {},
     do: open_thread(state, Map.get(Bluesky.unpack(posts, state.cursor), :uri))
 
@@ -292,6 +314,10 @@ defmodule Badge.Page.Bluesky do
 
   defp words(%{reply_to: nil}), do: @post_words
   defp words(_state), do: @reply_words
+
+  # On the composer, what it will send; elsewhere, what it would: a reply in a thread.
+  defp compose_tab(%{tab: :compose} = state), do: words(state).tab
+  defp compose_tab(state), do: if(thread?(state), do: @reply_words.tab, else: @post_words.tab)
 
   # Esc outside a thread is the router's; Left is the Feeds tab.
   defp left_of_posts({:move, :left}, state), do: {:ok, %{state | tab: :feeds}}
@@ -371,6 +397,10 @@ defmodule Badge.Page.Bluesky do
     end
   end
 
+  # Down checks every mention not checked yet; nothing is looked up while typing.
+  defp compose_key({:move, :down}, state),
+    do: {:ok, ask(state, Mention.handles(Draft.text(state.draft)))}
+
   defp compose_key({:char, char}, state),
     do: {:ok, edited(state, Draft.insert(state.draft, char))}
 
@@ -385,6 +415,15 @@ defmodule Badge.Page.Bluesky do
 
   # Typing after a post landed or failed starts editing again.
   defp edited(state, draft), do: %{state | draft: draft, stage: :editing}
+
+  # A handle is asked for once a session.
+  defp ask(state, handles) do
+    new = for handle <- handles, not :lists.member(handle, state.asked), do: handle
+
+    for handle <- new, do: Link.resolve(handle)
+
+    %{state | asked: state.asked ++ new}
+  end
 
   # The feed already shown just turns back to it; another is asked for and waited on.
   defp choose(state, _key, true), do: %{state | tab: :posts}
@@ -434,7 +473,7 @@ defmodule Badge.Page.Bluesky do
   # Feeds, the name of the feed shown, then Post; the active tab lit, and where it stands.
   defp head(state) do
     place = place(state)
-    tab = words(state).tab
+    tab = compose_tab(state)
     room = @columns - byte_size(@feeds_tab) - 2 - byte_size(tab) - 2 - byte_size(place) - 1
     name = clip(feed_name(state), room)
     second = @margin + (byte_size(@feeds_tab) + 2) * @char_w
@@ -499,10 +538,10 @@ defmodule Badge.Page.Bluesky do
   defp compose_items(state) do
     {rows, {column, row}} = Draft.rows(state.draft, @columns)
     first = max(row - @compose_rows + 1, 0)
-    visible = :lists.nthtail(min(first, length(rows)), rows)
+    placed = :lists.nthtail(min(first, length(rows)), Draft.rows_at(state.draft, @columns))
 
     [cursor(column, row - first)] ++
-      prompt(state) ++ draft_rows(visible, state.draft, @top, []) ++ compose_hint(state)
+      prompt(state) ++ draft_rows(placed, state, @top, []) ++ compose_hint(state)
   end
 
   defp cursor(column, row) do
@@ -511,12 +550,64 @@ defmodule Badge.Page.Bluesky do
     {:rect, x, @top + row * @pitch + 14, @char_w, 2, Theme.fg()}
   end
 
-  defp draft_rows(_rows, %{count: 0}, _y, _acc), do: []
-  defp draft_rows([], _draft, _y, acc), do: :lists.reverse(acc)
-  defp draft_rows([<<>> | rest], draft, y, acc), do: draft_rows(rest, draft, y + @pitch, acc)
+  defp draft_rows(_rows, %{draft: %{count: 0}}, _y, _acc), do: []
 
-  defp draft_rows([line | rest], draft, y, acc),
-    do: draft_rows(rest, draft, y + @pitch, [left(y, Theme.fg(), line) | acc])
+  defp draft_rows(rows, state, y, acc) do
+    spans =
+      spans(Draft.text(state.draft), state.asked, Map.get(state.status || %{}, :handles, %{}))
+
+    placed_rows(rows, spans, y, acc)
+  end
+
+  defp placed_rows([], _spans, _y, acc), do: :lists.reverse(acc)
+
+  defp placed_rows([{offset, line} | rest], spans, y, acc) do
+    stop = offset + byte_size(line)
+
+    placed_rows(rest, spans, y + @pitch, pieces(offset, stop, offset, line, y, spans, acc))
+  end
+
+  # Only checked mentions are coloured: found, not found, or still checking.
+  defp spans(text, asked, handles) do
+    for {handle, start, stop} <- Mention.written(text),
+        key = Mention.key(handle),
+        :lists.member(key, asked) do
+      {start, stop, mention_colour(Map.get(handles, key))}
+    end
+  end
+
+  defp mention_colour({:ok, _did}), do: Theme.select()
+  defp mention_colour(:failed), do: Theme.alert()
+  defp mention_colour(_checking), do: Theme.muted()
+
+  # One row cut into plain text and mention spans, each drawn in its colour.
+  defp pieces(pos, stop, _offset, _line, _y, _spans, acc) when pos >= stop, do: acc
+
+  defp pieces(pos, stop, offset, line, y, [{_start, span_end, _colour} | rest], acc)
+       when span_end <= pos,
+       do: pieces(pos, stop, offset, line, y, rest, acc)
+
+  defp pieces(pos, stop, offset, line, y, [{start, span_end, colour} | _rest] = spans, acc)
+       when start <= pos do
+    to = min(span_end, stop)
+
+    pieces(to, stop, offset, line, y, spans, [piece(pos, to, offset, line, y, colour) | acc])
+  end
+
+  defp pieces(pos, stop, offset, line, y, [{start, _end, _colour} | _rest] = spans, acc) do
+    to = min(start, stop)
+
+    pieces(to, stop, offset, line, y, spans, [piece(pos, to, offset, line, y, Theme.fg()) | acc])
+  end
+
+  defp pieces(pos, stop, offset, line, y, [], acc),
+    do: [piece(pos, stop, offset, line, y, Theme.fg()) | acc]
+
+  defp piece(from, to, offset, line, y, colour) do
+    text = :binary.part(line, from - offset, to - from)
+
+    {:text, @margin + (from - offset) * @char_w, y, :default16px, colour, Theme.bg(), text}
+  end
 
   # An empty draft says what it will be: a post, or a reply and to whom.
   defp prompt(%{draft: %{count: 0}} = state),
@@ -527,7 +618,18 @@ defmodule Badge.Page.Bluesky do
   defp prompt_text(%{reply_to: nil}), do: @post_words.prompt
   defp prompt_text(%{reply_to: %{who: who}}), do: @reply_words.prompt <> who
 
+  defp compose_hint(%{stage: :editing} = state) do
+    case unchecked?(state) do
+      true -> [left(@hint_y, Theme.dim(), words(state).check)]
+      false -> [hint_item(:editing, words(state))]
+    end
+  end
+
   defp compose_hint(state), do: [hint_item(state.stage, words(state))]
+
+  defp unchecked?(state) do
+    :lists.any(&(not :lists.member(&1, state.asked)), Mention.handles(Draft.text(state.draft)))
+  end
 
   defp hint_item(:editing, words), do: left(@hint_y, Theme.dim(), words.hint)
   defp hint_item(:confirm, words), do: left(@hint_y, Theme.select(), words.confirm)
@@ -626,11 +728,13 @@ defmodule Badge.Page.Bluesky do
 
   # Header, text, counts and a blank row, as many as fit; items come back reversed.
   defp post_items(post, now, y, rows) do
-    lines = [header(post, now)] ++ body(post) ++ [{Theme.dim(), Bluesky.counts(post)}]
+    lines = [header(post, now)] ++ body(post) ++ [counts(post)]
     shown = :lists.sublist(lines, rows)
 
     {lines_items(shown, y, []), min(length(shown) + 1, rows)}
   end
+
+  defp counts(post), do: {:counts, Bluesky.liked?(post), Bluesky.counts(post)}
 
   defp header(post, now) do
     age = Bluesky.age(post.created, now)
@@ -652,6 +756,17 @@ defmodule Badge.Page.Bluesky do
       {:text, @margin, y, :default16px, Theme.accent(), Theme.bg(), who} | acc
     ])
   end
+
+  defp lines_items([{:counts, true, text} | rest], y, acc) do
+    lines_items(rest, y + @pitch, [
+      {:text, @margin + (byte_size(@heart) + 1) * @char_w, y, :default16px, Theme.dim(),
+       Theme.bg(), clip(text, @columns - byte_size(@heart) - 1)},
+      {:text, @margin, y, :default16px, Theme.alert(), Theme.bg(), @heart} | acc
+    ])
+  end
+
+  defp lines_items([{:counts, false, text} | rest], y, acc),
+    do: lines_items([{Theme.dim(), text} | rest], y, acc)
 
   defp lines_items([{colour, text} | rest], y, acc) do
     lines_items(rest, y + @pitch, [
