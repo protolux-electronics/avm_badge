@@ -18,6 +18,14 @@ defmodule Badge.Bluesky.Link.State do
 
   `pds` is the account's PDS when it is provisioned; nil lets the login try
   `Badge.Bluesky.Account.default_pds/0` and look it up from there.
+
+  `check/1` and `checked/2` follow a login check from the settings: `:none`,
+  `:checking`, then `{:ok, pds}` or `{:error, reason}`. A PDS found this way
+  is the one later logins go to.
+
+  `more/1` asks for the page after the held posts, appended to them, up to
+  50 in all. Once a feed has been paged it is not refreshed until it is
+  opened or chosen again, so reading further down never jumps back to the top.
   """
 
   # How old held posts may be before they are fetched again.
@@ -26,6 +34,9 @@ defmodule Badge.Bluesky.Link.State do
   # How long the first failure stands; each one after doubles it, to a cap.
   @retry 30_000
   @max_retry 10 * 60_000
+
+  # How many posts paging may hold in all.
+  @max_posts 50
 
   @doc "A link that wants nothing and holds nothing."
   @spec new(binary, binary | nil) :: map
@@ -41,6 +52,10 @@ defmodule Badge.Bluesky.Link.State do
       feed: nil,
       posts: {},
       feeds: {},
+      cursor: nil,
+      append: false,
+      paged: false,
+      check: :none,
       reason: nil,
       version: 0,
       at: nil,
@@ -50,8 +65,9 @@ defmodule Badge.Bluesky.Link.State do
 
   @doc """
   What a page reads each tick. `count` is how many posts `posts/0` holds,
-  `feed` the key of the feed they came from, and `account` whether a password
-  was given, so the saved feeds can be.
+  `feed` the key of the feed they came from, `account` whether a password
+  was given, so the saved feeds can be, `more` whether `more/1` would find
+  another page, and `append` whether one is asked for.
   """
   @spec status(map) :: map
   def status(state) do
@@ -62,7 +78,9 @@ defmodule Badge.Bluesky.Link.State do
       feed: shown(state),
       reason: state.reason,
       version: state.version,
-      count: tuple_size(state.posts)
+      count: tuple_size(state.posts),
+      more: more?(state),
+      append: state.append
     }
   end
 
@@ -89,6 +107,9 @@ defmodule Badge.Bluesky.Link.State do
         feed: nil,
         posts: {},
         feeds: {},
+        cursor: nil,
+        append: false,
+        paged: false,
         reason: nil,
         version: state.version + 1,
         at: nil,
@@ -109,6 +130,9 @@ defmodule Badge.Bluesky.Link.State do
           | feed: key,
             state: settled(state.state),
             posts: {},
+            cursor: nil,
+            append: false,
+            paged: false,
             reason: nil,
             version: state.version + 1,
             at: nil,
@@ -120,6 +144,28 @@ defmodule Badge.Bluesky.Link.State do
   # One fetch at a time: one under way finishes, and its answer asks again.
   defp settled(:loading), do: :loading
   defp settled(_state), do: :idle
+
+  @doc "Asks for the page after the held posts. Leaves the state alone when there is none."
+  @spec more(map) :: map
+  def more(%{state: state} = link) when state == :ready or state == :failed do
+    case more?(link) do
+      true -> %{link | state: :idle, append: true, reason: nil, failures: 0}
+      false -> link
+    end
+  end
+
+  def more(state), do: state
+
+  defp more?(state), do: state.cursor != nil and tuple_size(state.posts) < @max_posts
+
+  @doc "A login check has started."
+  @spec check(map) :: map
+  def check(state), do: %{state | check: :checking}
+
+  @doc "A login check came back; a session names the PDS later logins use."
+  @spec checked(map, {:ok, map} | {:error, term}) :: map
+  def checked(state, {:ok, %{pds: pds}}), do: %{state | check: {:ok, pds}, pds: pds}
+  def checked(state, {:error, reason}), do: %{state | check: {:error, reason}}
 
   @doc "The page went away. Nothing is fetched until it is back."
   @spec close(map) :: map
@@ -144,6 +190,8 @@ defmodule Badge.Bluesky.Link.State do
     end
   end
 
+  def load(%{state: :ready, paged: true} = state, _ready, _now), do: {:wait, state}
+
   def load(%{state: :ready, at: at} = state, _ready, now) when now - at < @stale,
     do: {:wait, state}
 
@@ -163,9 +211,13 @@ defmodule Badge.Bluesky.Link.State do
       session: state.session,
       pds: state.pds,
       feed: shown(state),
+      cursor: page_cursor(state),
       feeds: state.password != nil and state.feeds == {}
     }
   end
+
+  defp page_cursor(%{append: true, cursor: cursor}), do: cursor
+  defp page_cursor(_state), do: nil
 
   defp backoff(failures), do: min(@retry * doubled(failures - 1), @max_retry)
 
@@ -187,19 +239,24 @@ defmodule Badge.Bluesky.Link.State do
         now
       ) do
     case job.feed == shown(state) do
-      true -> apply_result(state, result, now)
+      true -> apply_result(state, Map.get(job, :cursor), result, now)
       false -> keep_login(state, result)
     end
   end
 
   def fetched(state, _job, _result, _now), do: state
 
-  defp apply_result(state, {:ok, result}, now) do
+  defp apply_result(state, cursor, {:ok, result}, now) do
+    {posts, next} = paged(cursor, state.posts, result.posts, Map.get(result, :cursor))
+
     %{
       state
       | state: :ready,
         session: result.session,
-        posts: result.posts,
+        posts: posts,
+        cursor: next,
+        append: false,
+        paged: cursor != nil,
         feeds: feeds(result.feeds, state.feeds),
         reason: nil,
         version: state.version + 1,
@@ -208,8 +265,20 @@ defmodule Badge.Bluesky.Link.State do
     }
   end
 
-  defp apply_result(state, {:error, reason}, now) do
+  defp apply_result(state, _cursor, {:error, reason}, now) do
     %{state | state: :failed, session: nil, reason: reason, at: now, failures: state.failures + 1}
+  end
+
+  # A first page replaces what is held; a later one is appended, to the cap.
+  defp paged(nil, _held, fresh, next), do: {fresh, next}
+
+  defp paged(_cursor, held, fresh, next) do
+    posts = :erlang.tuple_to_list(held) ++ :erlang.tuple_to_list(fresh)
+
+    case length(posts) > @max_posts do
+      true -> {:erlang.list_to_tuple(:lists.sublist(posts, @max_posts)), nil}
+      false -> {:erlang.list_to_tuple(posts), next}
+    end
   end
 
   # The fetch still counts as under way for the feed now shown, which asks again.
@@ -218,6 +287,7 @@ defmodule Badge.Bluesky.Link.State do
       state
       | state: :idle,
         session: result.session,
+        append: false,
         feeds: feeds(result.feeds, state.feeds),
         version: state.version + 1
     }

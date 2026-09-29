@@ -11,7 +11,7 @@ defmodule Badge.Page.Bluesky do
   Following, and Feeds lists the feeds the account saved: Up and Down pick
   one, Enter shows it. Posts run down the panel newest first, each as who
   wrote it and how long ago, the text, and the counts under it; Up and Down
-  move the post at the top. Esc is left for the router and goes Home. Text
+  move the post at the top, and Down on the last post fetches the next page. Esc is left for the router and goes Home. Text
   only: images and cards are not drawn.
 
   Posts and feeds live in `Badge.Bluesky.Link`, which fetches them while
@@ -50,6 +50,9 @@ defmodule Badge.Page.Bluesky do
   @failed "Feed unavailable"
   @hint "Enter tries again"
   @empty "No posts yet"
+  @more "Down for more"
+  @loading_more "Loading more..."
+  @more_failed "Could not load more: "
   @no_feeds "No saved feeds"
   @logged_out "Not logged in"
   @log_in "Set an app password under"
@@ -191,6 +194,14 @@ defmodule Badge.Page.Bluesky do
     {:ok, %{state | cursor: cursor + 1}}
   end
 
+  # On the last post: ask for the next page, and show it coming at once.
+  def handle_key({:move, :down}, %{status: %{more: true, state: link} = status} = state)
+      when link == :ready or link == :failed do
+    Link.more()
+
+    {:ok, %{state | status: Map.merge(status, %{state: :loading, append: true})}}
+  end
+
   def handle_key({:edit, :newline}, %{status: %{state: :failed}} = state), do: retry(state)
 
   def handle_key(_event, _state), do: :ignore
@@ -262,7 +273,7 @@ defmodule Badge.Page.Bluesky do
 
   # Feeds, then the name of the feed shown; the active tab lit, and where its top entry is.
   defp head(state) do
-    place = place(list(state), current(state))
+    place = place(list(state), current(state)) <> plus(state)
     room = @columns - byte_size(@feeds_tab) - 2 - byte_size(place) - 1
     second = @margin + (byte_size(@feeds_tab) + 2) * @char_w
 
@@ -280,6 +291,10 @@ defmodule Badge.Page.Bluesky do
 
   defp list(%{tab: :feeds, feeds: feeds}), do: feeds
   defp list(%{posts: posts}), do: posts
+
+  # Another page to fetch, on the posts tab.
+  defp plus(%{tab: :posts, posts: posts, status: %{more: true}}) when posts != {}, do: "+"
+  defp plus(_state), do: ""
 
   defp place({}, _cursor), do: ""
 
@@ -309,7 +324,7 @@ defmodule Badge.Page.Bluesky do
   defp notice(%{status: %{state: :failed, reason: reason}}, _empty) do
     [
       centred(@notice_y, Theme.fg(), @failed),
-      centred(@notice_y + @pitch, Theme.dim(), clip(reason(reason), @columns)),
+      centred(@notice_y + @pitch, Theme.dim(), clip(Bluesky.describe(reason), @columns)),
       centred(@notice_y + 2 * @pitch, Theme.muted(), @hint)
     ]
   end
@@ -328,10 +343,6 @@ defmodule Badge.Page.Bluesky do
       _key -> feed_name(state)
     end
   end
-
-  defp reason({:http, status, ""}), do: "HTTP " <> :erlang.integer_to_binary(status)
-  defp reason({:http, status, error}), do: :erlang.integer_to_binary(status) <> " " <> error
-  defp reason(reason), do: :erlang.iolist_to_binary(:io_lib.format(~c"~p", [reason]))
 
   # One row a feed, scrolled once the pick would fall off the bottom.
   defp feed_rows(%{pick: pick, feeds: feeds} = state) do
@@ -381,9 +392,20 @@ defmodule Badge.Page.Bluesky do
         feed(state, index + 1, y + used * @pitch, rows - used, items ++ acc)
 
       false ->
-        :lists.reverse(acc)
+        :lists.reverse(footer(state.status, y) ++ acc)
     end
   end
+
+  # Under the last post: whether there is more, and how fetching it goes.
+  defp footer(%{append: true, state: :loading}, y), do: [left(y, Theme.muted(), @loading_more)]
+
+  defp footer(%{append: true, state: :failed, reason: reason}, y),
+    do: [left(y, Theme.alert(), clip(@more_failed <> Bluesky.describe(reason), @columns))]
+
+  defp footer(%{more: true}, y), do: [left(y, Theme.dim(), @more)]
+  defp footer(_status, _y), do: []
+
+  defp left(y, colour, text), do: {:text, @margin, y, :default16px, colour, Theme.bg(), text}
 
   # Header, text, counts and a blank row, as many as fit; items come back reversed.
   defp post_items(post, now, y, rows) do

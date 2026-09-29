@@ -27,6 +27,24 @@ defmodule Badge.Bluesky do
   @limit 5
   @filter "posts_no_replies"
 
+  # Everything a post is drawn from; the rest of a feed answer is never decoded.
+  @keys [
+    "feed",
+    "cursor",
+    "post",
+    "reason",
+    "$type",
+    "author",
+    "handle",
+    "displayName",
+    "record",
+    "text",
+    "createdAt",
+    "likeCount",
+    "repostCount",
+    "replyCount"
+  ]
+
   # How many wrapped lines of one post are kept; the rest is cut with an ellipsis.
   @max_lines 8
 
@@ -60,16 +78,23 @@ defmodule Badge.Bluesky do
   @spec limit() :: pos_integer
   def limit, do: @limit
 
-  @doc "The request path for an account's feed."
-  @spec path(binary) :: binary
-  def path(actor) do
+  @doc "The request path for an account's feed, from the start or from a page's cursor."
+  @spec path(binary, binary | nil) :: binary
+  def path(actor, cursor \\ nil) do
     @path <>
-      Http.query([
-        {"actor", actor},
-        {"limit", :erlang.integer_to_binary(@limit)},
-        {"filter", @filter}
-      ])
+      Http.query(
+        [
+          {"actor", actor},
+          {"limit", :erlang.integer_to_binary(@limit)},
+          {"filter", @filter}
+        ] ++ cursor_pair(cursor)
+      )
   end
+
+  @doc "A `cursor` query pair, or none for the first page."
+  @spec cursor_pair(binary | nil) :: [{binary, binary}]
+  def cursor_pair(nil), do: []
+  def cursor_pair(cursor), do: [{"cursor", cursor}]
 
   @doc """
   The account a profile field names, or nil when it names none.
@@ -92,12 +117,15 @@ defmodule Badge.Bluesky do
   end
 
   @doc """
-  The account's latest posts wrapped to `columns`, or an error when the
-  server cannot be reached or read.
+  A page of the account's posts wrapped to `columns`, with the cursor of the
+  next page, or an error when the server cannot be reached or read.
   """
-  @spec fetch(binary, binary, pos_integer) :: {:ok, [post]} | {:error, term}
-  def fetch(base, actor, columns) do
-    Http.get(base, path(actor), [], fn body -> parse(body, columns, &Http.breathe/0) end)
+  @spec fetch(binary, binary, pos_integer, binary | nil) ::
+          {:ok, {[post], binary | nil}} | {:error, term}
+  def fetch(base, actor, columns, cursor \\ nil) do
+    Http.get(base, path(actor, cursor), [], fn body ->
+      parse_page(body, columns, &Http.breathe/0)
+    end)
   end
 
   @doc """
@@ -111,15 +139,32 @@ defmodule Badge.Bluesky do
   @doc "As `parse/2`, running `between` after the decode and after each post."
   @spec parse(binary, pos_integer, (-> term)) :: {:ok, [post]} | :error
   def parse(body, columns, between) do
-    case Http.decode(body) do
-      {:ok, %{"feed" => feed}} when is_list(feed) ->
+    case parse_page(body, columns, between) do
+      {:ok, {posts, _cursor}} -> {:ok, posts}
+      :error -> :error
+    end
+  end
+
+  @doc """
+  As `parse/3`, with the cursor of the next page, or nil when there is none.
+
+  A page without posts has no next page, whatever cursor it carries.
+  """
+  @spec parse_page(binary, pos_integer, (-> term)) :: {:ok, {[post], binary | nil}} | :error
+  def parse_page(body, columns, between) do
+    case Http.decode(body, @keys) do
+      {:ok, %{"feed" => feed} = page} when is_list(feed) ->
         between.()
-        {:ok, items(feed, columns, between, [])}
+        {:ok, {items(feed, columns, between, []), next(feed, Map.get(page, "cursor"))}}
 
       _other ->
         :error
     end
   end
+
+  defp next([], _cursor), do: nil
+  defp next(_feed, cursor) when is_binary(cursor) and cursor != "", do: cursor
+  defp next(_feed, _cursor), do: nil
 
   defp items([], _columns, _between, acc), do: :lists.reverse(acc)
 
@@ -267,6 +312,12 @@ defmodule Badge.Bluesky do
   defp plural(count, one), do: plural(count, one, one <> "s")
   defp plural(1, one, _many), do: "1 " <> one
   defp plural(count, _one, many), do: :erlang.integer_to_binary(count) <> " " <> many
+
+  @doc "A failure as the panel words it: the server's own error, or the term itself."
+  @spec describe(term) :: binary
+  def describe({:http, status, ""}), do: "HTTP " <> :erlang.integer_to_binary(status)
+  def describe({:http, status, error}), do: :erlang.integer_to_binary(status) <> " " <> error
+  def describe(reason), do: :erlang.iolist_to_binary(:io_lib.format(~c"~p", [reason]))
 
   @doc "Entries as a tuple, each packed into a binary of its own."
   @spec pack([term]) :: posts

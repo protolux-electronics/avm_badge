@@ -53,6 +53,7 @@ defmodule Badge.Bluesky.Link.StateTest do
                session: nil,
                pds: nil,
                feed: {:author, @actor},
+               cursor: nil,
                feeds: false
              }
     end
@@ -78,6 +79,7 @@ defmodule Badge.Bluesky.Link.StateTest do
                session: nil,
                pds: nil,
                feed: {:timeline, nil},
+               cursor: nil,
                feeds: true
              }
     end
@@ -155,6 +157,99 @@ defmodule Badge.Bluesky.Link.StateTest do
 
       assert {{:fetch, %{feed: @hot, session: @session, feeds: false}}, _} =
                State.load(answered, true, 3)
+    end
+  end
+
+  describe "more/1" do
+    defp paged_answer(posts, cursor),
+      do: {:ok, %{posts: posts, cursor: cursor, feeds: nil, session: nil}}
+
+    defp first_page(cursor \\ "c1") do
+      {{:fetch, job}, loading} = State.load(wanted(), true, 0)
+      State.fetched(loading, job, paged_answer(@posts, cursor), 0)
+    end
+
+    test "a page with a cursor has more" do
+      assert State.status(first_page()).more == true
+      assert State.status(first_page(nil)).more == false
+    end
+
+    test "fetches from the cursor and appends" do
+      asked = State.more(first_page())
+
+      assert State.status(asked).append == true
+      assert {{:fetch, %{cursor: "c1"} = job}, loading} = State.load(asked, true, 1)
+
+      appended = State.fetched(loading, job, paged_answer({<<9>>}, "c2"), 2)
+
+      assert appended.posts == {<<1>>, <<2>>, <<9>>}
+      assert State.status(appended).more == true
+      assert State.status(appended).append == false
+      assert State.status(appended).version == 3
+    end
+
+    test "without a cursor there is nothing to ask for" do
+      state = first_page(nil)
+
+      assert State.more(state) == state
+    end
+
+    test "is ignored while a fetch is under way" do
+      {{:fetch, _job}, loading} = State.load(State.more(first_page()), true, 1)
+
+      assert State.more(loading) == loading
+    end
+
+    test "a failed page keeps the posts and is asked for again" do
+      {{:fetch, job}, loading} = State.load(State.more(first_page()), true, 1)
+      failed = State.fetched(loading, job, {:error, :closed}, 2)
+
+      assert failed.posts == @posts
+      assert State.status(failed).append == true
+      assert {{:fetch, %{cursor: "c1"}}, _} = State.load(State.retry(failed), true, 3)
+    end
+
+    test "a paged feed is not refreshed back to its first page" do
+      {{:fetch, job}, loading} = State.load(State.more(first_page()), true, 1)
+      appended = State.fetched(loading, job, paged_answer({<<9>>}, "c2"), 2)
+
+      assert State.load(appended, true, 60 * 60_000) == {:wait, appended}
+    end
+
+    test "stops at fifty posts" do
+      held = %{first_page() | posts: :erlang.list_to_tuple(:lists.duplicate(48, <<1>>))}
+      {{:fetch, job}, loading} = State.load(State.more(held), true, 1)
+      full = State.fetched(loading, job, paged_answer({<<2>>, <<3>>, <<4>>}, "c2"), 2)
+
+      assert tuple_size(full.posts) == 50
+      assert State.status(full).more == false
+    end
+
+    test "choosing another feed starts it from the top" do
+      state = State.select(State.more(first_page()), @hot)
+
+      assert state.cursor == nil
+      assert State.status(state).append == false
+    end
+  end
+
+  describe "check/1 and checked/2" do
+    test "a check that logs in keeps the PDS it found for later logins" do
+      state = State.check(State.new(@base))
+
+      assert state.check == :checking
+
+      checked = State.checked(state, {:ok, %{@session | pds: "https://eurosky.social"}})
+
+      assert checked.check == {:ok, "https://eurosky.social"}
+      assert checked.pds == "https://eurosky.social"
+    end
+
+    test "a failed check keeps the PDS it had" do
+      state = State.new(@base, "https://pds")
+
+      assert State.checked(State.check(state), {:error, :closed}) ==
+               %{state | check: {:error, :closed}}
     end
   end
 

@@ -105,6 +105,14 @@ defmodule Badge.Bluesky.Http do
     _kind, _error -> :error
   end
 
+  @doc "As `decode/1`, keeping only object members with one of `keys`, at any depth."
+  @spec decode(binary, [binary]) :: {:ok, term} | :error
+  def decode(body, keys) do
+    {:ok, :cjson.decode(body, keys)}
+  catch
+    _kind, _error -> :error
+  end
+
   defp send_request(base, method, path, headers, body, parser) do
     case endpoint(base) do
       nil ->
@@ -219,9 +227,22 @@ defmodule Badge.Bluesky.Http do
     started = :erlang.monotonic_time(:millisecond)
     result = fun.()
     elapsed = :erlang.monotonic_time(:millisecond) - started
-    :io.format(~c"Bluesky: ~s took ~p ms~n", [hd(:binary.split(path, "?")), elapsed])
+
+    :io.format(~c"Bluesky: ~s took ~p ms, internal ~p free, ~p largest~n", [
+      hd(:binary.split(path, "?")),
+      elapsed,
+      internal(:esp32_internal_free_size),
+      internal(:esp32_internal_largest_free_block)
+    ])
 
     result
+  end
+
+  # Only the badge's VM knows these; anywhere else they read as unknown.
+  defp internal(key) do
+    :erlang.system_info(key)
+  catch
+    _kind, _error -> :unknown
   end
 
   defp digits(binary), do: digits(binary, 0)

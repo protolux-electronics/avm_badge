@@ -36,21 +36,26 @@ defmodule Badge.Bluesky.Account do
 
   `job` names the `:actor`, the `:password` (nil for the public author feed),
   the `:session` held from last time or nil, the `:pds` or nil to look it up,
-  the `:feed` key to read, and whether the saved `:feeds` should be read too.
+  the `:feed` key to read, the `:cursor` of the page to read or nil for the
+  first, and whether the saved `:feeds` should be read too. The result's
+  `:cursor` is the next page's, or nil at the end.
   """
   @spec load(map, binary, pos_integer) :: {:ok, map} | {:error, term}
-  def load(%{password: nil, actor: actor}, base, columns) do
-    case Bluesky.fetch(base, actor, columns) do
-      {:ok, posts} -> {:ok, %{posts: Bluesky.pack(posts), feeds: nil, session: nil}}
-      error -> error
+  def load(%{password: nil, actor: actor} = job, base, columns) do
+    case Bluesky.fetch(base, actor, columns, Map.get(job, :cursor)) do
+      {:ok, {posts, next}} ->
+        {:ok, %{posts: Bluesky.pack(posts), cursor: next, feeds: nil, session: nil}}
+
+      error ->
+        error
     end
   end
 
   def load(job, base, columns) do
     with {:ok, session} <- session(job, base),
          {:ok, feeds} <- maybe_feeds(job, session, base),
-         {:ok, posts} <- posts(session, job.feed, columns) do
-      {:ok, %{posts: Bluesky.pack(posts), feeds: feeds, session: session}}
+         {:ok, {posts, next}} <- posts(session, job.feed, columns, Map.get(job, :cursor)) do
+      {:ok, %{posts: Bluesky.pack(posts), cursor: next, feeds: feeds, session: session}}
     end
   end
 
@@ -90,6 +95,13 @@ defmodule Badge.Bluesky.Account do
 
     Http.post(pds, "/xrpc/com.atproto.server.createSession", [], body, &parse_session(&1, pds))
   end
+
+  @doc """
+  Logs in the long way, looking the PDS up rather than trying the default,
+  so a stored password is checked and the PDS it lives on found.
+  """
+  @spec check(binary, binary, binary) :: {:ok, session} | {:error, term}
+  def check(base, handle, password), do: find_and_login(base, handle, password)
 
   defp find_and_login(base, handle, password) do
     with {:ok, did} <- resolve(base, handle),
@@ -166,26 +178,36 @@ defmodule Badge.Bluesky.Account do
     end
   end
 
-  @doc "Reads one feed's latest posts, wrapped to `columns`."
-  @spec posts(session, key, pos_integer) :: {:ok, [Bluesky.post()]} | {:error, term}
-  def posts(session, key, columns) do
-    Http.get(session.pds, feed_path(key), [Http.bearer(session.access)], fn body ->
-      Bluesky.parse(body, columns, &Http.breathe/0)
+  @doc "Reads a page of one feed, wrapped to `columns`, with the next page's cursor."
+  @spec posts(session, key, pos_integer, binary | nil) ::
+          {:ok, {[Bluesky.post()], binary | nil}} | {:error, term}
+  def posts(session, key, columns, cursor \\ nil) do
+    Http.get(session.pds, feed_path(key, cursor), [Http.bearer(session.access)], fn body ->
+      Bluesky.parse_page(body, columns, &Http.breathe/0)
     end)
   end
 
-  @doc "The request path that reads a feed by its key."
-  @spec feed_path(key) :: binary
-  def feed_path({:timeline, nil}), do: "/xrpc/app.bsky.feed.getTimeline" <> limit([])
+  @doc "The request path that reads a page of a feed by its key, from `cursor` or the start."
+  @spec feed_path(key, binary | nil) :: binary
+  def feed_path(key, cursor \\ nil)
 
-  def feed_path({:feed, uri}), do: "/xrpc/app.bsky.feed.getFeed" <> limit([{"feed", uri}])
+  def feed_path({:timeline, nil}, cursor),
+    do: "/xrpc/app.bsky.feed.getTimeline" <> limit([], cursor)
 
-  def feed_path({:list, uri}), do: "/xrpc/app.bsky.feed.getListFeed" <> limit([{"list", uri}])
+  def feed_path({:feed, uri}, cursor),
+    do: "/xrpc/app.bsky.feed.getFeed" <> limit([{"feed", uri}], cursor)
 
-  def feed_path({:author, actor}), do: Bluesky.path(actor)
+  def feed_path({:list, uri}, cursor),
+    do: "/xrpc/app.bsky.feed.getListFeed" <> limit([{"list", uri}], cursor)
 
-  defp limit(pairs),
-    do: Http.query(pairs ++ [{"limit", :erlang.integer_to_binary(Bluesky.limit())}])
+  def feed_path({:author, actor}, cursor), do: Bluesky.path(actor, cursor)
+
+  defp limit(pairs, cursor) do
+    Http.query(
+      pairs ++
+        [{"limit", :erlang.integer_to_binary(Bluesky.limit())}] ++ Bluesky.cursor_pair(cursor)
+    )
+  end
 
   @doc "The key a feed is selected by."
   @spec key(feed) :: key
@@ -194,7 +216,7 @@ defmodule Badge.Bluesky.Account do
   @doc "The DID a handle resolves to, from `resolveHandle`'s answer."
   @spec parse_did(binary) :: {:ok, binary} | :error
   def parse_did(body) do
-    case Http.decode(body) do
+    case Http.decode(body, ["did"]) do
       {:ok, %{"did" => did}} when is_binary(did) -> {:ok, did}
       _other -> :error
     end
@@ -203,7 +225,7 @@ defmodule Badge.Bluesky.Account do
   @doc "The PDS a DID document names."
   @spec parse_did_document(binary) :: {:ok, binary} | :error
   def parse_did_document(body) do
-    case Http.decode(body) do
+    case Http.decode(body, ["service", "id", "type", "serviceEndpoint"]) do
       {:ok, %{"service" => services}} when is_list(services) -> find_pds(services)
       _other -> :error
     end
@@ -227,7 +249,7 @@ defmodule Badge.Bluesky.Account do
   @doc "A session from `createSession`'s answer, at `pds`."
   @spec parse_session(binary, binary) :: {:ok, session} | :error
   def parse_session(body, pds) do
-    case Http.decode(body) do
+    case Http.decode(body, ["did", "accessJwt"]) do
       {:ok, %{"did" => did, "accessJwt" => access}} when is_binary(did) and is_binary(access) ->
         {:ok, %{did: did, pds: pds, access: access}}
 
@@ -245,7 +267,7 @@ defmodule Badge.Bluesky.Account do
   """
   @spec parse_preferences(binary) :: {:ok, [key]} | :error
   def parse_preferences(body) do
-    case Http.decode(body) do
+    case Http.decode(body, ["preferences", "$type", "items", "type", "value", "pinned", "saved"]) do
       {:ok, %{"preferences" => preferences}} when is_list(preferences) ->
         {:ok, :lists.sublist(saved(preferences), @max_feeds)}
 
@@ -296,7 +318,7 @@ defmodule Badge.Bluesky.Account do
   @doc "Each generator's `{uri, name}` from `getFeedGenerators`' answer, names folded."
   @spec parse_generators(binary) :: {:ok, [{binary, binary}]} | :error
   def parse_generators(body) do
-    case Http.decode(body) do
+    case Http.decode(body, ["feeds", "uri", "displayName"]) do
       {:ok, %{"feeds" => feeds}} when is_list(feeds) -> {:ok, :lists.flatmap(&generator/1, feeds)}
       _other -> :error
     end
@@ -310,7 +332,7 @@ defmodule Badge.Bluesky.Account do
   @doc "A list's name from `getList`'s answer, folded."
   @spec parse_list_name(binary) :: {:ok, binary} | :error
   def parse_list_name(body) do
-    case Http.decode(body) do
+    case Http.decode(body, ["list", "name"]) do
       {:ok, %{"list" => %{"name" => name}}} when is_binary(name) -> {:ok, Text.cp437(name)}
       _other -> :error
     end

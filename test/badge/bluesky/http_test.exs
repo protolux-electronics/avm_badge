@@ -43,6 +43,13 @@ defmodule Badge.Bluesky.HttpTest do
     assert Http.bearer("abc") == {"authorization", "Bearer abc"}
   end
 
+  test "decode/2 keeps only the keys asked for, at any depth" do
+    body = ~s({"feed":[{"post":{"text":"hi","avatar":"x"},"reply":{"post":{}}}],"cursor":"c"})
+
+    assert Http.decode(body, ["feed", "post", "text"]) ==
+             {:ok, %{"feed" => [%{"post" => %{"text" => "hi"}}]}}
+  end
+
   test "decode/1 reads JSON and refuses anything else" do
     assert Http.decode(~s({"a":1})) == {:ok, %{"a" => 1}}
     assert Http.decode("{nope") == :error

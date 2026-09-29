@@ -111,11 +111,13 @@ defmodule Badge.Power do
   # Bring-up instrumentation: this is the only line that runs on every page,
   # so it is where a leak is visible with nothing else switched on.
   defp report(ticks, battery_mv, vbus_mv) when rem(ticks, @report) == 0 do
-    :io.format(~c"Power: battery=~pmv vbus=~pmv usb=~p heap=~p~n", [
+    :io.format(~c"Power: battery=~pmv vbus=~pmv usb=~p heap=~p internal=~p/~p~n", [
       battery_mv,
       vbus_mv,
       vbus_mv >= @usb_present_mv,
-      free_heap()
+      free_heap(),
+      info(:esp32_internal_free_size),
+      info(:esp32_internal_largest_free_block)
     ])
   end
 
@@ -128,8 +130,10 @@ defmodule Badge.Power do
     end
   end
 
-  defp free_heap do
-    :erlang.system_info(:esp32_free_heap_size)
+  defp free_heap, do: info(:esp32_free_heap_size)
+
+  defp info(key) do
+    :erlang.system_info(key)
   catch
     _kind, _error -> -1
   end

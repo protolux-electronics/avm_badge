@@ -40,6 +40,12 @@ defmodule Badge.BlueskyTest do
       assert Bluesky.base_url("http://bench:8080") == "http://bench:8080"
     end
 
+    test "a later page is asked for from its cursor" do
+      assert Bluesky.path("goat.bsky.social", "2026-09-14T19:47:12.655Z") ==
+               "/xrpc/app.bsky.feed.getAuthorFeed?actor=goat.bsky.social&limit=5&filter=posts_no_replies" <>
+                 "&cursor=2026-09-14T19%3A47%3A12.655Z"
+    end
+
     test "the path asks for a few top-level posts of the account" do
       assert Bluesky.path("goat.bsky.social") ==
                "/xrpc/app.bsky.feed.getAuthorFeed?actor=goat.bsky.social&limit=5&filter=posts_no_replies"
@@ -119,6 +125,35 @@ defmodule Badge.BlueskyTest do
       assert first.reposts == 85
       assert first.replies == 90
       assert first.created == 1_790_013_846
+    end
+  end
+
+  describe "parse_page/3" do
+    test "carries the next page's cursor" do
+      assert {:ok, {posts, "2026-09-14T19:47:12.655Z"}} =
+               Bluesky.parse_page(@body, @columns, fn -> :ok end)
+
+      assert length(posts) == 3
+    end
+
+    test "what a post is not drawn from is not decoded" do
+      body =
+        ~s({"feed":[{"post":{"author":{"handle":"a.b","avatar":"https://x"},) <>
+          ~s("record":{"text":"Hi"},"embed":{"images":[]}},) <>
+          ~s("reply":{"parent":{"author":{"handle":"c.d"}}}}]})
+
+      assert {:ok, {[post], nil}} = Bluesky.parse_page(body, 38, fn -> :ok end)
+      assert post.handle == "a.b"
+      assert post.lines == ["Hi"]
+    end
+
+    test "no cursor, or no posts, is the end" do
+      body = ~s({"feed":[{"post":{"author":{"handle":"a.b"},"record":{"text":"Hi"}}}]})
+
+      assert {:ok, {[_post], nil}} = Bluesky.parse_page(body, 38, fn -> :ok end)
+
+      assert {:ok, {[], nil}} =
+               Bluesky.parse_page(~s({"feed":[],"cursor":"x"}), 38, fn -> :ok end)
     end
   end
 

@@ -85,7 +85,9 @@ defmodule Badge.Sim.Fakes do
               feed: Map.get(d, :feed, default),
               reason: nil,
               version: Map.get(d, :version, 1),
-              count: 3
+              count: 3,
+              more: false,
+              append: false
             }
 
           :posts, _ ->

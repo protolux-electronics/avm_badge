@@ -41,6 +41,18 @@ defmodule Badge.Bluesky.Link do
   @spec close() :: :ok
   def close, do: GenServer.cast(__MODULE__, :close)
 
+  @doc "Checks a login the long way, keeping the PDS it finds. See `check_status/0`."
+  @spec check(binary, binary) :: :ok
+  def check(actor, password), do: GenServer.cast(__MODULE__, {:check, actor, password})
+
+  @doc "`:none`, `:checking`, `{:ok, pds}` or `{:error, reason}`."
+  @spec check_status() :: term
+  def check_status, do: GenServer.call(__MODULE__, :check_status)
+
+  @doc "Fetches the page after the held posts, when there is one."
+  @spec more() :: :ok
+  def more, do: GenServer.cast(__MODULE__, :more)
+
   @doc "Drops a failure so the next tick fetches again."
   @spec retry() :: :ok
   def retry, do: GenServer.cast(__MODULE__, :retry)
@@ -69,6 +81,7 @@ defmodule Badge.Bluesky.Link do
   def handle_call(:status, _from, state), do: {:reply, State.status(state), state}
   def handle_call(:posts, _from, state), do: {:reply, state.posts, state}
   def handle_call(:feeds, _from, state), do: {:reply, state.feeds, state}
+  def handle_call(:check_status, _from, state), do: {:reply, state.check, state}
 
   @impl true
   def handle_cast({:open, actor, password}, state),
@@ -77,6 +90,16 @@ defmodule Badge.Bluesky.Link do
   def handle_cast({:select, key}, state), do: {:noreply, State.select(state, key)}
   def handle_cast(:close, state), do: {:noreply, State.close(state)}
   def handle_cast(:retry, state), do: {:noreply, State.retry(state)}
+  def handle_cast(:more, state), do: {:noreply, State.more(state)}
+
+  def handle_cast({:check, actor, password}, state) do
+    link = self()
+    base = state.base
+
+    spawn(fn -> send(link, {:checked, Account.check(base, actor, password)}) end)
+
+    {:noreply, State.check(state)}
+  end
 
   @impl true
   def handle_info(:tick, %{want: false} = state), do: {:noreply, state}
@@ -94,7 +117,25 @@ defmodule Badge.Bluesky.Link do
     {:noreply, State.fetched(state, job, result, :erlang.monotonic_time(:millisecond))}
   end
 
+  def handle_info({:checked, result}, state) do
+    keep_pds(result)
+
+    {:noreply, State.checked(state, result)}
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
+
+  # Written here, where the answer lands; a failed write only costs a lookup later.
+  defp keep_pds({:ok, %{pds: pds}}) do
+    :io.format(~c"Bluesky: login checked, PDS ~s~n", [pds])
+
+    case Nvs.put(:bsky_pds, pds) do
+      :ok -> :ok
+      error -> :io.format(~c"Bluesky: PDS write failed ~p~n", [error])
+    end
+  end
+
+  defp keep_pds({:error, reason}), do: :io.format(~c"Bluesky: login check failed ~p~n", [reason])
 
   defp pds(nil), do: nil
   defp pds(""), do: nil

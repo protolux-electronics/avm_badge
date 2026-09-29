@@ -128,6 +128,11 @@ defmodule Badge.Bluesky.AccountTest do
     end
   end
 
+  test "feed_path/2 asks for the page after a cursor" do
+    assert Account.feed_path({:timeline, nil}, "abc") ==
+             "/xrpc/app.bsky.feed.getTimeline?limit=5&cursor=abc"
+  end
+
   test "key/1 is a feed's kind and URI" do
     assert Account.key(%{kind: :feed, uri: @hot, name: "Discover"}) == {:feed, @hot}
   end

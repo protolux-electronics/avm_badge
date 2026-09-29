@@ -442,6 +442,46 @@ defmodule Badge.Page.BlueskyTest do
     end
   end
 
+  describe "paging" do
+    setup do
+      state = shown([post(%{}), post(%{lines: ["Second."]})], %{more: true, append: false})
+
+      %{state: state, last: press(state, {:move, :down})}
+    end
+
+    test "the counter says there is more", %{state: state} do
+      assert row(Page.render(state), @head_y) == ["Feeds", "Posts", "1/2+"]
+    end
+
+    test "under the last post, Down is offered", %{last: last} do
+      items = Page.render(last)
+
+      assert row(items, @top + 4 * @pitch) == ["Down for more"]
+    end
+
+    test "Down on the last post asks for more and says so", %{last: last} do
+      asking = press(last, {:move, :down})
+
+      assert Page.current(asking) == 1
+      assert row(Page.render(asking), @top + 4 * @pitch) == ["Loading more..."]
+      assert Page.handle_key({:move, :down}, asking) == :ignore
+    end
+
+    test "a failed page says why", %{last: last} do
+      failed = %{last | status: %{last.status | state: :failed, append: true, reason: :closed}}
+
+      assert row(Page.render(failed), @top + 4 * @pitch) == ["Could not load more: closed"]
+    end
+
+    test "at the end there is nothing to ask for" do
+      last = press(shown([post(%{}), post(%{lines: ["Second."]})]), {:move, :down})
+
+      assert Page.handle_key({:move, :down}, last) == :ignore
+      assert row(Page.render(last), @top + 4 * @pitch) == []
+      assert row(Page.render(last), @head_y) == ["Feeds", "Posts", "2/2"]
+    end
+  end
+
   describe "a long post" do
     test "is cut where the rows run out, and the next post is not started" do
       long = post(%{lines: for(n <- 1..9, do: "Line " <> :erlang.integer_to_binary(n))})

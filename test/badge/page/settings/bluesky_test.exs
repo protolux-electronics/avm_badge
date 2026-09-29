@@ -45,7 +45,28 @@ defmodule Badge.Page.Settings.BlueskyTest do
 
       assert colour(state, "stored") == Theme.ok()
       refute Enum.any?(texts(state), &(&1 =~ "abcd"))
+      assert "Enter change   t test   c clear" in texts(state)
+    end
+
+    test "without a handle there is nothing to test" do
+      state = loaded(nil, "abcd-efgh")
+
       assert "Enter change   c clear" in texts(state)
+      assert Bluesky.handle_key({:char, ?t}, state) == :ignore
+    end
+
+    test "t tests the stored password on the next tick" do
+      state = press(loaded("goat.bsky.social", "pw"), {:char, ?t})
+
+      assert state.check_with == :stored
+    end
+
+    test "the server is found at login until a check finds it" do
+      assert "found at login" in texts(loaded())
+
+      found = Bluesky.apply_check({:ok, "https://eurosky.social"}, loaded())
+
+      assert "eurosky.social" in texts(found)
     end
 
     test "the arrows and Esc are left for the carousel and the router" do
@@ -104,6 +125,41 @@ defmodule Badge.Page.Settings.BlueskyTest do
       assert back.mode == :view
       assert Bluesky.pending(back) == nil
       assert press(back, {:edit, :newline}).field.count == 0
+    end
+  end
+
+  describe "the login check" do
+    test "a saved password is checked when there is a handle" do
+      assert Bluesky.check_after_save(%{loaded() | stored: true}, "pw").check_with == "pw"
+      assert Bluesky.check_after_save(%{loaded(nil) | stored: true}, "pw").check_with == nil
+    end
+
+    test "says how it goes" do
+      checking = %{loaded() | check: :checking}
+
+      assert "checking login..." in texts(checking)
+      assert "checking login..." in texts(Bluesky.apply_check(:checking, checking))
+
+      ok = Bluesky.apply_check({:ok, "https://eurosky.social"}, checking)
+
+      assert colour(ok, "logged in via eurosky.social") == Theme.ok()
+
+      failed = Bluesky.apply_check({:error, {:http, 401, "AuthenticationRequired"}}, checking)
+
+      assert colour(failed, "login failed") == Theme.alert()
+      assert colour(failed, "401 AuthenticationRequired") == Theme.dim()
+    end
+
+    test "is not started twice" do
+      state = %{loaded("goat.bsky.social", "pw") | check: :checking}
+
+      assert Bluesky.handle_key({:char, ?t}, state) == :ignore
+    end
+
+    test "clearing the password forgets the check" do
+      state = %{loaded("goat.bsky.social", "pw") | check: {:ok, "https://x"}}
+
+      assert press(state, {:char, ?c}).check == :none
     end
   end
 
