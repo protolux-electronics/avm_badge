@@ -80,7 +80,16 @@ defmodule Badge.ConnectFour.Board do
 
   @doc "Whether any column still has room for a disc."
   @spec full?(map) :: boolean
-  def full?(%{cells: cells}) do
-    not :lists.any(fn {_cell, value} -> value == nil end, Map.to_list(cells))
+  def full?(%{cells: cells}), do: full?(cells, @columns - 1)
+
+  # Discs stack from row 0 up, so the board is full exactly when every
+  # column's top cell is taken: 7 lookups rather than a list of all 42.
+  defp full?(_cells, column) when column < 0, do: true
+
+  defp full?(cells, column) do
+    case Map.fetch!(cells, {column, @rows - 1}) do
+      nil -> false
+      _taken -> full?(cells, column - 1)
+    end
   end
 end
