@@ -164,6 +164,27 @@ defmodule Badge.Pong.MatchTest do
       assert moved.ball.y != server.ball.y
       assert abs(moved.ball.y - server.ball.y) <= abs(server.ball.vy) * 100
     end
+
+    test "a new ball from the peer clears a pending out_ball" do
+      {server, _other, now, _id} = rally()
+      match = %{server | out_ball: 1, ball: server.ball}
+      wire = %{d: 0, x: 0, vx: 0, vy: 40}
+      payload = Wire.encode({:ball, 7, wire})
+
+      assert {:ok, result} = Match.hear(match, match.peer, payload, now)
+      assert result.out_ball == nil
+      assert result.ball == Badge.Pong.Physics.incoming(wire)
+    end
+
+    test "stepping with a lost ball and a stale out_ball sends no ball frame" do
+      {server, _other, now, _id} = rally()
+      match = %{server | out_ball: 1, ball: nil}
+
+      {stepped, payload} = Match.step(match, now + 1_000, 0)
+
+      assert stepped.ball == nil
+      if payload, do: refute(ball?(payload))
+    end
   end
 
   # play/5 with the server's id fixed as the first argument's sender.

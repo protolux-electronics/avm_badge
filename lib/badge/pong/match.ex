@@ -125,7 +125,9 @@ defmodule Badge.Pong.Match do
 
       false ->
         ball = Physics.incoming(wire)
-        enter(%{match | ball: ball, handed: false, last_ball: seq}, :rally, now)
+        # A ball from the peer proves it took ours; drop any pending handoff.
+        match = %{match | ball: ball, handed: false, out_ball: nil, last_ball: seq}
+        enter(match, :rally, now)
     end
   end
 
@@ -253,7 +255,7 @@ defmodule Badge.Pong.Match do
   # One frame, the most urgent first.
   defp pick(match, now) do
     cond do
-      match.out_ball != nil and due?(match.ball_sent_at, now, @ball_ms) ->
+      match.out_ball != nil and match.ball != nil and due?(match.ball_sent_at, now, @ball_ms) ->
         sent(
           %{match | ball_sent_at: now},
           now,
