@@ -253,6 +253,67 @@ defmodule Badge.Bluesky.Link.StateTest do
     end
   end
 
+  describe "post/3 and posted/3" do
+    test "a post goes out on the next tick, with the held session" do
+      state = State.post(logged_in(0), "Hello", 100)
+
+      assert State.status(state).post == :posting
+
+      assert {{:post, job}, posting} = State.load(state, true, 1)
+
+      assert job == %{
+               actor: @actor,
+               password: @password,
+               session: @session,
+               pds: nil,
+               text: "Hello",
+               now: 100
+             }
+
+      assert posting.post == :posting
+    end
+
+    test "waits for a fetch under way, and holds fetches while it is out" do
+      {{:fetch, _job}, loading} = State.load(wanted(@password), true, 0)
+      queued = State.post(loading, "Hello", 1)
+
+      assert State.load(queued, true, 1) == {:wait, queued}
+
+      {{:post, _job}, posting} = State.load(State.post(logged_in(0), "Hi", 1), true, 6 * 60_000)
+
+      assert State.load(posting, true, 6 * 60_000) == {:wait, posting}
+    end
+
+    test "waits for the network" do
+      state = State.post(logged_in(0), "Hello", 100)
+
+      assert {:wait, %{post: {:queued, "Hello", 100}}} = State.load(state, false, 1)
+    end
+
+    test "one post at a time" do
+      state = State.post(logged_in(0), "First", 1)
+
+      assert State.post(state, "Second", 2) == state
+    end
+
+    test "a landed post keeps its session and refreshes the feed" do
+      {{:post, job}, posting} = State.load(State.post(logged_in(0), "Hello", 1), true, 1)
+      done = State.posted(posting, job, {:ok, %{uri: "at://p", session: @session}})
+
+      assert State.status(done).post == {:ok, "at://p"}
+      assert {{:fetch, %{feed: {:timeline, nil}}}, _} = State.load(done, true, 2)
+    end
+
+    test "a failed post drops the session and can be tried again" do
+      {{:post, job}, posting} = State.load(State.post(logged_in(0), "Hello", 1), true, 1)
+      failed = State.posted(posting, job, {:error, {:http, 400, "InvalidRequest"}})
+
+      assert State.status(failed).post == {:error, {:http, 400, "InvalidRequest"}}
+      assert failed.session == nil
+      assert %{post: {:queued, "Again", 2}} = State.post(failed, "Again", 2)
+    end
+  end
+
   describe "open/3" do
     test "opening the same account again keeps what is held" do
       state = ready(0)

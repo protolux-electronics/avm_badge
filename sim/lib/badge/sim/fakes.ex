@@ -87,7 +87,8 @@ defmodule Badge.Sim.Fakes do
               version: Map.get(d, :version, 1),
               count: 3,
               more: false,
-              append: false
+              append: false,
+              post: Map.get(d, :post, :none)
             }
 
           :posts, _ ->
@@ -98,9 +99,17 @@ defmodule Badge.Sim.Fakes do
             if Map.get(d, :password), do: Bluesky.pack(@feeds), else: {}
         end,
         fn
-          {:open, actor, password}, d -> Map.merge(d, %{actor: actor, password: password})
-          {:select, key}, d -> Map.merge(d, %{feed: key, version: Map.get(d, :version, 1) + 1})
-          _, d -> d
+          {:open, actor, password}, d ->
+            Map.merge(d, %{actor: actor, password: password})
+
+          {:post, _text}, d ->
+            Map.put(d, :post, {:ok, "at://did:plc:sim/app.bsky.feed.post/sim"})
+
+          {:select, key}, d ->
+            Map.merge(d, %{feed: key, version: Map.get(d, :version, 1) + 1})
+
+          _, d ->
+            d
         end
       ),
       fake(

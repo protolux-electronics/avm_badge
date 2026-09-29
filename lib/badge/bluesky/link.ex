@@ -49,6 +49,10 @@ defmodule Badge.Bluesky.Link do
   @spec check_status() :: term
   def check_status, do: GenServer.call(__MODULE__, :check_status)
 
+  @doc "Posts `text` as the account, after any fetch under way. See `status/0`'s `post`."
+  @spec post(binary) :: :ok
+  def post(text), do: GenServer.cast(__MODULE__, {:post, text})
+
   @doc "Fetches the page after the held posts, when there is one."
   @spec more() :: :ok
   def more, do: GenServer.cast(__MODULE__, :more)
@@ -92,6 +96,9 @@ defmodule Badge.Bluesky.Link do
   def handle_cast(:retry, state), do: {:noreply, State.retry(state)}
   def handle_cast(:more, state), do: {:noreply, State.more(state)}
 
+  def handle_cast({:post, text}, state),
+    do: {:noreply, State.post(state, text, :erlang.system_time(:second))}
+
   def handle_cast({:check, actor, password}, state) do
     link = self()
     base = state.base
@@ -107,6 +114,7 @@ defmodule Badge.Bluesky.Link do
   def handle_info(:tick, state) do
     case State.load(state, ready?(), :erlang.monotonic_time(:millisecond)) do
       {{:fetch, job}, state} -> {:noreply, start_fetch(state, job)}
+      {{:post, job}, state} -> {:noreply, start_post(state, job)}
       {:wait, state} -> {:noreply, state}
     end
   end
@@ -115,6 +123,12 @@ defmodule Badge.Bluesky.Link do
     report(job, result)
 
     {:noreply, State.fetched(state, job, result, :erlang.monotonic_time(:millisecond))}
+  end
+
+  def handle_info({:posted, job, result}, state) do
+    report_post(result)
+
+    {:noreply, State.posted(state, job, result)}
   end
 
   def handle_info({:checked, result}, state) do
@@ -161,6 +175,20 @@ defmodule Badge.Bluesky.Link do
 
     state
   end
+
+  defp start_post(state, job) do
+    :io.format(~c"Bluesky: posting ~p bytes as ~s~n", [byte_size(job.text), job.actor])
+
+    link = self()
+    base = state.base
+
+    spawn(fn -> send(link, {:posted, job, Account.post(job, base)}) end)
+
+    state
+  end
+
+  defp report_post({:ok, %{uri: uri}}), do: :io.format(~c"Bluesky: posted ~s~n", [uri])
+  defp report_post({:error, reason}), do: :io.format(~c"Bluesky: post failed ~p~n", [reason])
 
   defp report(job, {:ok, result}) do
     :io.format(~c"Bluesky: holding ~p posts of ~p~n", [tuple_size(result.posts), job.feed])

@@ -2,6 +2,7 @@ defmodule Badge.Page.BlueskyTest do
   use ExUnit.Case, async: true
 
   alias Badge.Bluesky
+  alias Badge.Bluesky.Draft
   alias Badge.Page.Bluesky, as: Page
   alias Badge.Theme
 
@@ -102,7 +103,7 @@ defmodule Badge.Page.BlueskyTest do
     test "shows the tabs and says whose posts it is fetching" do
       items = Page.render(Page.apply_status(status(%{state: :loading}), named(), nil))
 
-      assert row(items, @head_y) == ["Feeds", "Posts", ""]
+      assert row(items, @head_y) == ["Feeds", "Posts", "Post", ""]
       assert row(items, @notice_y) == ["Fetching @" <> @actor]
     end
 
@@ -124,6 +125,7 @@ defmodule Badge.Page.BlueskyTest do
       assert texts(Page.render(state)) == [
                "Feeds",
                "Posts",
+               "Post",
                "",
                "Feed unavailable",
                "{ssl,closed}",
@@ -190,6 +192,7 @@ defmodule Badge.Page.BlueskyTest do
       assert coloured(items, @head_y) == [
                {"Feeds", Theme.dim()},
                {"Posts", Theme.select()},
+               {"Post", Theme.dim()},
                {"1/3", Theme.muted()}
              ]
     end
@@ -242,7 +245,7 @@ defmodule Badge.Page.BlueskyTest do
       down = press(state, {:move, :down})
 
       assert Page.current(down) == 1
-      assert row(Page.render(down), @head_y) == ["Feeds", "Posts", "2/3"]
+      assert row(Page.render(down), @head_y) == ["Feeds", "Posts", "Post", "2/3"]
       assert row(Page.render(down), @top) == ["repost: Lars Wikman", "3d"]
       assert Page.current(press(down, {:move, :up})) == 0
     end
@@ -290,6 +293,7 @@ defmodule Badge.Page.BlueskyTest do
       assert texts(Page.render(state)) == [
                "Feeds",
                "Posts",
+               "Post",
                "",
                "Not logged in",
                "Set an app password under",
@@ -328,7 +332,7 @@ defmodule Badge.Page.BlueskyTest do
     end
 
     test "the posts tab is named after the feed shown", %{state: state} do
-      assert row(Page.render(state), @head_y) == ["Feeds", "Following", "1/1"]
+      assert row(Page.render(state), @head_y) == ["Feeds", "Following", "Post", "1/1"]
     end
 
     test "Feeds lists the saved feeds, the one shown starred", %{feeds: feeds} do
@@ -337,6 +341,7 @@ defmodule Badge.Page.BlueskyTest do
       assert coloured(items, @head_y) == [
                {"Feeds", Theme.select()},
                {"Following", Theme.dim()},
+               {"Post", Theme.dim()},
                {"1/3", Theme.muted()}
              ]
 
@@ -376,7 +381,7 @@ defmodule Badge.Page.BlueskyTest do
 
       assert Page.tab(chosen) == :posts
       assert Page.shown(chosen) == {:feed, @hot}
-      assert row(Page.render(chosen), @head_y) == ["Feeds", "Discover", ""]
+      assert row(Page.render(chosen), @head_y) == ["Feeds", "Discover", "Post", ""]
       assert row(Page.render(chosen), @notice_y) == ["Fetching Discover"]
     end
 
@@ -450,7 +455,7 @@ defmodule Badge.Page.BlueskyTest do
     end
 
     test "the counter says there is more", %{state: state} do
-      assert row(Page.render(state), @head_y) == ["Feeds", "Posts", "1/2+"]
+      assert row(Page.render(state), @head_y) == ["Feeds", "Posts", "Post", "1/2+"]
     end
 
     test "under the last post, Down is offered", %{last: last} do
@@ -478,7 +483,108 @@ defmodule Badge.Page.BlueskyTest do
 
       assert Page.handle_key({:move, :down}, last) == :ignore
       assert row(Page.render(last), @top + 4 * @pitch) == []
-      assert row(Page.render(last), @head_y) == ["Feeds", "Posts", "2/2"]
+      assert row(Page.render(last), @head_y) == ["Feeds", "Posts", "Post", "2/2"]
+    end
+  end
+
+  describe "the Post tab" do
+    setup do
+      state = Page.apply_login("pw", shown([post(%{})], %{post: :none}))
+
+      %{compose: press(state, {:move, :right})}
+    end
+
+    defp typing(state, text),
+      do: :lists.foldl(&press(&2, {:char, &1}), state, :erlang.binary_to_list(text))
+
+    test "Right from the posts opens it and Left goes back", %{compose: compose} do
+      assert Page.tab(compose) == :compose
+      assert Page.tab(press(compose, {:move, :left})) == :posts
+      assert Page.tab(press(compose, {:nav, :home})) == :posts
+    end
+
+    test "the head lights Post and counts the draft", %{compose: compose} do
+      assert coloured(Page.render(typing(compose, "Hi")), @head_y) == [
+               {"Feeds", Theme.dim()},
+               {"Following", Theme.dim()},
+               {"Post", Theme.select()},
+               {"2/300", Theme.muted()}
+             ]
+    end
+
+    test "an empty draft asks for a post", %{compose: compose} do
+      assert row(Page.render(compose), @top) == ["Type a post"]
+      assert row(Page.render(compose), 216) == ["Tab post   Enter new line"]
+    end
+
+    test "typing shows the draft, a line at a time", %{compose: compose} do
+      typed = typing(press(typing(compose, "Hello"), {:edit, :newline}), "#goatmire")
+
+      assert row(Page.render(typed), @top) == ["Hello"]
+      assert row(Page.render(typed), @top + @pitch) == ["#goatmire"]
+      assert Page.tab(press(press(typed, {:move, :left}), {:move, :right})) == :compose
+    end
+
+    test "Tab asks first, and any other key goes back to editing", %{compose: compose} do
+      asked = press(typing(compose, "Hello"), {:edit, :tab})
+
+      assert row(Page.render(asked), 216) == ["Tab again to post, any key edits"]
+      assert press(asked, {:char, ?x}).stage == :editing
+      assert Draft.text(press(asked, {:char, ?x}).draft) == "Hello"
+      assert press(asked, {:nav, :home}).stage == :editing
+    end
+
+    test "a blank draft cannot be posted", %{compose: compose} do
+      assert press(typing(compose, "  "), {:edit, :tab}).stage == :editing
+    end
+
+    test "Tab again sends it and waits", %{compose: compose} do
+      sending = press(press(typing(compose, "Hello"), {:edit, :tab}), {:edit, :tab})
+
+      assert sending.stage == :sending
+      assert row(Page.render(sending), 216) == ["Posting..."]
+      assert press(sending, {:char, ?x}) == sending
+    end
+
+    test "a landed post clears the draft; a failed one keeps it", %{compose: compose} do
+      sending = press(press(typing(compose, "Hello"), {:edit, :tab}), {:edit, :tab})
+
+      landed = Page.apply_sent(%{sending | status: %{sending.status | post: {:ok, "at://p"}}})
+
+      assert row(Page.render(landed), 216) == ["Posted"]
+      assert Draft.count(landed.draft) == 0
+
+      failed = Page.apply_sent(%{sending | status: %{sending.status | post: {:error, :closed}}})
+
+      assert row(Page.render(failed), 216) == ["Post failed: closed"]
+      assert Draft.text(failed.draft) == "Hello"
+      assert press(failed, {:char, ?!}).stage == :editing
+    end
+
+    test "logged out, it says where to log in" do
+      compose = press(shown([post(%{})]), {:move, :right})
+
+      assert row(Page.render(compose), @notice_y) == ["Not logged in"]
+      assert Page.handle_key({:char, ?a}, compose) == :ignore
+    end
+
+    test "a long draft keeps its end in view" do
+      compose = press(Page.apply_login("pw", shown([post(%{})], %{post: :none})), {:move, :right})
+
+      long =
+        :lists.foldl(
+          fn n, acc ->
+            press(typing(acc, "line" <> :erlang.integer_to_binary(n)), {:edit, :newline})
+          end,
+          compose,
+          :lists.seq(1, 12)
+        )
+
+      items = Page.render(long)
+
+      assert row(items, @top) == ["line5"]
+
+      for {:text, _x, y, _font, _fg, _bg, _body} <- items, do: assert(y + 16 <= Theme.height())
     end
   end
 
@@ -490,7 +596,7 @@ defmodule Badge.Page.BlueskyTest do
       assert row(items, @top + 9 * @pitch) == ["Line 9"]
       assert row(items, @top + 10 * @pitch) == []
       refute "42 likes  7 reposts  3 replies" in texts(items)
-      assert length(texts(items)) == 3 + 2 + 9
+      assert length(texts(items)) == 4 + 2 + 9
     end
 
     test "a post that just fits leaves room for nothing else" do
@@ -500,7 +606,7 @@ defmodule Badge.Page.BlueskyTest do
       assert row(items, @top) == ["Goatmire", "2h"]
       assert row(items, @top + 8 * @pitch) == ["Line 8"]
       assert row(items, @top + 9 * @pitch) == ["42 likes  7 reposts  3 replies"]
-      assert length(texts(items)) == 3 + 2 + 8 + 1
+      assert length(texts(items)) == 4 + 2 + 8 + 1
     end
   end
 end

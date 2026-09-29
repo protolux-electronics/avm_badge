@@ -81,7 +81,7 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - **SPI `peripheral:` must be a string** (`"spi2"`), not an atom
 - Use plain maps, not structs
 - `atomvm.check` has known false positives: `json:encode/1`, `json:decode/1`,
-  `cjson:decode/1`, `erlang:binary_part/3`, `lists:keysort/2`,
+  `cjson:decode/1`, `cjson:decode/2`, `erlang:binary_part/3`, `lists:keysort/2`,
   `lists:flatmap/2`, `binary:match/2` all exist in the fork; `GenServer`, `Supervisor`, `network`, `uart` are
   flagged because the checker cannot see AtomVM's own libraries. Compare the
   count against `main` rather than reading the list
@@ -246,6 +246,18 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   `https://public.api.bsky.app`. `https://` goes through `ahttp_client` over
   this VM's `:ssl`, which the schedule fetch found broken; `http://` runs in the
   clear for a server on the bench
+- **Decode Bluesky answers with `Http.decode/2` and the keys a parser reads.**
+  `cjson:decode/2` prunes every other member before building terms; each
+  string over 64 bytes is a refc binary, and up to 512 bytes those come from
+  internal RAM. A full timeline decode starved the display's SPI DMA
+- Internal RAM reads as `esp32_internal_free_size` and
+  `esp32_internal_largest_free_block` in `system_info`, logged on each
+  `Power:` line and after each Bluesky request. It falls from ~100K at boot to
+  ~13K once Bluesky has logged in, so only one TLS connection at a time: the
+  link never overlaps a post and a fetch
+- The Post tab composes with `Badge.Bluesky.Draft` and posts through
+  `com.atproto.repo.createRecord`; `#tags` get facets. Tab sends, after a
+  second Tab to confirm
 - **Decode JSON with `:cjson.decode/1`, not `:json`.** The VM's `json.erl`
   runs at ~7 ms a byte, so a 30 kB feed takes minutes and starves the task
   watchdog. `cjson` is a native in the fork (`avm_builtins/cjson_nif.c`) with

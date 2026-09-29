@@ -23,6 +23,10 @@ defmodule Badge.Bluesky.Link.State do
   `:checking`, then `{:ok, pds}` or `{:error, reason}`. A PDS found this way
   is the one later logins go to.
 
+  `post/3` queues a new post. It goes out on the next tick with no fetch
+  under way, and no fetch starts while it is out, so there is only ever one
+  TLS connection. A post that lands refreshes an unpaged feed, so it shows.
+
   `more/1` asks for the page after the held posts, appended to them, up to
   50 in all. Once a feed has been paged it is not refreshed until it is
   opened or chosen again, so reading further down never jumps back to the top.
@@ -56,6 +60,7 @@ defmodule Badge.Bluesky.Link.State do
       append: false,
       paged: false,
       check: :none,
+      post: :none,
       reason: nil,
       version: 0,
       at: nil,
@@ -67,7 +72,8 @@ defmodule Badge.Bluesky.Link.State do
   What a page reads each tick. `count` is how many posts `posts/0` holds,
   `feed` the key of the feed they came from, `account` whether a password
   was given, so the saved feeds can be, `more` whether `more/1` would find
-  another page, and `append` whether one is asked for.
+  another page, `append` whether one is asked for, and `post` how the last
+  post went: `:none`, `:posting`, `{:ok, uri}` or `{:error, reason}`.
   """
   @spec status(map) :: map
   def status(state) do
@@ -80,9 +86,13 @@ defmodule Badge.Bluesky.Link.State do
       version: state.version,
       count: tuple_size(state.posts),
       more: more?(state),
-      append: state.append
+      append: state.append,
+      post: posting(state.post)
     }
   end
+
+  defp posting({:queued, _text, _now}), do: :posting
+  defp posting(post), do: post
 
   @doc "The key of the feed shown: the one chosen, else Following, else the account's own."
   @spec shown(map) :: tuple | nil
@@ -110,12 +120,55 @@ defmodule Badge.Bluesky.Link.State do
         cursor: nil,
         append: false,
         paged: false,
+        post: :none,
         reason: nil,
         version: state.version + 1,
         at: nil,
         failures: 0
     }
   end
+
+  @doc "Queues `text` to be posted, dated `now` in epoch seconds. One post at a time."
+  @spec post(map, binary, integer) :: map
+  def post(%{post: :posting} = state, _text, _now), do: state
+  def post(%{post: {:queued, _text, _at}} = state, _text2, _now), do: state
+  def post(state, text, now), do: %{state | post: {:queued, text, now}}
+
+  @doc "What a post for the current want is asked to do, as `Badge.Bluesky.Account.post/2` takes it."
+  @spec post_job(map) :: map
+  def post_job(%{post: {:queued, text, now}} = state) do
+    %{
+      actor: state.actor,
+      password: state.password,
+      session: state.session,
+      pds: state.pds,
+      text: text,
+      now: now
+    }
+  end
+
+  @doc """
+  Takes what a post process brought back for `job`. One that landed keeps
+  its session and refreshes an unpaged feed; one for another account is
+  dropped.
+  """
+  @spec posted(map, map, {:ok, map} | {:error, term}) :: map
+  def posted(
+        %{actor: actor, password: password} = state,
+        %{actor: actor, password: password},
+        result
+      ),
+      do: apply_post(state, result)
+
+  def posted(state, _job, _result), do: %{state | post: :none}
+
+  defp apply_post(state, {:ok, %{uri: uri, session: session}}),
+    do: refresh(%{state | post: {:ok, uri}, session: session})
+
+  defp apply_post(state, {:error, reason}), do: %{state | post: {:error, reason}, session: nil}
+
+  defp refresh(%{state: :ready, paged: false} = state), do: %{state | state: :idle}
+  defp refresh(state), do: state
 
   @doc "Another feed is chosen. Its posts are fetched on the next tick; the old ones go."
   @spec select(map, tuple) :: map
@@ -178,10 +231,14 @@ defmodule Badge.Bluesky.Link.State do
   `Badge.Bluesky.Account.load/3` takes it; `:wait` means there is nothing to
   do yet, or posts fresh enough on hand.
   """
-  @spec load(map, boolean, integer) :: {{:fetch, map} | :wait, map}
+  @spec load(map, boolean, integer) :: {{:fetch, map} | {:post, map} | :wait, map}
   def load(%{want: false} = state, _ready, _now), do: {:wait, state}
   def load(%{actor: nil} = state, _ready, _now), do: {:wait, state}
+  def load(%{post: :posting} = state, _ready, _now), do: {:wait, state}
   def load(%{state: :loading} = state, _ready, _now), do: {:wait, state}
+
+  def load(%{post: {:queued, _text, _at}} = state, true, _now),
+    do: {{:post, post_job(state)}, %{state | post: :posting}}
 
   def load(%{state: :failed} = state, ready, now) do
     case now - state.at < backoff(state.failures) do

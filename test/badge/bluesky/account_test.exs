@@ -133,6 +133,51 @@ defmodule Badge.Bluesky.AccountTest do
              "/xrpc/app.bsky.feed.getTimeline?limit=5&cursor=abc"
   end
 
+  describe "posting" do
+    test "a record is the text, dated in UTC" do
+      assert Account.record("Hello", 1_790_669_046) == %{
+               "$type" => "app.bsky.feed.post",
+               "text" => "Hello",
+               "createdAt" => "2026-09-29T08:04:06.000Z"
+             }
+    end
+
+    test "hashtags become tag facets by byte range" do
+      assert Account.facets("Hi #goatmire and #elixir_lang!") == [
+               %{
+                 "index" => %{"byteStart" => 3, "byteEnd" => 12},
+                 "features" => [%{"$type" => "app.bsky.richtext.facet#tag", "tag" => "goatmire"}]
+               },
+               %{
+                 "index" => %{"byteStart" => 17, "byteEnd" => 29},
+                 "features" => [
+                   %{"$type" => "app.bsky.richtext.facet#tag", "tag" => "elixir_lang"}
+                 ]
+               }
+             ]
+
+      assert %{"facets" => [_tag]} = Account.record("#goatmire", 0)
+    end
+
+    test "a tag needs a boundary before it and more than digits" do
+      assert Account.facets("a#b #1 # #2x\n#c") |> Enum.map(&hd(&1["features"])["tag"]) ==
+               ["2x", "c"]
+
+      assert Account.facets("no tags") == []
+    end
+
+    test "the timestamp pads every field" do
+      assert Account.timestamp(0) == "1970-01-01T00:00:00.000Z"
+    end
+
+    test "createRecord's answer is the new post's URI" do
+      assert Account.parse_created(~s({"uri":"at://did:plc:a/app.bsky.feed.post/3m","cid":"b"})) ==
+               {:ok, "at://did:plc:a/app.bsky.feed.post/3m"}
+
+      assert Account.parse_created(~s({"error":"InvalidRequest"})) == :error
+    end
+  end
+
   test "key/1 is a feed's kind and URI" do
     assert Account.key(%{kind: :feed, uri: @hot, name: "Discover"}) == {:feed, @hot}
   end

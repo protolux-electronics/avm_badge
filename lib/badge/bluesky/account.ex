@@ -209,6 +209,139 @@ defmodule Badge.Bluesky.Account do
     )
   end
 
+  @doc """
+  Publishes `text` as a new post by the session's account, dated `now` in
+  epoch seconds, and answers the new post's URI. Hashtags become facets.
+  """
+  @spec create_post(session, binary, integer) :: {:ok, binary} | {:error, term}
+  def create_post(session, text, now) do
+    body =
+      json(%{
+        "repo" => session.did,
+        "collection" => "app.bsky.feed.post",
+        "record" => record(text, now)
+      })
+
+    Http.post(
+      session.pds,
+      "/xrpc/com.atproto.repo.createRecord",
+      [Http.bearer(session.access)],
+      body,
+      &parse_created/1
+    )
+  end
+
+  @doc "Logs in if `job` holds no session, then publishes its `:text`. See `load/3`."
+  @spec post(map, binary) :: {:ok, map} | {:error, term}
+  def post(job, base) do
+    with {:ok, session} <- session(job, base),
+         {:ok, uri} <- create_post(session, job.text, job.now) do
+      {:ok, %{uri: uri, session: session}}
+    end
+  end
+
+  @doc "The record a post is written as."
+  @spec record(binary, integer) :: map
+  def record(text, now) do
+    base = %{"$type" => "app.bsky.feed.post", "text" => text, "createdAt" => timestamp(now)}
+
+    case facets(text) do
+      [] -> base
+      facets -> Map.put(base, "facets", facets)
+    end
+  end
+
+  @doc """
+  A tag facet for every `#tag` in `text`, by byte range.
+
+  A tag starts after a space, a line break or the start, and runs over
+  letters, digits and underscores; one of digits alone is not a tag.
+  """
+  @spec facets(binary) :: [map]
+  def facets(text), do: scan(text, 0, true, [])
+
+  defp scan(text, at, _boundary, acc) when at >= byte_size(text), do: :lists.reverse(acc)
+
+  defp scan(text, at, true, acc) do
+    case :binary.at(text, at) do
+      ?# -> tag(text, at, acc)
+      byte -> scan(text, at + 1, boundary?(byte), acc)
+    end
+  end
+
+  defp scan(text, at, false, acc), do: scan(text, at + 1, boundary?(:binary.at(text, at)), acc)
+
+  defp tag(text, at, acc) do
+    stop = tag_end(text, at + 1)
+    name = :binary.part(text, at + 1, stop - at - 1)
+
+    case name != "" and not digits?(name) do
+      true -> scan(text, stop, false, [tag_facet(name, at, stop) | acc])
+      false -> scan(text, at + 1, false, acc)
+    end
+  end
+
+  defp tag_end(text, at) when at >= byte_size(text), do: at
+
+  defp tag_end(text, at) do
+    case word?(:binary.at(text, at)) do
+      true -> tag_end(text, at + 1)
+      false -> at
+    end
+  end
+
+  defp tag_facet(name, start, stop) do
+    %{
+      "index" => %{"byteStart" => start, "byteEnd" => stop},
+      "features" => [%{"$type" => "app.bsky.richtext.facet#tag", "tag" => name}]
+    }
+  end
+
+  defp boundary?(byte), do: byte == ?\s or byte == ?\n
+
+  defp word?(byte),
+    do:
+      (byte >= ?a and byte <= ?z) or (byte >= ?A and byte <= ?Z) or (byte >= ?0 and byte <= ?9) or
+        byte == ?_
+
+  defp digits?(<<>>), do: true
+  defp digits?(<<byte, rest::binary>>) when byte >= ?0 and byte <= ?9, do: digits?(rest)
+  defp digits?(_name), do: false
+
+  @doc "Epoch seconds as the UTC timestamp a record carries, e.g. 2026-09-29T08:04:06.000Z."
+  @spec timestamp(integer) :: binary
+  def timestamp(now) do
+    {{year, month, day}, {hour, minute, second}} =
+      :calendar.system_time_to_universal_time(now, :second)
+
+    :erlang.iolist_to_binary([
+      :erlang.integer_to_binary(year),
+      ?-,
+      pad(month),
+      ?-,
+      pad(day),
+      ?T,
+      pad(hour),
+      ?:,
+      pad(minute),
+      ?:,
+      pad(second),
+      ".000Z"
+    ])
+  end
+
+  defp pad(n) when n < 10, do: [?0 | :erlang.integer_to_list(n)]
+  defp pad(n), do: :erlang.integer_to_list(n)
+
+  @doc "The new post's URI from `createRecord`'s answer."
+  @spec parse_created(binary) :: {:ok, binary} | :error
+  def parse_created(body) do
+    case Http.decode(body, ["uri"]) do
+      {:ok, %{"uri" => uri}} when is_binary(uri) -> {:ok, uri}
+      _other -> :error
+    end
+  end
+
   @doc "The key a feed is selected by."
   @spec key(feed) :: key
   def key(%{kind: kind, uri: uri}), do: {kind, uri}

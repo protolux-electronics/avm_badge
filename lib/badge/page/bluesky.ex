@@ -4,14 +4,18 @@ defmodule Badge.Page.Bluesky do
 
   The account is the `:bluesky` field of the profile and the app password
   the `bsky_pass` NVS key, both read once when the page opens; with no
-  handle the page says where to set one. Two tabs, Feeds and the feed shown,
-  opening on the feed; Left and Right turn between them.
+  handle the page says where to set one. Three tabs, Feeds, the feed shown
+  and Post, opening on the feed; Left and Right turn between them.
 
   Without a password the feed is the account's own posts. With one, it is
   Following, and Feeds lists the feeds the account saved: Up and Down pick
   one, Enter shows it. Posts run down the panel newest first, each as who
   wrote it and how long ago, the text, and the counts under it; Up and Down
-  move the post at the top, and Down on the last post fetches the next page. Esc is left for the router and goes Home. Text
+  move the post at the top, and Down on the last post fetches the next page.
+
+  Post composes a new post with `Badge.Bluesky.Draft`: type, Enter for a new
+  line, Tab to post, Tab again to confirm. Left or Esc goes back to the feed
+  and keeps the draft. It is sent through the link, which refreshes the feed. Esc is left for the router and goes Home. Text
   only: images and cards are not drawn.
 
   Posts and feeds live in `Badge.Bluesky.Link`, which fetches them while
@@ -24,6 +28,7 @@ defmodule Badge.Page.Bluesky do
 
   alias Badge.Bluesky
   alias Badge.Bluesky.Account
+  alias Badge.Bluesky.Draft
   alias Badge.Bluesky.Link
   alias Badge.Nvs
   alias Badge.Profile
@@ -43,6 +48,9 @@ defmodule Badge.Page.Bluesky do
 
   @notice_y @top + 2 * @pitch
 
+  # Draft rows above the hint line.
+  @compose_rows 9
+
   @no_handle "No Bluesky handle"
   @where "Set it on the Name page"
   @waiting "Waiting for wifi"
@@ -58,6 +66,14 @@ defmodule Badge.Page.Bluesky do
   @log_in "Set an app password under"
   @log_in_where "Settings > Bluesky"
   @feeds_tab "Feeds"
+  @post_tab "Post"
+  @compose_prompt "Type a post"
+  @compose_hint "Tab post   Enter new line"
+  @confirm_hint "Tab again to post, any key edits"
+  @sending "Posting..."
+  @sent "Posted"
+  @post_failed "Post failed: "
+  @hint_y 216
   @own_tab "Posts"
   @repost "repost: "
 
@@ -88,6 +104,8 @@ defmodule Badge.Page.Bluesky do
       version: 0,
       cursor: 0,
       pick: 0,
+      draft: Draft.new(),
+      stage: :editing,
       now: nil
     }
   end
@@ -103,7 +121,7 @@ defmodule Badge.Page.Bluesky do
     Link.open(state.actor, state.password)
 
     status = Link.status()
-    state = apply_status(status, state, now())
+    state = apply_sent(apply_status(status, state, now()))
 
     case status.version == state.version do
       true -> state
@@ -146,6 +164,21 @@ defmodule Badge.Page.Bluesky do
     %{state | status: status, now: now}
   end
 
+  @doc """
+  Follows a post that was sent: a landed one clears the draft, a failed one
+  keeps it. Called after `apply_status/3`.
+  """
+  @spec apply_sent(map) :: map
+  def apply_sent(%{stage: :sending, status: status} = state) do
+    case Map.get(status, :post) do
+      {:ok, _uri} -> %{state | stage: :sent, draft: Draft.new()}
+      {:error, reason} -> %{state | stage: {:failed, reason}}
+      _under_way -> state
+    end
+  end
+
+  def apply_sent(state), do: state
+
   @doc "Takes fresh posts from the link, tagged with their version."
   @spec apply_posts(Bluesky.posts(), integer, map) :: map
   def apply_posts(posts, version, state) do
@@ -183,6 +216,9 @@ defmodule Badge.Page.Bluesky do
 
   def handle_key({:move, :left}, %{tab: :posts} = state), do: {:ok, %{state | tab: :feeds}}
   def handle_key({:move, :right}, %{tab: :feeds} = state), do: {:ok, %{state | tab: :posts}}
+  def handle_key({:move, :right}, %{tab: :posts} = state), do: {:ok, %{state | tab: :compose}}
+
+  def handle_key(event, %{tab: :compose} = state), do: compose_key(event, state)
 
   def handle_key(event, %{tab: :feeds} = state), do: feeds_key(event, state)
 
@@ -227,6 +263,46 @@ defmodule Badge.Page.Bluesky do
 
   defp feeds_key(_event, _state), do: :ignore
 
+  # Leaving keeps the draft; Esc only steps back out of a confirm first.
+  defp compose_key({:move, :left}, state), do: {:ok, %{state | tab: :posts}}
+
+  defp compose_key({:nav, :home}, %{stage: :confirm} = state),
+    do: {:ok, %{state | stage: :editing}}
+
+  defp compose_key({:nav, :home}, state), do: {:ok, %{state | tab: :posts}}
+  defp compose_key(_event, %{password: nil}), do: :ignore
+  defp compose_key(_event, %{stage: :sending} = state), do: {:ok, state}
+
+  defp compose_key({:edit, :tab}, %{stage: :confirm} = state) do
+    Link.post(Draft.text(state.draft))
+
+    {:ok, %{state | stage: :sending}}
+  end
+
+  defp compose_key(_event, %{stage: :confirm} = state), do: {:ok, %{state | stage: :editing}}
+
+  defp compose_key({:edit, :tab}, state) do
+    case Draft.blank?(state.draft) do
+      true -> {:ok, state}
+      false -> {:ok, %{state | stage: :confirm}}
+    end
+  end
+
+  defp compose_key({:char, char}, state),
+    do: {:ok, edited(state, Draft.insert(state.draft, char))}
+
+  defp compose_key({:edit, :newline}, state),
+    do: {:ok, edited(state, Draft.insert(state.draft, ?\n))}
+
+  defp compose_key({:edit, :backspace}, state),
+    do: {:ok, edited(state, Draft.backspace(state.draft))}
+
+  defp compose_key({:move, _direction}, state), do: {:ok, state}
+  defp compose_key(_event, _state), do: :ignore
+
+  # Typing after a post landed or failed starts editing again.
+  defp edited(state, draft), do: %{state | draft: draft, stage: :editing}
+
   # The feed already shown just turns back to it; another is asked for and waited on.
   defp choose(state, _key, true), do: %{state | tab: :posts}
 
@@ -258,7 +334,7 @@ defmodule Badge.Page.Bluesky do
 
   def render(state), do: head(state) ++ rule() ++ body_items(state)
 
-  defp body_items(%{tab: :feeds, password: nil}) do
+  defp body_items(%{tab: tab, password: nil}) when tab == :feeds or tab == :compose do
     [
       centred(@notice_y, Theme.fg(), @logged_out),
       centred(@notice_y + @pitch, Theme.muted(), @log_in),
@@ -266,25 +342,39 @@ defmodule Badge.Page.Bluesky do
     ]
   end
 
+  defp body_items(%{tab: :compose} = state), do: compose_items(state)
   defp body_items(%{tab: :feeds, feeds: {}} = state), do: notice(state, @no_feeds)
   defp body_items(%{tab: :feeds} = state), do: feed_rows(state)
   defp body_items(%{posts: {}} = state), do: notice(state, @empty)
   defp body_items(state), do: feed(state, state.cursor, @top, @rows, [])
 
-  # Feeds, then the name of the feed shown; the active tab lit, and where its top entry is.
+  # Feeds, the name of the feed shown, then Post; the active tab lit, and where it stands.
   defp head(state) do
-    place = place(list(state), current(state)) <> plus(state)
-    room = @columns - byte_size(@feeds_tab) - 2 - byte_size(place) - 1
+    place = place(state)
+    room = @columns - byte_size(@feeds_tab) - 2 - byte_size(@post_tab) - 2 - byte_size(place) - 1
+    name = clip(feed_name(state), room)
     second = @margin + (byte_size(@feeds_tab) + 2) * @char_w
+    third = second + (byte_size(name) + 2) * @char_w
 
     [
       {:text, @margin, @head_y, :default16px, tab_colour(state.tab, :feeds), Theme.bg(),
        @feeds_tab},
-      {:text, second, @head_y, :default16px, tab_colour(state.tab, :posts), Theme.bg(),
-       clip(feed_name(state), room)},
+      {:text, second, @head_y, :default16px, tab_colour(state.tab, :posts), Theme.bg(), name},
+      {:text, third, @head_y, :default16px, tab_colour(state.tab, :compose), Theme.bg(),
+       @post_tab},
       {:text, Readout.right_x(place), @head_y, :default16px, Theme.muted(), Theme.bg(), place}
     ]
   end
+
+  # The draft's length on Post, else where the top entry is.
+  defp place(%{tab: :compose, password: nil}), do: ""
+
+  defp place(%{tab: :compose, draft: draft}),
+    do:
+      :erlang.integer_to_binary(Draft.count(draft)) <>
+        "/" <> :erlang.integer_to_binary(Draft.limit())
+
+  defp place(state), do: place(list(state), current(state)) <> plus(state)
 
   defp tab_colour(tab, tab), do: Theme.select()
   defp tab_colour(_tab, _active), do: Theme.dim()
@@ -320,6 +410,37 @@ defmodule Badge.Page.Bluesky do
   defp name_of(key, _feeds, _index), do: name_of(key, {}, 0)
 
   defp rule, do: Theme.rule(@margin, @rule_y, Theme.width() - 2 * @margin)
+
+  # The last rows of the draft, the cursor under its end, and how posting goes.
+  defp compose_items(state) do
+    {rows, {column, row}} = Draft.rows(state.draft, @columns)
+    first = max(row - @compose_rows + 1, 0)
+    visible = :lists.nthtail(min(first, length(rows)), rows)
+
+    [cursor(column, row - first)] ++
+      draft_rows(visible, state.draft, @top, []) ++ compose_hint(state)
+  end
+
+  defp cursor(column, row) do
+    x = min(@margin + column * @char_w, Theme.width() - @char_w)
+
+    {:rect, x, @top + row * @pitch + 14, @char_w, 2, Theme.fg()}
+  end
+
+  defp draft_rows(_rows, %{count: 0}, y, _acc), do: [left(y, Theme.muted(), @compose_prompt)]
+  defp draft_rows([], _draft, _y, acc), do: :lists.reverse(acc)
+  defp draft_rows([<<>> | rest], draft, y, acc), do: draft_rows(rest, draft, y + @pitch, acc)
+
+  defp draft_rows([line | rest], draft, y, acc),
+    do: draft_rows(rest, draft, y + @pitch, [left(y, Theme.fg(), line) | acc])
+
+  defp compose_hint(%{stage: :editing}), do: [left(@hint_y, Theme.dim(), @compose_hint)]
+  defp compose_hint(%{stage: :confirm}), do: [left(@hint_y, Theme.select(), @confirm_hint)]
+  defp compose_hint(%{stage: :sending}), do: [left(@hint_y, Theme.muted(), @sending)]
+  defp compose_hint(%{stage: :sent}), do: [left(@hint_y, Theme.ok(), @sent)]
+
+  defp compose_hint(%{stage: {:failed, reason}}),
+    do: [left(@hint_y, Theme.alert(), clip(@post_failed <> Bluesky.describe(reason), @columns))]
 
   defp notice(%{status: %{state: :failed, reason: reason}}, _empty) do
     [
