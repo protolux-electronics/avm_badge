@@ -38,6 +38,10 @@ defmodule Badge.Page.ConnectFour do
   @hint_y 224
   @char_w 8
 
+  @empty 0x3F3F46
+  @player_0 0xFBBF24
+  @player_1 0xEF4444
+
   # The same two-badges artwork the Share page leads with, since this screen
   # is asking for exactly the same thing. Geometry only — the tint is read
   # from the skin at draw time by Icons.item/3.
@@ -277,13 +281,13 @@ defmodule Badge.Page.ConnectFour do
 
     [
       {:rect, x + inset, y + inset, @cell - 2 * inset, @cell - 2 * inset, colour},
-      {:rect, x, y, @cell, @cell, Theme.bg()} | acc
+      {:rect, x, y, @cell, @cell, @empty} | acc
     ]
   end
 
-  defp cell_colour(nil), do: Theme.bg()
-  defp cell_colour(0), do: Theme.fg()
-  defp cell_colour(1), do: Theme.accent()
+  defp cell_colour(nil), do: @empty
+  defp cell_colour(0), do: @player_0
+  defp cell_colour(1), do: @player_1
 
   defp key_labels(%{screen: :game} = state) do
     if my_turn?(state.link) do

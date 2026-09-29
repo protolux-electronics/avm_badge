@@ -1,6 +1,7 @@
 defmodule Badge.Page.ConnectFourTest do
   use ExUnit.Case, async: true
 
+  alias Badge.ConnectFour.Board
   alias Badge.ConnectFour.Protocol
   alias Badge.Page.ConnectFour
 
@@ -99,6 +100,22 @@ defmodule Badge.Page.ConnectFourTest do
   end
 
   describe "render/1" do
+    # The discs are the game's identity, not the skin's, so they are fixed
+    # here as they are in the workshop's renderers. These are the values in
+    # priv/static/main.mjs: Tailwind amber-400, red-500 and zinc-700.
+    test "disc colours match the workshop's web client rather than the skin" do
+      {:ok, _cell, board} = Board.drop(Board.new(), 0, 0)
+      {:ok, _cell, board} = Board.drop(board, 1, 1)
+
+      colours =
+        for {:rect, _x, _y, 20, 20, colour} <- ConnectFour.render(%{playing(0) | board: board}),
+            do: colour
+
+      assert 0xFBBF24 in colours
+      assert 0xEF4444 in colours
+      assert 0x3F3F46 in colours
+    end
+
     test "a move renders smaller and centred until it is acked" do
       {:ok, dropped} = ConnectFour.handle_key({:nav, :square}, playing(0))
 
