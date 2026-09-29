@@ -27,6 +27,10 @@ defmodule Badge.Bluesky.Link.State do
   under way, and no fetch starts while it is out, so there is only ever one
   TLS connection. A post that lands refreshes an unpaged feed, so it shows.
 
+  `open_thread/2` shows a post and its replies as the feed `{:thread, uri}`,
+  keeping the feed it came from; `close_thread/1` puts that feed back as it
+  was, paging and all, without fetching it again.
+
   `more/1` asks for the page after the held posts, appended to them, up to
   50 in all. Once a feed has been paged it is not refreshed until it is
   opened or chosen again, so reading further down never jumps back to the top.
@@ -61,6 +65,7 @@ defmodule Badge.Bluesky.Link.State do
       paged: false,
       check: :none,
       post: :none,
+      back: nil,
       reason: nil,
       version: 0,
       at: nil,
@@ -121,12 +126,71 @@ defmodule Badge.Bluesky.Link.State do
         append: false,
         paged: false,
         post: :none,
+        back: nil,
         reason: nil,
         version: state.version + 1,
         at: nil,
         failures: 0
     }
   end
+
+  @doc """
+  Shows the thread of the post at `uri`. The feed it came from is kept for
+  `close_thread/1`; from inside a thread, the original feed is what is kept.
+  """
+  @spec open_thread(map, binary) :: map
+  def open_thread(state, uri) do
+    %{
+      state
+      | feed: {:thread, uri},
+        back: state.back || saved(state),
+        state: settled(state.state),
+        posts: {},
+        cursor: nil,
+        append: false,
+        paged: false,
+        reason: nil,
+        version: state.version + 1,
+        at: nil,
+        failures: 0
+    }
+  end
+
+  defp saved(state) do
+    %{
+      feed: state.feed,
+      posts: state.posts,
+      cursor: state.cursor,
+      paged: state.paged,
+      at: state.at
+    }
+  end
+
+  @doc "Puts back the feed a thread was opened from. Leaves the state alone outside one."
+  @spec close_thread(map) :: map
+  def close_thread(%{back: nil} = state), do: state
+
+  def close_thread(%{back: back} = state) do
+    %{
+      state
+      | feed: back.feed,
+        back: nil,
+        state: restored(state.state, back.posts),
+        posts: back.posts,
+        cursor: back.cursor,
+        append: false,
+        paged: back.paged,
+        reason: nil,
+        version: state.version + 1,
+        at: back.at,
+        failures: 0
+    }
+  end
+
+  # A fetch under way still answers for the thread, and is dropped when it lands.
+  defp restored(:loading, _posts), do: :loading
+  defp restored(_state, {}), do: :idle
+  defp restored(_state, _posts), do: :ready
 
   @doc "Queues `text` to be posted, dated `now` in epoch seconds. One post at a time."
   @spec post(map, binary, integer) :: map
@@ -186,6 +250,7 @@ defmodule Badge.Bluesky.Link.State do
             cursor: nil,
             append: false,
             paged: false,
+            back: nil,
             reason: nil,
             version: state.version + 1,
             at: nil,
@@ -338,11 +403,11 @@ defmodule Badge.Bluesky.Link.State do
     end
   end
 
-  # The fetch still counts as under way for the feed now shown, which asks again.
+  # The feed now shown asks again, unless it came back from a thread with its posts.
   defp keep_login(state, {:ok, result}) do
     %{
       state
-      | state: :idle,
+      | state: restored(:idle, state.posts),
         session: result.session,
         append: false,
         feeds: feeds(result.feeds, state.feeds),
@@ -350,7 +415,8 @@ defmodule Badge.Bluesky.Link.State do
     }
   end
 
-  defp keep_login(state, {:error, _reason}), do: %{state | state: :idle, session: nil}
+  defp keep_login(state, {:error, _reason}),
+    do: %{state | state: restored(:idle, state.posts), session: nil}
 
   defp feeds(nil, held), do: held
   defp feeds(fresh, _held), do: fresh

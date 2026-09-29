@@ -53,6 +53,14 @@ defmodule Badge.Bluesky.Link do
   @spec post(binary) :: :ok
   def post(text), do: GenServer.cast(__MODULE__, {:post, text})
 
+  @doc "Shows the thread of the post at `uri`, keeping the feed for `close_thread/0`."
+  @spec open_thread(binary) :: :ok
+  def open_thread(uri), do: GenServer.cast(__MODULE__, {:open_thread, uri})
+
+  @doc "Goes back from a thread to the feed it was opened from."
+  @spec close_thread() :: :ok
+  def close_thread, do: GenServer.cast(__MODULE__, :close_thread)
+
   @doc "Fetches the page after the held posts, when there is one."
   @spec more() :: :ok
   def more, do: GenServer.cast(__MODULE__, :more)
@@ -95,6 +103,8 @@ defmodule Badge.Bluesky.Link do
   def handle_cast(:close, state), do: {:noreply, State.close(state)}
   def handle_cast(:retry, state), do: {:noreply, State.retry(state)}
   def handle_cast(:more, state), do: {:noreply, State.more(state)}
+  def handle_cast({:open_thread, uri}, state), do: {:noreply, State.open_thread(state, uri)}
+  def handle_cast(:close_thread, state), do: {:noreply, State.close_thread(state)}
 
   def handle_cast({:post, text}, state),
     do: {:noreply, State.post(state, text, :erlang.system_time(:second))}

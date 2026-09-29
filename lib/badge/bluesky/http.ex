@@ -6,7 +6,7 @@ defmodule Badge.Bluesky.Http do
   its query, extra headers, and a parser that turns a 200's body into
   `{:ok, term}` or `:error`. Anything but a 200 comes back as
   `{:error, {:http, status, error}}`, where `error` is the server's own
-  error name or empty.
+  error name or empty, and an answer past 64 KB as `{:error, :too_large}`.
 
   Blocking: call from a process of its own. Each request opens and closes
   its own connection, collects garbage after every read, and never builds
@@ -19,6 +19,9 @@ defmodule Badge.Bluesky.Http do
   # block until exactly that much had, which the last piece never does.
   @chunk 0
   @reads 512
+
+  # An answer past this is refused: decoding it would starve internal RAM.
+  @max_bytes 64 * 1024
 
   # One FreeRTOS tick, so the idle task gets the core between posts.
   @breath 10
@@ -168,6 +171,9 @@ defmodule Badge.Bluesky.Http do
         close(conn, {:error, reason})
     end
   end
+
+  defp continue(conn, _parser, _chunks, _status, size, _done, _left) when size > @max_bytes,
+    do: close(conn, {:error, :too_large})
 
   defp continue(conn, parser, chunks, status, size, true, left) do
     :io.format(~c"Bluesky: ~p bytes in ~p reads~n", [size, @reads - left + 1])

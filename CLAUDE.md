@@ -255,6 +255,11 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   `Power:` line and after each Bluesky request. It falls from ~100K at boot to
   ~13K once Bluesky has logged in, so only one TLS connection at a time: the
   link never overlaps a post and a fetch
+- Enter on a post opens its thread as the feed `{:thread, uri}`
+  (`getPostThread`, `depth=1`, at most 20 replies); the link keeps the feed
+  it came from and `close_thread` restores it without a fetch. Every answer
+  past 64 KB is refused as `:too_large`, since a popular thread would starve
+  internal RAM
 - The Post tab composes with `Badge.Bluesky.Draft` and posts through
   `com.atproto.repo.createRecord`; `#tags` get facets. Tab sends, after a
   second Tab to confirm

@@ -7,14 +7,14 @@ defmodule Badge.Sim.Fakes do
   alias Badge.Sim.Fake
 
   @feed ~s({"feed":[) <>
-          ~s({"post":{"author":{"handle":"goatmire.bsky.social","displayName":"Goatmire"},) <>
+          ~s({"post":{"uri":"at://did:plc:sim/app.bsky.feed.post/1","author":{"handle":"goatmire.bsky.social","displayName":"Goatmire"},) <>
           ~s("record":{"text":"Badges are flashed and the goats are restless. See you in Varberg! #goatmire",) <>
           ~s("createdAt":"2026-09-28T09:12:00.000Z"},"likeCount":42,"repostCount":7,"replyCount":3}},) <>
-          ~s({"post":{"author":{"handle":"lawik.bsky.social","displayName":"Lars Wikman"},) <>
+          ~s({"post":{"uri":"at://did:plc:sim/app.bsky.feed.post/2","author":{"handle":"lawik.bsky.social","displayName":"Lars Wikman"},) <>
           ~s("record":{"text":"The schedule is up.\\n\\nTwo days of Elixir by the sea.",) <>
           ~s("createdAt":"2026-09-27T16:40:00.000Z"},"likeCount":18,"repostCount":4,"replyCount":1},) <>
           ~s("reason":{"$type":"app.bsky.feed.defs#reasonRepost"}},) <>
-          ~s({"post":{"author":{"handle":"goatmire.bsky.social","displayName":"Goatmire"},) <>
+          ~s({"post":{"uri":"at://did:plc:sim/app.bsky.feed.post/3","author":{"handle":"goatmire.bsky.social","displayName":"Goatmire"},) <>
           ~s("record":{"text":"Tickets for the workshops are nearly gone.",) <>
           ~s("createdAt":"2026-09-25T08:00:00.000Z"},"likeCount":9,"repostCount":1,"replyCount":0}}]})
 
@@ -107,6 +107,20 @@ defmodule Badge.Sim.Fakes do
 
           {:select, key}, d ->
             Map.merge(d, %{feed: key, version: Map.get(d, :version, 1) + 1})
+
+          {:open_thread, uri}, d ->
+            Map.merge(d, %{
+              feed: {:thread, uri},
+              back: Map.get(d, :feed),
+              version: Map.get(d, :version, 1) + 1
+            })
+
+          :close_thread, d ->
+            d
+            |> Map.put(:version, Map.get(d, :version, 1) + 1)
+            |> then(
+              &if(Map.get(d, :back), do: Map.put(&1, :feed, d.back), else: Map.delete(&1, :feed))
+            )
 
           _, d ->
             d

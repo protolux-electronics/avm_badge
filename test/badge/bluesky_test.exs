@@ -128,6 +128,56 @@ defmodule Badge.BlueskyTest do
     end
   end
 
+  describe "threads" do
+    @thread ~s({"thread":{"$type":"app.bsky.feed.defs#threadViewPost",) <>
+              ~s("post":{"uri":"at://a/p/1","author":{"handle":"a.b","displayName":"A"},) <>
+              ~s("record":{"text":"Root"},"replyCount":2},) <>
+              ~s("parent":{"post":{"uri":"at://a/p/0"}},) <>
+              ~s("replies":[{"post":{"uri":"at://c/p/2","author":{"handle":"c.d"},"record":{"text":"First"}}},) <>
+              ~s({"$type":"app.bsky.feed.defs#notFoundPost","uri":"at://x"},) <>
+              ~s({"post":{"uri":"at://e/p/3","author":{"handle":"e.f"},"record":{"text":"Second"}}}]}})
+
+    test "a thread is its post, then its replies" do
+      assert {:ok, {[root, first, second], nil}} =
+               Bluesky.parse_thread(@thread, 38, fn -> :ok end)
+
+      assert {root.uri, root.who, root.lines, root.replies} == {"at://a/p/1", "A", ["Root"], 2}
+      assert {first.uri, first.lines} == {"at://c/p/2", ["First"]}
+      assert second.lines == ["Second"]
+      refute root.repost
+    end
+
+    test "at most twenty replies are kept" do
+      reply = ~s({"post":{"author":{"handle":"r.s"},"record":{"text":"r"}}})
+
+      body =
+        ~s({"thread":{"post":{"author":{"handle":"a.b"},"record":{"text":"Root"}},"replies":[) <>
+          Enum.join(List.duplicate(reply, 30), ",") <> "]}}"
+
+      assert {:ok, {posts, nil}} = Bluesky.parse_thread(body, 38, fn -> :ok end)
+      assert length(posts) == 21
+    end
+
+    test "anything else is not a thread" do
+      assert Bluesky.parse_thread(~s({"error":"NotFound"}), 38, fn -> :ok end) == :error
+    end
+
+    test "the path asks for direct replies only" do
+      assert Bluesky.thread_path("at://a/p/1") ==
+               "/xrpc/app.bsky.feed.getPostThread?uri=at%3A%2F%2Fa%2Fp%2F1&depth=1&parentHeight=0"
+    end
+
+    test "feed posts carry their URI, nil when the answer has none" do
+      assert [first, second, _third] = posts()
+      assert first.uri == "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3m"
+      assert second.uri == nil
+    end
+
+    test "an oversized answer reads as such" do
+      assert Bluesky.describe(:too_large) == "answer too large for the badge"
+    end
+  end
+
   describe "parse_page/3" do
     test "carries the next page's cursor" do
       assert {:ok, {posts, "2026-09-14T19:47:12.655Z"}} =

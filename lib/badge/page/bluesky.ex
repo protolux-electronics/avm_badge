@@ -13,6 +13,10 @@ defmodule Badge.Page.Bluesky do
   wrote it and how long ago, the text, and the counts under it; Up and Down
   move the post at the top, and Down on the last post fetches the next page.
 
+  Enter on the post at the top opens its thread: the post, then its direct
+  replies, loaded as the feed `{:thread, uri}`. Enter on a reply opens that
+  one's thread. Esc or Left goes back to the feed, at the post it left from.
+
   Post composes a new post with `Badge.Bluesky.Draft`: type, Enter for a new
   line, Tab to post, Tab again to confirm. Left or Esc goes back to the feed
   and keeps the draft. It is sent through the link, which refreshes the feed. Esc is left for the router and goes Home. Text
@@ -75,6 +79,7 @@ defmodule Badge.Page.Bluesky do
   @post_failed "Post failed: "
   @hint_y 216
   @own_tab "Posts"
+  @thread_tab "Thread"
   @repost "repost: "
 
   @impl true
@@ -106,6 +111,7 @@ defmodule Badge.Page.Bluesky do
       pick: 0,
       draft: Draft.new(),
       stage: :editing,
+      back_cursor: 0,
       now: nil
     }
   end
@@ -214,7 +220,14 @@ defmodule Badge.Page.Bluesky do
   @impl true
   def handle_key(_event, %{actor: nil}), do: :ignore
 
-  def handle_key({:move, :left}, %{tab: :posts} = state), do: {:ok, %{state | tab: :feeds}}
+  def handle_key(event, %{tab: :posts} = state)
+      when event == {:nav, :home} or event == {:move, :left} do
+    case thread?(state) do
+      true -> {:ok, close_thread(state)}
+      false -> left_of_posts(event, state)
+    end
+  end
+
   def handle_key({:move, :right}, %{tab: :feeds} = state), do: {:ok, %{state | tab: :posts}}
   def handle_key({:move, :right}, %{tab: :posts} = state), do: {:ok, %{state | tab: :compose}}
 
@@ -238,9 +251,44 @@ defmodule Badge.Page.Bluesky do
     {:ok, %{state | status: Map.merge(status, %{state: :loading, append: true})}}
   end
 
+  def handle_key({:edit, :newline}, %{tab: :posts, posts: posts} = state) when posts != {},
+    do: open_thread(state, Map.get(Bluesky.unpack(posts, state.cursor), :uri))
+
   def handle_key({:edit, :newline}, %{status: %{state: :failed}} = state), do: retry(state)
 
   def handle_key(_event, _state), do: :ignore
+
+  # Esc outside a thread is the router's; Left is the Feeds tab.
+  defp left_of_posts({:move, :left}, state), do: {:ok, %{state | tab: :feeds}}
+  defp left_of_posts(_esc, _state), do: :ignore
+
+  defp thread?(state), do: match?({:thread, _uri}, shown(state))
+
+  # A post with no URI has no thread to open.
+  defp open_thread(_state, nil), do: :ignore
+
+  defp open_thread(state, uri) do
+    Link.open_thread(uri)
+
+    back = if thread?(state), do: state.back_cursor, else: state.cursor
+
+    status =
+      Map.merge(state.status || %{}, %{
+        state: :loading,
+        reason: nil,
+        feed: {:thread, uri},
+        more: false
+      })
+
+    {:ok, %{state | posts: {}, cursor: 0, back_cursor: back, status: status}}
+  end
+
+  # The link puts the feed's posts back; the cursor returns to where it was.
+  defp close_thread(state) do
+    Link.close_thread()
+
+    %{state | cursor: state.back_cursor, status: Map.put(state.status, :feed, nil)}
+  end
 
   defp feeds_key({:move, :up}, %{pick: pick} = state) when pick > 0,
     do: {:ok, %{state | pick: pick - 1}}
@@ -395,6 +443,7 @@ defmodule Badge.Page.Bluesky do
   defp feed_name(state), do: name_of(shown(state), state.feeds, 0)
 
   defp name_of({:author, _actor}, _feeds, _index), do: @own_tab
+  defp name_of({:thread, _uri}, _feeds, _index), do: @thread_tab
   defp name_of({:timeline, nil}, {}, _index), do: "Following"
   defp name_of(_key, {}, _index), do: "Feed"
 
@@ -461,6 +510,7 @@ defmodule Badge.Page.Bluesky do
   defp fetching(%{actor: actor} = state) do
     case shown(state) do
       {:author, _actor} -> "@" <> actor
+      {:thread, _uri} -> "thread"
       _key -> feed_name(state)
     end
   end

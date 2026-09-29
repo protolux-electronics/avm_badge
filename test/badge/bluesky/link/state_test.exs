@@ -160,6 +160,17 @@ defmodule Badge.Bluesky.Link.StateTest do
     end
   end
 
+  defp first_page_of_list do
+    {{:fetch, job}, loading} = State.load(State.select(logged_in(0), @hot), true, 0)
+
+    State.fetched(
+      loading,
+      job,
+      {:ok, %{posts: @posts, cursor: "c1", feeds: nil, session: @session}},
+      0
+    )
+  end
+
   describe "more/1" do
     defp paged_answer(posts, cursor),
       do: {:ok, %{posts: posts, cursor: cursor, feeds: nil, session: nil}}
@@ -311,6 +322,49 @@ defmodule Badge.Bluesky.Link.StateTest do
       assert State.status(failed).post == {:error, {:http, 400, "InvalidRequest"}}
       assert failed.session == nil
       assert %{post: {:queued, "Again", 2}} = State.post(failed, "Again", 2)
+    end
+  end
+
+  describe "threads" do
+    test "opening one shows it as a feed and keeps the feed it came from" do
+      {{:fetch, job}, loading} = State.load(State.more(first_page_of_list()), true, 1)
+      paged = State.fetched(loading, job, paged_answer({<<9>>}, "c2"), 2)
+      thread = State.open_thread(paged, "at://p")
+
+      assert State.status(thread).feed == {:thread, "at://p"}
+      assert thread.posts == {}
+
+      assert {{:fetch, %{feed: {:thread, "at://p"}, cursor: nil}}, _} =
+               State.load(thread, true, 3)
+
+      back = State.close_thread(thread)
+
+      assert State.status(back).feed == @hot
+      assert back.posts == {<<1>>, <<2>>, <<9>>}
+      assert back.paged
+      assert back.state == :ready
+      assert State.status(back).version > State.status(thread).version
+      assert State.load(back, true, 60 * 60_000) == {:wait, back}
+    end
+
+    test "a thread opened from a thread still goes back to the feed" do
+      state = State.open_thread(State.open_thread(ready(0), "at://a"), "at://b")
+
+      assert State.status(state).feed == {:thread, "at://b"}
+      assert State.close_thread(state).posts == @posts
+    end
+
+    test "closing a thread whose fetch is out keeps the feed's posts" do
+      {{:fetch, job}, loading} = State.load(State.open_thread(ready(0), "at://a"), true, 1)
+      back = State.close_thread(loading)
+      landed = State.fetched(back, job, answer(), 2)
+
+      assert landed.posts == @posts
+      assert landed.state == :ready
+    end
+
+    test "outside a thread, closing does nothing" do
+      assert State.close_thread(ready(0)) == ready(0)
     end
   end
 

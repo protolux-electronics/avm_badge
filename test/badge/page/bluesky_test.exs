@@ -588,6 +588,62 @@ defmodule Badge.Page.BlueskyTest do
     end
   end
 
+  describe "threads" do
+    setup do
+      posts = [post(%{uri: "at://a/p/1"}), post(%{uri: "at://a/p/2", lines: ["Second."]})]
+
+      %{state: press(shown(posts), {:move, :down})}
+    end
+
+    test "Enter opens the thread of the post at the top", %{state: state} do
+      thread = press(state, {:edit, :newline})
+
+      assert Page.shown(thread) == {:thread, "at://a/p/2"}
+      assert thread.posts == {}
+      assert row(Page.render(thread), @head_y) == ["Feeds", "Thread", "Post", ""]
+      assert row(Page.render(thread), @notice_y) == ["Fetching thread"]
+    end
+
+    test "Esc and Left go back to the feed, at the post it left from", %{state: state} do
+      thread = press(state, {:edit, :newline})
+
+      replies =
+        Page.apply_posts(
+          Bluesky.pack([post(%{uri: "at://r/1"}), post(%{uri: "at://r/2"})]),
+          5,
+          thread
+        )
+
+      assert Page.current(press(replies, {:move, :down})) == 1
+
+      for key <- [{:nav, :home}, {:move, :left}] do
+        back = press(press(replies, {:move, :down}), key)
+
+        assert Page.tab(back) == :posts
+        assert Page.current(back) == 1
+        refute Page.shown(back) == {:thread, "at://a/p/2"}
+      end
+    end
+
+    test "a thread opened from a thread goes back to where the feed was", %{state: state} do
+      thread = press(state, {:edit, :newline})
+      replies = Page.apply_posts(Bluesky.pack([post(%{uri: "at://r/1"})]), 5, thread)
+      nested = press(replies, {:edit, :newline})
+
+      assert Page.shown(nested) == {:thread, "at://r/1"}
+      assert Page.current(press(nested, {:nav, :home})) == 1
+    end
+
+    test "outside a thread, Esc is the router's and Left is Feeds", %{state: state} do
+      assert Page.handle_key({:nav, :home}, state) == :ignore
+      assert Page.tab(press(state, {:move, :left})) == :feeds
+    end
+
+    test "a post without a URI opens nothing" do
+      assert Page.handle_key({:edit, :newline}, shown([post(%{})])) == :ignore
+    end
+  end
+
   describe "a long post" do
     test "is cut where the rows run out, and the next post is not started" do
       long = post(%{lines: for(n <- 1..9, do: "Line " <> :erlang.integer_to_binary(n))})

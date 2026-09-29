@@ -32,6 +32,7 @@ defmodule Badge.Bluesky do
     "feed",
     "cursor",
     "post",
+    "uri",
     "reason",
     "$type",
     "author",
@@ -45,6 +46,26 @@ defmodule Badge.Bluesky do
     "replyCount"
   ]
 
+  # A thread answer: the post, and its direct replies.
+  @thread_keys [
+    "thread",
+    "replies",
+    "post",
+    "uri",
+    "author",
+    "handle",
+    "displayName",
+    "record",
+    "text",
+    "createdAt",
+    "likeCount",
+    "repostCount",
+    "replyCount"
+  ]
+
+  # Replies kept under a thread's post.
+  @max_replies 20
+
   # How many wrapped lines of one post are kept; the rest is cut with an ellipsis.
   @max_lines 8
 
@@ -52,6 +73,7 @@ defmodule Badge.Bluesky do
   @epoch 62_167_219_200
 
   @type post :: %{
+          uri: binary | nil,
           who: binary,
           handle: binary,
           repost: boolean,
@@ -175,8 +197,13 @@ defmodule Badge.Bluesky do
     items(rest, columns, between, posts ++ acc)
   end
 
-  # An item without a post text cannot be shown, so it is left out.
-  defp item(%{"post" => %{"author" => author, "record" => record} = post} = entry, columns)
+  defp item(%{"post" => post} = entry, columns),
+    do: post_item(post, repost?(Map.get(entry, "reason")), columns)
+
+  defp item(_entry, _columns), do: []
+
+  # A post without a text cannot be shown, so it is left out.
+  defp post_item(%{"author" => author, "record" => record} = post, repost, columns)
        when is_map(author) and is_map(record) do
     case text(record, "text") do
       nil ->
@@ -187,9 +214,10 @@ defmodule Badge.Bluesky do
 
         [
           %{
+            uri: text(post, "uri"),
             who: Text.cp437(text(author, "displayName") || handle),
             handle: Text.cp437(handle),
-            repost: repost?(Map.get(entry, "reason")),
+            repost: repost,
             created: created(text(record, "createdAt")),
             lines: lines(raw, columns),
             likes: count(post, "likeCount"),
@@ -200,7 +228,43 @@ defmodule Badge.Bluesky do
     end
   end
 
-  defp item(_entry, _columns), do: []
+  defp post_item(_post, _repost, _columns), do: []
+
+  @doc """
+  Reads a thread answer into its post followed by its direct replies, at most
+  twenty of them, or `:error` when it is not one. A thread has no next page.
+  """
+  @spec parse_thread(binary, pos_integer, (-> term)) :: {:ok, {[post], nil}} | :error
+  def parse_thread(body, columns, between) do
+    case Http.decode(body, @thread_keys) do
+      {:ok, %{"thread" => %{"post" => post} = thread}} ->
+        between.()
+        replies = :lists.sublist(list(Map.get(thread, "replies")), @max_replies)
+
+        {:ok, {post_item(post, false, columns) ++ items(replies, columns, between, []), nil}}
+
+      _other ->
+        :error
+    end
+  end
+
+  defp list(value) when is_list(value), do: value
+  defp list(_value), do: []
+
+  @doc "The request path for a post's thread: the post and its direct replies."
+  @spec thread_path(binary) :: binary
+  def thread_path(uri) do
+    "/xrpc/app.bsky.feed.getPostThread" <>
+      Http.query([{"uri", uri}, {"depth", "1"}, {"parentHeight", "0"}])
+  end
+
+  @doc "A thread from the public AppView, as `parse_thread/3` reads it."
+  @spec fetch_thread(binary, binary, pos_integer) :: {:ok, {[post], nil}} | {:error, term}
+  def fetch_thread(base, uri, columns) do
+    Http.get(base, thread_path(uri), [], fn body ->
+      parse_thread(body, columns, &Http.breathe/0)
+    end)
+  end
 
   defp repost?(%{"$type" => "app.bsky.feed.defs#reasonRepost"}), do: true
   defp repost?(_reason), do: false
@@ -317,6 +381,7 @@ defmodule Badge.Bluesky do
   @spec describe(term) :: binary
   def describe({:http, status, ""}), do: "HTTP " <> :erlang.integer_to_binary(status)
   def describe({:http, status, error}), do: :erlang.integer_to_binary(status) <> " " <> error
+  def describe(:too_large), do: "answer too large for the badge"
   def describe(reason), do: :erlang.iolist_to_binary(:io_lib.format(~c"~p", [reason]))
 
   @doc "Entries as a tuple, each packed into a binary of its own."

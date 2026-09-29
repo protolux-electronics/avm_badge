@@ -11,8 +11,9 @@ defmodule Badge.Bluesky.Account do
 
   A feed is `%{kind: kind, uri: uri, name: name}`, and `{kind, uri}` is its
   key: `{:timeline, nil}` for Following, `{:feed, uri}` for a feed
-  generator, `{:list, uri}` for a list, and `{:author, actor}` for an
-  account's own posts, which needs no login.
+  generator, `{:list, uri}` for a list, `{:author, actor}` for an
+  account's own posts, which needs no login, and `{:thread, uri}` for a
+  post and its direct replies, which needs none either.
 
   `load/3` runs a whole fetch for `Badge.Bluesky.Link`. Everything that
   touches the network blocks and belongs in a process of its own; the
@@ -28,7 +29,12 @@ defmodule Badge.Bluesky.Account do
   @max_feeds 20
 
   @type session :: %{did: binary, pds: binary, access: binary}
-  @type key :: {:timeline, nil} | {:feed, binary} | {:list, binary} | {:author, binary}
+  @type key ::
+          {:timeline, nil}
+          | {:feed, binary}
+          | {:list, binary}
+          | {:author, binary}
+          | {:thread, binary}
   @type feed :: %{kind: :timeline | :feed | :list, uri: binary | nil, name: binary}
 
   @doc """
@@ -41,8 +47,8 @@ defmodule Badge.Bluesky.Account do
   `:cursor` is the next page's, or nil at the end.
   """
   @spec load(map, binary, pos_integer) :: {:ok, map} | {:error, term}
-  def load(%{password: nil, actor: actor} = job, base, columns) do
-    case Bluesky.fetch(base, actor, columns, Map.get(job, :cursor)) do
+  def load(%{password: nil} = job, base, columns) do
+    case public(job, base, columns) do
       {:ok, {posts, next}} ->
         {:ok, %{posts: Bluesky.pack(posts), cursor: next, feeds: nil, session: nil}}
 
@@ -58,6 +64,12 @@ defmodule Badge.Bluesky.Account do
       {:ok, %{posts: Bluesky.pack(posts), cursor: next, feeds: feeds, session: session}}
     end
   end
+
+  defp public(%{feed: {:thread, uri}}, base, columns),
+    do: Bluesky.fetch_thread(base, uri, columns)
+
+  defp public(job, base, columns),
+    do: Bluesky.fetch(base, job.actor, columns, Map.get(job, :cursor))
 
   defp session(%{session: nil} = job, base),
     do: login(base, job.actor, job.password, Map.get(job, :pds))
@@ -183,7 +195,7 @@ defmodule Badge.Bluesky.Account do
           {:ok, {[Bluesky.post()], binary | nil}} | {:error, term}
   def posts(session, key, columns, cursor \\ nil) do
     Http.get(session.pds, feed_path(key, cursor), [Http.bearer(session.access)], fn body ->
-      Bluesky.parse_page(body, columns, &Http.breathe/0)
+      parser(key).(body, columns, &Http.breathe/0)
     end)
   end
 
@@ -201,6 +213,10 @@ defmodule Badge.Bluesky.Account do
     do: "/xrpc/app.bsky.feed.getListFeed" <> limit([{"list", uri}], cursor)
 
   def feed_path({:author, actor}, cursor), do: Bluesky.path(actor, cursor)
+  def feed_path({:thread, uri}, _cursor), do: Bluesky.thread_path(uri)
+
+  defp parser({:thread, _uri}), do: &Bluesky.parse_thread/3
+  defp parser(_key), do: &Bluesky.parse_page/3
 
   defp limit(pairs, cursor) do
     Http.query(
