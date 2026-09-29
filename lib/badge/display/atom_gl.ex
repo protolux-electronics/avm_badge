@@ -44,6 +44,7 @@ defmodule Badge.Display.AtomGL do
       backlight: Hardware.display_backlight(),
       backlight_active: :low,
       backlight_enabled: true,
+      clock_speed_hz: Hardware.display_clock_hz(),
       spi_host: spi
     ]
   end

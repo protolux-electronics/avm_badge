@@ -24,6 +24,11 @@ defmodule Badge.Hardware do
   # Strapping pin (JTAG source select), active low.
   def display_backlight, do: 3
   def display_peripheral, do: "spi2"
+  # AtomGL's ST7789 default is 40 MHz. The SPI clock only divides 80 MHz, so a
+  # value in between rounds to one of those; 80 halves the ~31 ms full-frame
+  # write. These pins route through the GPIO matrix, so drop back to 40 MHz if
+  # the panel shows noise.
+  def display_clock_hz, do: 80_000_000
 
   # SK6812/WS2812 chain; no clock line, so SCLK is -1.
   def pixel_data, do: 14
