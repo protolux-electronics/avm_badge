@@ -47,4 +47,16 @@ defmodule Badge.UITest do
       assert route(Name, {:nav, :home}) == :router
     end
   end
+
+  describe "a key's frame" do
+    test "goes out once the panel has had time to finish the last one" do
+      assert Badge.UI.key_due?(1_000, 1_035)
+      assert Badge.UI.key_due?(1_000, 2_000)
+    end
+
+    test "waits for the tick when it would land on the frame before it" do
+      refute Badge.UI.key_due?(1_000, 1_000)
+      refute Badge.UI.key_due?(1_000, 1_034)
+    end
+  end
 end
