@@ -280,6 +280,23 @@ defmodule Badge.Pong.MatchTest do
       assert {_match, payload} = Match.step(conceded, now + 200, 0)
       assert match?({:ok, {:score, _, _, _}}, Wire.decode(payload))
     end
+
+    test "a late score doesn't strand the serve that followed it" do
+      {a, b, now} = pair()
+      {a, b, now} = play(a, b, now, 80)
+      {server, other} = if a.server == :me, do: {a, b}, else: {b, a}
+
+      {server, now} = miss(server, now)
+
+      {x, y} = if server.id == @a, do: {server, other}, else: {other, server}
+      {x, y, now} = play(x, y, now, 50, drop?: fn _ -> true end)
+      {x, y, _now} = play(x, y, now, 200)
+
+      holding = Enum.count([x, y], fn m -> m.ball != nil or m.out_ball != nil end)
+      assert holding == 1
+      refute x.phase == :rally and x.ball == nil and y.phase == :rally and y.ball == nil
+      assert x.me == y.them and x.them == y.me
+    end
   end
 
   describe "the link" do
@@ -315,6 +332,21 @@ defmodule Badge.Pong.MatchTest do
       assert restarted.phase == :pairing
       assert {restarted.me, restarted.them} == {0, 0}
       assert restarted.peer == id
+    end
+
+    test "a reopened badge with a new coin restarts a stale peer" do
+      {a, b, now} = pair()
+      {_a, b, now} = play(a, b, now, 80)
+      b = %{b | phase: :over}
+
+      a = Match.new(@a, "Ana", 7, now)
+      searching? = fn p -> match?({:ok, {:hello, _, 0, _}}, Wire.decode(p)) end
+      {a, b, now} = play(a, b, now, 40, drop?: searching?)
+      {a, b, _now} = play(a, b, now, 400)
+
+      assert a.phase in [:flipping, :revealing, :serving, :rally]
+      assert b.phase in [:flipping, :revealing, :serving, :rally]
+      assert a.ball != nil or b.ball != nil
     end
   end
 end

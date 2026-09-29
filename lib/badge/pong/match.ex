@@ -113,9 +113,10 @@ defmodule Badge.Pong.Match do
     flip(%{match | peer_coin: coin}, now)
   end
 
-  # A peer searching again has restarted; so does the match.
-  defp from_peer(%{phase: phase} = match, {:hello, coin, 0, name}, now)
-       when phase != :searching and phase != :pairing do
+  # A peer searching again (ready 0), or one whose hello coin has changed
+  # (its session id, so it reopened), has restarted; so does the match.
+  defp from_peer(%{phase: phase, peer_coin: peer_coin} = match, {:hello, coin, ready, name}, now)
+       when phase != :searching and phase != :pairing and (ready == 0 or coin != peer_coin) do
     fresh = new(match.id, match.name, match.coin, now)
 
     enter(%{fresh | peer: match.peer, peer_coin: coin, peer_name: name}, :pairing, now)
@@ -210,7 +211,7 @@ defmodule Badge.Pong.Match do
   defp advance(%{phase: :serving} = match, now, dt, direction) do
     match = glide(match, dt, direction)
 
-    case now - match.since >= @countdown_ms do
+    case now - match.since >= @countdown_ms and match.out_score == nil do
       true -> serve(enter(match, :rally, now))
       false -> match
     end
