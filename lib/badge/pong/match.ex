@@ -115,8 +115,30 @@ defmodule Badge.Pong.Match do
 
   defp from_peer(match, {:hello, _coin, _ready, _name}, _now), do: match
 
-  # Task 6 and Task 7 add the :ball, :ack, :score and :bye clauses above this one.
+  defp from_peer(%{phase: phase} = match, {:ball, seq, wire}, now)
+       when phase == :serving or phase == :rally do
+    match = ack(match, seq)
+
+    case seq == match.last_ball do
+      true ->
+        match
+
+      false ->
+        ball = Physics.incoming(wire)
+        enter(%{match | ball: ball, handed: false, last_ball: seq}, :rally, now)
+    end
+  end
+
+  defp from_peer(match, {:ball, seq, _wire}, _now), do: ack(match, seq)
+
+  defp from_peer(match, {:ack, seq}, _now) do
+    match = if match.out_ball == seq, do: %{match | out_ball: nil}, else: match
+    if match.out_score == seq, do: %{match | out_score: nil}, else: match
+  end
+
   defp from_peer(match, _message, _now), do: match
+
+  defp ack(match, seq), do: %{match | acks: match.acks ++ [seq]}
 
   defp flip(match, now) do
     enter(%{match | server: serve_by_coin(match)}, :flipping, now)
@@ -177,8 +199,49 @@ defmodule Badge.Pong.Match do
   defp serve(%{server: :me} = match), do: %{match | ball: Physics.serve(match.paddle)}
   defp serve(match), do: match
 
-  # Task 6 replaces this with the rally.
-  defp fly(match, _dt), do: match
+  defp fly(%{ball: nil} = match, _dt), do: match
+
+  defp fly(match, dt) do
+    case Physics.step(match.ball, dt, match.paddle) do
+      :missed -> concede(match)
+      ball -> match |> hold(ball) |> hand_off() |> let_go()
+    end
+  end
+
+  # A ball nobody has taken waits at the far end of the gap.
+  defp hold(%{out_ball: nil} = match, ball), do: %{match | ball: ball}
+  defp hold(match, ball), do: %{match | ball: Physics.park(ball)}
+
+  defp hand_off(%{handed: false} = match) do
+    case Physics.due?(match.ball) do
+      true ->
+        {seq, match} = next_seq(match)
+        %{match | handed: true, out_ball: seq, ball_sent_at: nil}
+
+      false ->
+        match
+    end
+  end
+
+  defp hand_off(match), do: match
+
+  defp let_go(%{handed: true, out_ball: nil} = match) do
+    case Physics.above?(match.ball) do
+      true -> %{match | ball: nil, handed: false}
+      false -> match
+    end
+  end
+
+  defp let_go(match), do: match
+
+  defp next_seq(match) do
+    seq = band(match.seq + 1, 255)
+
+    {seq, %{match | seq: seq}}
+  end
+
+  # Task 7 completes the score.
+  defp concede(match), do: %{match | ball: nil, handed: false}
 
   defp transmit(match, now) do
     case due?(match.sent_at, now, @send_gap_ms) do

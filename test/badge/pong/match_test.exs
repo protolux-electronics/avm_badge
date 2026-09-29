@@ -91,6 +91,91 @@ defmodule Badge.Pong.MatchTest do
     end
   end
 
+  # Two badges in a rally, with `a` holding a ball headed for the net.
+  def rally do
+    {a, b, now} = pair()
+    ticks = div(Match.flip_ms() + Match.reveal_ms() + Match.countdown_ms(), 50) + 2
+    {a, b, now} = play(a, b, now, ticks)
+
+    case a.ball do
+      nil -> {b, a, now, @b}
+      _ball -> {a, b, now, @a}
+    end
+  end
+
+  defp ball?(payload), do: match?({:ok, {:ball, _, _}}, Wire.decode(payload))
+
+  describe "the handoff" do
+    test "the ball crosses to the other badge, and only one badge holds it" do
+      {server, other, now, _id} = rally()
+      {server, other, _now} = play2(server, other, now, 45)
+
+      assert server.ball == nil
+      assert other.ball != nil
+      assert other.ball.vy > 0
+    end
+
+    test "is sent before the ball leaves the screen" do
+      {server, _other, _now, _id} = rally()
+
+      assert server.ball.y > 0
+      refute server.handed
+    end
+
+    test "survives dropped ball frames, and is applied once" do
+      {server, other, now, _id} = rally()
+      dropped = :counters.new(1, [])
+
+      drop? = fn payload ->
+        ball?(payload) and :counters.get(dropped, 1) < 3 and
+          (:counters.add(dropped, 1, 1) || true)
+      end
+
+      {server, other, _now} = play2(server, other, now, 50, drop?: drop?)
+
+      assert server.ball == nil
+      assert other.ball != nil
+      assert other.last_ball != nil
+    end
+
+    test "a repeated ball frame is acked again but not applied again" do
+      {server, other, now, id} = rally()
+      {server, other, now} = play2(server, other, now, 60)
+      payload = Wire.encode({:ball, other.last_ball, %{d: 0, x: 0, vx: 0, vy: -40}})
+
+      assert {:ok, again} = Match.hear(other, id, payload, now)
+      assert again.ball == other.ball
+      assert again.acks == other.acks ++ [other.last_ball]
+      assert server.ball == nil
+    end
+
+    test "a ball parked in the gap enters at the top" do
+      {server, other, now, _id} = rally()
+      {server, _other, _now} = play2(server, other, now, 100, drop?: &ball?/1)
+
+      assert Badge.Pong.Physics.px(server.ball.y) == -Badge.Pong.Physics.gap()
+      assert server.out_ball != nil
+    end
+
+    test "a long stall moves the ball at most 100 ms" do
+      {server, _other, now, _id} = rally()
+      {moved, _payload} = Match.step(server, now + 2_000, 0)
+
+      assert moved.ball.y != server.ball.y
+      assert abs(moved.ball.y - server.ball.y) <= abs(server.ball.vy) * 100
+    end
+  end
+
+  # play/5 with the server's id fixed as the first argument's sender.
+  defp play2(server, other, now, n, opts \\ []) do
+    if server.id == @a do
+      play(server, other, now, n, opts)
+    else
+      {other, server, now} = play(other, server, now, n, opts)
+      {server, other, now}
+    end
+  end
+
   describe "the coin flip" do
     test "both badges agree who serves" do
       for coin_a <- 0..3, coin_b <- 0..3 do
