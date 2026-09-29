@@ -254,9 +254,13 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   internal RAM. A full timeline decode starved the display's SPI DMA
 - Internal RAM reads as `esp32_internal_free_size` and
   `esp32_internal_largest_free_block` in `system_info`, logged on each
-  `Power:` line and after each Bluesky request. It falls from ~100K at boot to
-  ~13K once Bluesky has logged in, so only one TLS connection at a time: the
-  link never overlaps a post and a fetch
+  `Power:` line and after each Bluesky request. **The fork's
+  `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` is 64**: at 512 every refc binary a
+  Bluesky session held (posts, feeds, TLS read chunks) landed in internal
+  RAM, which fell to ~10K (5K largest block) and stalled every handshake
+  30 s (`-29312`). At 64 it holds ~148K free, 73K largest, through paging,
+  threads and lookups. Still only one TLS connection at a time: the link
+  never overlaps requests
 - Enter on a post opens its thread as the feed `{:thread, uri}`
   (`getPostThread`, `depth=1`, at most 20 replies); the link keeps the feed
   it came from and `close_thread` restores it without a fetch. Every answer
@@ -268,8 +272,9 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   the post at the top: thread answers decode `cid` and `record.reply.root`
   for that, feed answers do not
 - `r` on the posts tab fetches the feed or thread shown again from its
-  first page and puts the cursor at the top; asked during a fetch, it
-  follows once that lands
+  first page and puts the cursor at the top, showing `Refreshing...` in the
+  corner until the link's version moves or the fetch fails; asked during a
+  fetch, it follows once that lands
 - `l` toggles the owner's like of the post at the top. A post keeps what
   shows (`liked`) apart from what the server holds (`like_uri`); a press
   flips only what shows, and the link sends `createRecord`/`deleteRecord`

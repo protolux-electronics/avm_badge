@@ -12,7 +12,8 @@ defmodule Badge.Page.Bluesky do
   one, Enter shows it. Posts run down the panel newest first, each as who
   wrote it and how long ago, the text, and the counts under it; Up and Down
   move the post at the top, and Down on the last post fetches the next page.
-  `r` fetches the feed or thread again and goes back to its top. `l` likes
+  `r` fetches the feed or thread again and goes back to its top, showing
+  Refreshing... in the corner until the fresh posts are in. `l` likes
   the post at the top, or takes the like back; a liked post shows a
   `<3` in the skin's alert colour before its counts.
 
@@ -22,7 +23,7 @@ defmodule Badge.Page.Bluesky do
 
   Post composes a new post with `Badge.Bluesky.Draft`: type, Enter for a new
   line, Tab to post, Tab again to confirm. Left or Esc goes back to the feed
-  and keeps the draft. It is sent through the link, which refreshes the feed. Esc is left for the router and goes Home. Text
+  and keeps the draft; a reply that lands goes back to its thread. It is sent through the link, which refreshes the feed. Esc is left for the router and goes Home. Text
   only: images and cards are not drawn.
 
   Posts and feeds live in `Badge.Bluesky.Link`, which fetches them while
@@ -70,6 +71,7 @@ defmodule Badge.Page.Bluesky do
   @loading_more "Loading more..."
   @more_failed "Could not load more: "
   @no_feeds "No saved feeds"
+  @refreshing "Refreshing..."
   @logged_out "Not logged in"
   @log_in "Set an app password under"
   @log_in_where "Settings > Bluesky"
@@ -134,6 +136,7 @@ defmodule Badge.Page.Bluesky do
       stage: :editing,
       back_cursor: 0,
       asked: [],
+      refreshing: nil,
       reply_to: nil,
       now: nil
     }
@@ -150,7 +153,7 @@ defmodule Badge.Page.Bluesky do
     Link.open(state.actor, state.password)
 
     status = Link.status()
-    state = apply_sent(apply_status(status, state, now()))
+    state = apply_refreshed(apply_sent(apply_status(status, state, now())))
 
     case status.version == state.version do
       true -> state
@@ -195,18 +198,36 @@ defmodule Badge.Page.Bluesky do
 
   @doc """
   Follows a post that was sent: a landed one clears the draft, a failed one
-  keeps it. Called after `apply_status/3`.
+  keeps it. A landed reply goes back to its thread, at the post it answered,
+  which the link refreshes. Called after `apply_status/3`.
   """
   @spec apply_sent(map) :: map
   def apply_sent(%{stage: :sending, status: status} = state) do
     case Map.get(status, :post) do
-      {:ok, _uri} -> %{state | stage: :sent, draft: Draft.new()}
+      {:ok, _uri} -> landed(%{state | draft: Draft.new()})
       {:error, reason} -> %{state | stage: {:failed, reason}}
       _under_way -> state
     end
   end
 
   def apply_sent(state), do: state
+
+  @doc """
+  Ends the refresh indicator once the link has fresh posts, a new version,
+  or the refresh failed. Called after `apply_status/3`.
+  """
+  @spec apply_refreshed(map) :: map
+  def apply_refreshed(%{refreshing: nil} = state), do: state
+  def apply_refreshed(%{status: %{state: :failed}} = state), do: %{state | refreshing: nil}
+
+  def apply_refreshed(%{refreshing: since, status: %{version: version}} = state)
+      when version != since,
+      do: %{state | refreshing: nil}
+
+  def apply_refreshed(state), do: state
+
+  defp landed(%{reply_to: nil} = state), do: %{state | stage: :sent}
+  defp landed(state), do: %{state | stage: :editing, tab: :posts, reply_to: nil}
 
   @doc "Takes fresh posts from the link, tagged with their version."
   @spec apply_posts(Bluesky.posts(), integer, map) :: map
@@ -279,7 +300,7 @@ defmodule Badge.Page.Bluesky do
   def handle_key({:char, char}, %{tab: :posts} = state) when char == ?r or char == ?R do
     Link.reload()
 
-    {:ok, %{state | cursor: 0}}
+    {:ok, %{state | cursor: 0, refreshing: version(state)}}
   end
 
   def handle_key({:char, char}, %{tab: :posts, posts: posts, password: password} = state)
@@ -488,7 +509,12 @@ defmodule Badge.Page.Bluesky do
     ]
   end
 
-  # The draft's length on Post, else where the top entry is.
+  defp version(%{status: %{version: version}}), do: version
+  defp version(state), do: state.version
+
+  # Refreshing shows in the corner; else the draft's length on Post, or where the top entry is.
+  defp place(%{tab: :posts, refreshing: since}) when since != nil, do: @refreshing
+
   defp place(%{tab: :compose, password: nil}), do: ""
 
   defp place(%{tab: :compose, draft: draft}),

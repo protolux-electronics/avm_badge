@@ -677,6 +677,54 @@ defmodule Badge.Page.BlueskyTest do
       assert [_feeds, _name, "Post", _place] = row(Page.render(back), @head_y)
     end
 
+    test "a reply that lands goes back to the thread, at the post it answered", %{state: state} do
+      thread = press(Page.apply_login("pw", state), {:edit, :newline})
+
+      replies =
+        Page.apply_posts(
+          Bluesky.pack([
+            post(%{uri: "at://a/p/2", cid: "c2", root: nil}),
+            post(%{uri: "at://r/1", cid: "c3", root: {"at://a/p/2", "c2"}, who: "Lars"})
+          ]),
+          5,
+          thread
+        )
+
+      sending =
+        replies
+        |> press({:move, :down})
+        |> press({:move, :right})
+        |> press({:char, ?y})
+        |> press({:edit, :tab})
+        |> press({:edit, :tab})
+
+      landed =
+        Page.apply_sent(%{sending | status: Map.put(sending.status, :post, {:ok, "at://new"})})
+
+      assert Page.tab(landed) == :posts
+      assert Page.current(landed) == 1
+      assert Page.shown(landed) == {:thread, "at://a/p/2"}
+      assert Draft.count(landed.draft) == 0
+      assert Page.tab(press(landed, {:move, :right})) == :compose
+
+      assert row(Page.render(press(landed, {:move, :right})), 216) == [
+               "Tab reply   Enter new line"
+             ]
+    end
+
+    test "a new post that lands stays on the Post tab", %{state: state} do
+      compose = press(Page.apply_login("pw", state), {:move, :right})
+
+      sending =
+        compose |> press({:char, ?y}) |> press({:edit, :tab}) |> press({:edit, :tab})
+
+      landed =
+        Page.apply_sent(%{sending | status: Map.put(sending.status, :post, {:ok, "at://new"})})
+
+      assert Page.tab(landed) == :compose
+      assert row(Page.render(landed), 216) == ["Posted"]
+    end
+
     test "writing from a feed is a new post", %{state: state} do
       compose = press(Page.apply_login("pw", state), {:move, :right})
 
@@ -803,6 +851,47 @@ defmodule Badge.Page.BlueskyTest do
       assert Page.current(reloaded) == 0
       assert Page.tab(reloaded) == :posts
       assert Page.current(press(state, {:char, ?R})) == 0
+    end
+
+    test "Refreshing... shows in the corner until fresh posts are in" do
+      state = shown([post(%{}), post(%{})])
+      refreshing = press(state, {:char, ?r})
+
+      assert row(Page.render(refreshing), @head_y) == ["Feeds", "Posts", "Post", "Refreshing..."]
+
+      loading =
+        Page.apply_refreshed(%{refreshing | status: %{refreshing.status | state: :loading}})
+
+      assert row(Page.render(loading), @head_y) == ["Feeds", "Posts", "Post", "Refreshing..."]
+
+      fresh = Page.apply_refreshed(%{refreshing | status: %{refreshing.status | version: 9}})
+
+      assert row(Page.render(fresh), @head_y) == ["Feeds", "Posts", "Post", "1/2"]
+    end
+
+    test "a failed refresh ends the indicator" do
+      refreshing = press(shown([post(%{})]), {:char, ?r})
+      failed = Page.apply_refreshed(%{refreshing | status: %{refreshing.status | state: :failed}})
+
+      assert failed.refreshing == nil
+    end
+
+    test "the indicator fits beside a long feed name" do
+      state = Page.apply_login("pw", shown([post(%{})], %{feed: {:feed, "at://f"}}))
+
+      named =
+        Page.apply_feeds(
+          Bluesky.pack([%{kind: :feed, uri: "at://f", name: "A very long feed name indeed"}]),
+          state
+        )
+
+      items = Page.render(press(named, {:char, ?r}))
+
+      assert "Refreshing..." in row(items, @head_y)
+
+      for {:text, x, @head_y, _f, _fg, _bg, body} <- items do
+        assert x + byte_size(body) * 8 <= Theme.width()
+      end
     end
 
     test "r in the composer is typed, not a reload" do
