@@ -159,7 +159,7 @@ defmodule Badge.Pong.MatchTest do
 
     test "a long stall moves the ball at most 100 ms" do
       {server, _other, now, _id} = rally()
-      {moved, _payload} = Match.step(server, now + 2_000, 0)
+      {moved, _payload} = Match.step(server, now + 1_000, 0)
 
       assert moved.ball.y != server.ball.y
       assert abs(moved.ball.y - server.ball.y) <= abs(server.ball.vy) * 100
@@ -299,10 +299,59 @@ defmodule Badge.Pong.MatchTest do
     end
   end
 
+  describe "the keepalive" do
+    test "a paired badge with nothing else to send emits a ping after 250 ms idle" do
+      {a, _b, now} = pair()
+      assert a.phase == :flipping
+
+      {stepped, payload} = Match.step(a, now + 300, 0)
+
+      assert Wire.decode(payload) == {:ok, :ping}
+      assert stepped.phase == :flipping
+    end
+
+    test "a pairing badge that hears a ping from its already-flipped peer flips too" do
+      a = Match.new(@a, "Ana", 0, 0)
+      b = Match.new(@b, "Bo", 0, 0)
+
+      # both say their first, ready-0 hello and learn of each other
+      {a, out_a} = Match.step(a, 10, 0)
+      {b, out_b} = Match.step(b, 10, 0)
+      {:ok, a} = Match.hear(a, @b, out_b, 10)
+      {:ok, b} = Match.hear(b, @a, out_a, 10)
+      assert a.phase == :pairing and b.phase == :pairing
+
+      # b hears a's ready-1 hello and flips; a's copy of b's is dropped, so a stays put
+      {b, _out_b2} = Match.step(b, 220, 0)
+      {a, out_a2} = Match.step(a, 220, 0)
+      {:ok, b} = Match.hear(b, @a, out_a2, 220)
+      assert b.phase == :flipping
+      assert a.phase == :pairing
+
+      # b now sends pings instead of hellos; a hears one and flips too
+      {b, ping} = Match.step(b, 470, 0)
+      assert Wire.decode(ping) == {:ok, :ping}
+
+      assert {:ok, flipped} = Match.hear(a, @b, ping, 470)
+      assert flipped.phase == :flipping
+      assert {flipped.server, b.server} in [{:me, :them}, {:them, :me}]
+    end
+  end
+
   describe "the link" do
-    test "is lost after 3 s without a frame, and the ball stops" do
+    test "is not lost 1 s after the peer's last frame, but is 1.3 s after" do
+      {server, _other, now, _id} = rally()
+
+      {early, _payload} = Match.step(server, now + 1_000, 0)
+      refute early.lost
+
+      {late, _payload} = Match.step(server, now + 1_300, 0)
+      assert late.lost
+    end
+
+    test "is lost after 1.2 s without a frame, and the ball stops" do
       {server, other, now, _id} = rally()
-      {server, _other, _now} = play2(server, other, now, 70, drop?: fn _ -> true end)
+      {server, _other, _now} = play2(server, other, now, 30, drop?: fn _ -> true end)
 
       assert server.lost
       {still, _payload} = Match.step(server, server.clock + 50, 0)

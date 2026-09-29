@@ -29,8 +29,8 @@ defmodule Badge.Pong.Match do
   @hello_ms 200
   @ball_ms 150
   @score_ms 300
-  @keepalive_ms 500
-  @lost_ms 3_000
+  @keepalive_ms 250
+  @lost_ms 1_200
 
   # A longer step is a stall, not time the ball should cover.
   @max_dt 100
@@ -112,6 +112,9 @@ defmodule Badge.Pong.Match do
   defp from_peer(%{phase: :pairing} = match, {:hello, coin, 1, _name}, now) do
     flip(%{match | peer_coin: coin}, now)
   end
+
+  # A peer that already flipped sends pings, not hellos; its coin came from its first hello.
+  defp from_peer(%{phase: :pairing} = match, :ping, now), do: flip(match, now)
 
   # A peer searching again (ready 0), or one whose hello coin has changed
   # (its session id, so it reopened), has restarted; so does the match.
@@ -329,6 +332,9 @@ defmodule Badge.Pong.Match do
       hello?(match, now) ->
         sent(%{match | hello_at: now}, now, {:hello, match.coin, ready(match), match.name})
 
+      ping?(match, now) ->
+        sent(match, now, :ping)
+
       true ->
         {match, nil}
     end
@@ -338,8 +344,12 @@ defmodule Badge.Pong.Match do
 
   defp hello?(%{phase: :searching} = match, now), do: due?(match.hello_at, now, @hello_ms)
   defp hello?(%{phase: :pairing} = match, now), do: due?(match.hello_at, now, @hello_ms)
-  defp hello?(%{phase: :left}, _now), do: false
-  defp hello?(match, now), do: due?(match.sent_at, now, @keepalive_ms)
+  defp hello?(_match, _now), do: false
+
+  defp ping?(%{phase: :searching}, _now), do: false
+  defp ping?(%{phase: :pairing}, _now), do: false
+  defp ping?(%{phase: :left}, _now), do: false
+  defp ping?(match, now), do: due?(match.sent_at, now, @keepalive_ms)
 
   defp ready(%{phase: :searching}), do: 0
   defp ready(_match), do: 1

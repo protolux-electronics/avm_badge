@@ -14,10 +14,16 @@ defmodule Badge.Pong.WireTest do
             {:ball, 7, @ball},
             {:ack, 255},
             {:score, 3, 4, 2},
-            :bye
+            :bye,
+            :ping
           ] do
         assert Wire.decode(Wire.encode(message)) == {:ok, message}
       end
+    end
+
+    test "a ping is 2 bytes" do
+      assert Wire.encode(:ping) == <<0x50, 6>>
+      assert byte_size(Wire.encode(:ping)) == 2
     end
 
     test "every payload starts with P" do
@@ -45,6 +51,7 @@ defmodule Badge.Pong.WireTest do
       assert Wire.decode(<<>>) == :error
       assert Wire.decode(<<0x50>>) == :error
       assert Wire.decode(<<0x50, 99>>) == :error
+      assert Wire.decode(<<0x50, 6, 0>>) == :error
     end
 
     test "a ball of the wrong length" do
