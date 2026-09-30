@@ -79,13 +79,20 @@ defmodule Badge.Page.ShareTest do
   end
 
   describe "the share screen" do
-    test "shows two badges meeting, whatever else it has to say" do
+    test "renders without the art until it has been loaded" do
       for state <- [Page.init(), loaded(), loaded(%{})] do
-        assert Enum.any?(
-                 Page.render(state),
-                 &match?({:image, 88, 90, _bg, {:rgba8888, 144, 64, _pixels}}, &1)
-               )
+        refute Enum.any?(Page.render(state), &match?({:image, _x, 90, _bg, _img}, &1))
+        assert [_ | _] = Page.render(state)
       end
+    end
+
+    test "once loaded, the two badges meeting is drawn above what it has to say" do
+      state = %{loaded() | art: {:rgba8888, 144, 64, <<0, 0, 0, 0>>}}
+
+      assert Enum.any?(
+               Page.render(state),
+               &match?({:image, 88, 90, _bg, {:rgba8888, 144, 64, _pixels}}, &1)
+             )
     end
 
     test "what it says sits below the badges, above the dots" do

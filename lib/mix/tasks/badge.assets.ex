@@ -42,20 +42,25 @@ defmodule Mix.Tasks.Badge.Assets do
     rickroll = Path.join(stage, "assets/priv/rickroll")
     fonts = Path.join(stage, "assets/priv/fonts")
     logo = Path.join(stage, "assets/priv/logo")
+    art = Path.join(stage, "assets/priv/art")
 
     try do
       File.mkdir_p!(rickroll)
       File.mkdir_p!(fonts)
       File.mkdir_p!(logo)
+      File.mkdir_p!(art)
       frames = Path.wildcard("assets/rickroll/*.rgba")
       uf_fonts = Path.wildcard("assets/fonts/*.uf")
       logos = Path.wildcard("assets/logo/*.rgba")
+      masks = Path.wildcard("assets/art/*.mask")
       if frames == [], do: Mix.raise("no frames found in assets/rickroll")
       if uf_fonts == [], do: Mix.raise("no fonts found in assets/fonts")
       if logos == [], do: Mix.raise("no logo found in assets/logo")
+      if masks == [], do: Mix.raise("no art found in assets/art")
       copy(frames, rickroll)
       copy(uf_fonts, fonts)
       copy(logos, logo)
+      copy(masks, art)
 
       out = Path.expand(@out)
       # Names inside the archive are relative to the staging directory.
@@ -63,7 +68,8 @@ defmodule Mix.Tasks.Badge.Assets do
         inputs =
           (Path.wildcard("assets/priv/rickroll/*.rgba") ++
              Path.wildcard("assets/priv/fonts/*.uf") ++
-             Path.wildcard("assets/priv/logo/*.rgba"))
+             Path.wildcard("assets/priv/logo/*.rgba") ++
+             Path.wildcard("assets/priv/art/*.mask"))
           |> Enum.map(&to_charlist/1)
 
         :ok = :packbeam_api.create(to_charlist(out), inputs, %{lib: true})

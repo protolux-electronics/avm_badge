@@ -29,8 +29,6 @@ defmodule Badge.IconsTest do
     :signal_3
   ]
 
-  @art [:badge_share]
-
   @white 0xFFFFFF
   @black 0x000000
 
@@ -42,7 +40,7 @@ defmodule Badge.IconsTest do
     end
 
     test "holds every shape and every status icon" do
-      assert Icons.names() == :lists.sort(@shapes ++ @status ++ @art)
+      assert Icons.names() == :lists.sort(@shapes ++ @status)
     end
 
     test "the retired dot marker is gone" do

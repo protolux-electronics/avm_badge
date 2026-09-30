@@ -50,9 +50,10 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - Two packbeam slots: `main.avm` at `0x2B8000` and `alt.avm` at `0x35C000`,
   656K each. NervesHub writes whichever is not running and flips
   `atomvm`/`boot_path` in NVS
-- `assets.avm` at `0x278000` holds the rickroll frames, the `.uf` fonts and
-  the splash logo, mounted by `Badge.start/0`. `mix badge.assets --flash`
-  packs and writes it; it is **not** updated over the air
+- `assets.avm` at `0x278000` holds the rickroll frames, the `.uf` fonts, the
+  splash logo and the Share screen art, mounted by `Badge.start/0`.
+  `mix badge.assets --flash` packs and writes it; it is **not** updated over
+  the air
 - `python3 tools/check_partitions.py <partitions.csv> [label=path ...]` fails
   if an artifact outgrows its partition
 - A missing assets partition is survivable: the badge boots, prints
