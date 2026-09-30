@@ -24,7 +24,12 @@ defmodule Badge.MixProject do
       # firmware without one. The flash task bypasses the packbeam alias.
       aliases: [
         "atomvm.packbeam": ["atomvm.application_bin", "atomvm.packbeam"],
-        "atomvm.esp32.flash": ["atomvm.application_bin", "atomvm.esp32.flash"]
+        "atomvm.esp32.flash": [
+          "atomvm.application_bin",
+          "atomvm.packbeam",
+          "badge.fits",
+          "atomvm.esp32.flash"
+        ]
       ],
       atomvm: [
         start: Badge,
