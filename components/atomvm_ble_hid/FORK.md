@@ -63,6 +63,16 @@ Append to `src/platforms/esp32/sdkconfig.defaults.in` (never the generated
     CONFIG_BT_NIMBLE_SVC_GAP_APPEARANCE=0x3C1
     CONFIG_BT_NIMBLE_LOG_LEVEL_NONE=y
     CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+    # The controller lives in internal RAM; a peripheral needs neither scanning,
+    # test mode nor six activities (828 bytes each).
+    CONFIG_BT_CTRL_BLE_SCAN=n
+    CONFIG_BT_CTRL_DTM_ENABLE=n
+    CONFIG_BT_CTRL_BLE_MAX_ACT=2
+    # On the S3, IRAM and the heap share one SRAM: wifi code in flash and its
+    # buffers in PSRAM leave room for the Bluetooth controller.
+    CONFIG_ESP_WIFI_IRAM_OPT=n
+    CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+    CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 
 `CONFIG_BT_NIMBLE_NVS_PERSIST` keeps bonds in the NVS namespace
 `nimble_bond`. `tools/provision.py` in `avm_badge` carries that namespace
@@ -110,6 +120,13 @@ lines above), ESP-IDF v5.5.5:
 | `badge-v1` VM, no Bluetooth         | 1,742,512 | 223,568           |
 | with `atomvm_ble_hid`, NimBLE log level `ERROR` | 1,955,136 | 10,944 |
 | with `atomvm_ble_hid`, NimBLE log level `NONE`  | 1,931,552 | 34,528 |
+| as above, controller trimmed, wifi out of IRAM  | 1,927,632 | 38,448 |
+
+The first image with the stack enabled failed at `esp_bt_controller_init` with
+`ESP_ERR_NO_MEM`: the controller allocates from internal, DMA-capable RAM
+only, and the badge had too little of it free. The controller and wifi lines
+above are the answer; if the driver still logs `Internal RAM at open` with a
+failure, the next lever is `network:stop/0` while the page is open.
 
 `boot.avm` from the same checkout (OTP 28, Elixir 1.19, as in CI) is 527,616
 bytes of the 557,056-byte partition.

@@ -857,6 +857,9 @@ Context *atomvm_ble_hid_create_port(GlobalContext *global, term opts)
     s_data = data;
 
     if (start_stack(data) != ESP_OK) {
+        ESP_LOGE(TAG, "Internal RAM at open: %u free, largest block %u",
+            (unsigned) data->free_at_open, (unsigned) data->largest_at_open);
+        heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
         free_data(data);
         context_destroy(ctx);
         return NULL;
