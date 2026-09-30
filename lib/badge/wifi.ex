@@ -18,6 +18,7 @@ defmodule Badge.Wifi do
   use GenServer
 
   alias Badge.Clock
+  alias Badge.GameLink.Radio
   alias Badge.Network
   alias Badge.Nvs
   alias Badge.Whenwhere
@@ -242,6 +243,7 @@ defmodule Badge.Wifi do
   @impl true
   def handle_info(:connected, state) do
     :io.format(~c"Wifi: associated~n")
+    Radio.wifi(true, state.ssid)
 
     {:noreply, %{state | radio: :connected, backoff: @first_backoff, attempts: 0}}
   end
@@ -283,7 +285,10 @@ defmodule Badge.Wifi do
 
   # A drop right after an explicit join means the passphrase was wrong; a drop on a
   # saved network means the access point went away, so that one retries forever.
-  def handle_info(:disconnected, state), do: dropped(on_disconnect(state), state)
+  def handle_info(:disconnected, state) do
+    Radio.wifi(false, nil)
+    dropped(on_disconnect(state), state)
+  end
 
   # Our own sta_disconnect/0 fires this callback; reconnecting here would undo a forget.
   def handle_info(:retry, %{radio: :disabled} = state), do: {:noreply, state}

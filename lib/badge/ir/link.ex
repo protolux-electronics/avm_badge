@@ -144,12 +144,18 @@ defmodule Badge.Ir.Link do
   end
 
   # Our own beam reaching our own sensor would be a hardware finding, not a peer.
-  defp deliver(id, %{from: id}) do
+  @doc false
+  def deliver(id, %{from: id}) do
     :io.format(~c"Ir: SELF ECHO, own beam reaches own sensor~n")
   end
 
+  # A game offer or join frame goes to Join.Ir, never to the page mailbox.
+  def deliver(_id, %{from: from, payload: <<0x1F, _rest::binary>> = payload}) do
+    Badge.GameLink.Join.Ir.heard(from, payload)
+  end
+
   # Badge.UI owns the mailbox every page reads through, and it can restart.
-  defp deliver(_id, %{from: from, payload: payload}) do
+  def deliver(_id, %{from: from, payload: payload}) do
     case Process.whereis(Badge.UI) do
       nil -> :ok
       ui -> Kernel.send(ui, {:ir, from, payload})
