@@ -37,6 +37,7 @@
 #include <esp_hidd.h>
 
 #include <host/ble_gap.h>
+#include <host/ble_gatt.h>
 #include <host/ble_hs.h>
 #include <host/ble_sm.h>
 #include <host/ble_store.h>
@@ -332,11 +333,11 @@ static void reset_connection(struct ble_hid_data *data)
     unlock(data);
 }
 
-/* Keys are seen once the link is encrypted and the host listens to the keyboard report. */
+/* Keys go out once the link is encrypted; a bonded host may never re-subscribe. */
 static void maybe_ready(struct ble_hid_data *data)
 {
     lock(data);
-    bool ready = data->connected && data->encrypted && data->subscribed && !data->ready_sent;
+    bool ready = data->connected && data->encrypted && !data->ready_sent;
     if (ready) {
         data->ready_sent = true;
     }
@@ -457,12 +458,13 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             return 0;
 
         case BLE_GAP_EVENT_SUBSCRIBE:
+            ESP_LOGI(TAG, "Subscribe attr %d notify %d reason %d", event->subscribe.attr_handle,
+                event->subscribe.cur_notify, event->subscribe.reason);
             if (data->report_handle == 0 || event->subscribe.attr_handle == data->report_handle
                 || event->subscribe.attr_handle == data->boot_handle) {
                 lock(data);
                 data->subscribed = event->subscribe.cur_notify;
                 unlock(data);
-                maybe_ready(data);
             }
             return 0;
 
@@ -561,6 +563,9 @@ static bool stop_stack(struct ble_hid_data *data)
         ESP_LOGE(TAG, "nimble_port_stop failed; the stack stays up");
         return false;
     }
+    /* esp_hid already ran ble_gatts_stop, which frees the GATT server's state block;
+     * ble_hs_deinit runs it again and would read through the NULL. A reset re-creates the block. */
+    ble_gatts_reset();
     nimble_port_deinit();
     return true;
 }

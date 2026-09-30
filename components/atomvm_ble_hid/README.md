@@ -13,6 +13,10 @@ bonding.
   the device advertises from its public, efuse-derived Bluetooth address, so a
   bonded host reconnects after a reboot without pairing again.
 - Reports are sent only over an encrypted link.
+- Closing calls `ble_gatts_reset` between `esp_hidd_dev_deinit` and
+  `nimble_port_deinit`: esp_hid's deinit already runs `ble_gatts_stop`, which
+  frees the GATT server's state block in `BT_NIMBLE_STATIC_TO_DYNAMIC` builds,
+  and the host deinit would run it again and read through the NULL.
 - A numeric comparison request is rejected: with nothing to show it on, it
   could not be checked.
 - One port at a time: there is one Bluetooth stack. Opening a second port
@@ -49,7 +53,7 @@ without pinning it: the term in the message is the driver's own, not the one
 | `passkey_input`         | the host shows a passkey; answer with `{passkey, N}`   |
 | `{passkey_display, N}`  | the host wants the device to show `N` instead          |
 | `{encrypted, Bonded}`   | the link is encrypted; `Bonded` is a boolean           |
-| `ready`                 | encrypted and the host listens to the keyboard report  |
+| `ready`                 | encrypted: keys go out from here on. A bonded host may never re-subscribe, so subscription is only logged |
 | `disconnected`          | the host went away; advertising restarts by itself     |
 | `{error, Reason}`       | `adv_failed`, `pairing_failed` or `host_reset`         |
 
