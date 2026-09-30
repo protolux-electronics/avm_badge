@@ -13,10 +13,15 @@ bonding.
   the device advertises from its public, efuse-derived Bluetooth address, so a
   bonded host reconnects after a reboot without pairing again.
 - Reports are sent only over an encrypted link.
-- Closing calls `ble_gatts_reset` between `esp_hidd_dev_deinit` and
-  `nimble_port_deinit`: esp_hid's deinit already runs `ble_gatts_stop`, which
-  frees the GATT server's state block in `BT_NIMBLE_STATIC_TO_DYNAMIC` builds,
-  and the host deinit would run it again and read through the NULL.
+- Closing calls the host's private `ble_gatts_init` between
+  `esp_hidd_dev_deinit` and `nimble_port_deinit`: esp_hid's deinit already
+  runs `ble_gatts_stop`, which frees the GATT server's state block in
+  `BT_NIMBLE_STATIC_TO_DYNAMIC` builds, and the host deinit would run it again
+  and read through the NULL. `ble_gatts_reset` is no substitute: it walks the
+  ATT table esp_hid has already freed.
+- NimBLE posts `connect` only after the remote version exchange, so a bonded
+  host can finish encrypting first. Whichever event comes first marks the
+  link connected, and `ready` follows the encryption either way.
 - A numeric comparison request is rejected: with nothing to show it on, it
   could not be checked.
 - One port at a time: there is one Bluetooth stack. Opening a second port

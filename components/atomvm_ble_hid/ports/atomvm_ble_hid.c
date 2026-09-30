@@ -58,6 +58,9 @@
 #include <term.h>
 #include <utils.h>
 
+/* Private to the host, but the only way to survive esp_hid's own ble_gatts_stop. */
+int ble_gatts_init(void);
+
 #include <esp32_sys.h>
 
 #include "atomvm_ble_hid.h"
@@ -382,6 +385,25 @@ static void on_passkey_action(struct ble_hid_data *data, struct ble_gap_event *e
     }
 }
 
+/*
+ * The connect event is posted only after the remote version exchange, so a bonded
+ * host can finish encrypting first: whichever event comes first marks the link.
+ */
+static void note_connected(struct ble_hid_data *data, uint16_t conn_handle)
+{
+    struct ble_gap_conn_desc desc;
+
+    lock(data);
+    bool fresh = !data->connected;
+    data->connected = true;
+    data->conn_handle = conn_handle;
+    unlock(data);
+
+    if (fresh && ble_gap_conn_find(conn_handle, &desc) == 0) {
+        post_connected(data, desc.peer_id_addr.val);
+    }
+}
+
 static int gap_event(struct ble_gap_event *event, void *arg)
 {
     struct ble_hid_data *data = (struct ble_hid_data *) arg;
@@ -396,19 +418,17 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 return 0;
             }
 
+            note_connected(data, event->connect.conn_handle);
+
             lock(data);
-            data->connected = true;
-            data->conn_handle = event->connect.conn_handle;
+            bool encrypted = data->encrypted;
             unlock(data);
-
-            if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
-                post_connected(data, desc.peer_id_addr.val);
-            }
-
-            /* Pairs a new host, or re-encrypts with the stored key for a bonded one. */
-            int rc = ble_gap_security_initiate(event->connect.conn_handle);
-            if (rc != 0) {
-                ESP_LOGW(TAG, "Security request failed: %d", rc);
+            if (!encrypted) {
+                /* Pairs a new host, or re-encrypts with the stored key for a bonded one. */
+                int rc = ble_gap_security_initiate(event->connect.conn_handle);
+                if (rc != 0) {
+                    ESP_LOGW(TAG, "Security request failed: %d", rc);
+                }
             }
             return 0;
 
@@ -447,6 +467,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGI(TAG, "Encrypted %d, authenticated %d, bonded %d, key size %d",
                 desc.sec_state.encrypted, desc.sec_state.authenticated, desc.sec_state.bonded,
                 desc.sec_state.key_size);
+            note_connected(data, event->enc_change.conn_handle);
             lock(data);
             data->encrypted = desc.sec_state.encrypted;
             data->bonded = desc.sec_state.bonded;
@@ -564,8 +585,8 @@ static bool stop_stack(struct ble_hid_data *data)
         return false;
     }
     /* esp_hid already ran ble_gatts_stop, which frees the GATT server's state block;
-     * ble_hs_deinit runs it again and would read through the NULL. A reset re-creates the block. */
-    ble_gatts_reset();
+     * ble_hs_deinit runs it again and would read through the NULL. Re-init gives it a block. */
+    ble_gatts_init();
     nimble_port_deinit();
     return true;
 }

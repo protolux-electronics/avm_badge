@@ -131,8 +131,9 @@ lines above), ESP-IDF v5.5.5:
 The first image with the stack enabled failed at `esp_bt_controller_init` with
 `ESP_ERR_NO_MEM`: the controller allocates from internal, DMA-capable RAM
 only, and the badge had too little of it free. The controller and wifi lines
-above are the answer; if the driver still logs `Internal RAM at open` with a
-failure, the next lever is `network:stop/0` while the page is open.
+above got the stack started, with about 5 kB of internal RAM to spare, so
+the firmware also stops wifi (`network:stop/0`) while the Keyboard page is
+open and resumes it on leaving.
 
 Without `CONFIG_BT_NIMBLE_SM_LVL`, NimBLE's HID service leaves every
 characteristic readable over a plain link and esp_hid enforces nothing. Apple
