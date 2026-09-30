@@ -8,9 +8,10 @@ defmodule Badge.Page do
   wrong or forget the background.
 
   `use Badge.Page` supplies `handle_key/2`, `tick/1`, a 100 ms `refresh/0`, a
-  placeholder `icon/0`, ignoring `handle_info/2` and `handle_ir/3`, a `fonts/1` that asks
-  for none, and a no-op `leave/1` for pages that need none of them, all overridable. Sub-pages inside
-  a container never reach the home grid, so they leave `icon/0` alone.
+  placeholder `icon/0`, ignoring `handle_info/2`, `handle_ir/3` and `handle_link/2`, a
+  `fonts/1` that asks for none, and a no-op `leave/1` for pages that need none of them, all
+  overridable. Sub-pages inside a container never reach the home grid, so they leave `icon/0`
+  alone.
   """
 
   @type state :: term
@@ -76,6 +77,17 @@ defmodule Badge.Page do
   @callback handle_ir(from :: binary, payload :: binary, state) :: {:ok, state} | :ignore
 
   @doc """
+  Applies an event from the page's `Badge.GameLink` session.
+
+  Events arrive in order, only while this page is on screen, and only for a
+  session this page opened. `{:closed, :reset}` means GameLink restarted and
+  the session is gone. Message payloads come from other badges: match them
+  defensively, and ignore what you do not recognise. A raise here sends the
+  badge Home.
+  """
+  @callback handle_link(event :: Badge.GameLink.event(), state) :: {:ok, state} | :ignore
+
+  @doc """
   Fonts this page needs loaded, beyond the ones always present.
 
   A ufont costs its file size in the display driver's heap for as long as it
@@ -116,6 +128,9 @@ defmodule Badge.Page do
       def handle_ir(_from, _payload, _state), do: :ignore
 
       @impl true
+      def handle_link(_event, _state), do: :ignore
+
+      @impl true
       def fonts(_state), do: []
 
       @impl true
@@ -128,6 +143,7 @@ defmodule Badge.Page do
                      leave: 1,
                      handle_info: 2,
                      handle_ir: 3,
+                     handle_link: 2,
                      fonts: 1
     end
   end
