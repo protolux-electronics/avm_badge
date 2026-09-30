@@ -203,6 +203,30 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   work (it needs `erpc`). Drive it from a local `iex` holding
   `tools/cluster.exs`
 
+## Bluetooth keyboard
+
+- `Badge.Page.Keyboard` makes the badge a BLE HID keyboard through the
+  `ble_hid` port driver, an ESP-IDF component in `components/atomvm_ble_hid`
+  built into the VM, not into `main.avm`. `FORK.md` there has the
+  `sdkconfig` lines and the size check; the published base image lacks it,
+  and `Badge.Ble.Hid.open/1` then answers `{:error, _}`
+- **Raw mode must never outlive the page.** `Badge.Keyboard.raw/1` hands the
+  page `{:raw, labels}`, the whole held set, instead of decoded events.
+  `Badge.Ble.Link.open/0` turns it on, `close/0` off; the page's `leave/1`
+  calls `close/0`, and so does `Badge.UI.init/1`, so a UI restart is not deaf
+- The six shape keys are never forwarded: Cross leaves, Diamond forgets the
+  bonds, the rest are reserved. Esc *is* forwarded, since it ends a show
+- `Badge.Ble.Status` holds every transition as plain data; the link is a
+  shell that traps exits. Match `{:ble_hid, _port, _}` without pinning
+- Reports go out only over an encrypted link; before pairing they are dropped
+  in the driver
+- The VM image is at 1,949,600 of 1,966,080 bytes with the component in, so
+  anything else added to the VM needs a size check first
+- An open link refuses light sleep (`Badge.Sleep`), and a raw key that wakes
+  the screen still reaches the page
+- Bonds live in the NVS namespace `nimble_bond`, which `tools/provision.py`
+  copies across
+
 ## Schedule
 
 - The programme is **compiled in**: `assets/schedule.json` is parsed on the
