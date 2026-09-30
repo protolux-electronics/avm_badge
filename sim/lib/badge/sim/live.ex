@@ -5,7 +5,9 @@ defmodule Badge.Sim.Live do
 
   A drawn key sends its matrix label through `Badge.Keymap`, as the scanner
   does. Modifiers toggle instead: a toggled key stays held, so shift applies to
-  the keys clicked after it and `Badge.Keyboard.holding?/1` sees it.
+  the keys clicked after it and `Badge.Keyboard.holding?/1` sees it. While the
+  keyboard is in raw mode, a drawn key sends the held set with it and then
+  without it, as a press and a release.
   """
 
   use Phoenix.LiveView
@@ -90,12 +92,20 @@ defmodule Badge.Sim.Live do
     {:noreply, hold(socket, held)}
   end
 
+  # Raw mode gets the held set with the key, then without it: a press and its release.
   def handle_event("press", %{"label" => label}, socket) do
-    shifted = "LShift" in socket.assigns.held or "RShift" in socket.assigns.held
+    held = socket.assigns.held
 
-    case Keymap.decode(String.to_charlist(label), shifted) do
-      :ignore -> :ok
-      event -> Badge.UI.key_event(event)
+    if raw?() do
+      Badge.UI.key_event({:raw, labels(held ++ [label])})
+      Badge.UI.key_event({:raw, labels(held)})
+    else
+      shifted = "LShift" in held or "RShift" in held
+
+      case Keymap.decode(String.to_charlist(label), shifted) do
+        :ignore -> :ok
+        event -> Badge.UI.key_event(event)
+      end
     end
 
     {:noreply, socket}
@@ -116,8 +126,13 @@ defmodule Badge.Sim.Live do
     |> push_event("held", %{labels: []})
   end
 
+  defp raw?, do: GenServer.call(Badge.Keyboard, :raw?)
+
+  defp labels(held), do: Enum.map(held, &String.to_charlist/1)
+
   defp hold(socket, held) do
-    GenServer.cast(Badge.Keyboard, {:held, Enum.map(held, &String.to_charlist/1)})
+    GenServer.cast(Badge.Keyboard, {:held, labels(held)})
+    if raw?(), do: Badge.UI.key_event({:raw, labels(held)})
 
     socket
     |> assign(held: held)

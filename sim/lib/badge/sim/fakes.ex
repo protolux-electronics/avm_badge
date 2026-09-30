@@ -1,6 +1,7 @@
 defmodule Badge.Sim.Fakes do
   @moduledoc "External services and input processes that do not run on the host."
 
+  alias Badge.Ble.Status
   alias Badge.Chat.Link.State
   alias Badge.Sim.Fake
 
@@ -37,8 +38,27 @@ defmodule Badge.Sim.Fakes do
       ),
       fake(
         Badge.Keyboard,
-        fn {:holding?, label}, d -> :lists.member(label, Map.get(d, :held, [])) end,
-        fn {:held, labels}, d -> Map.put(d, :held, labels) end
+        fn
+          {:holding?, label}, d -> :lists.member(label, Map.get(d, :held, []))
+          :raw?, d -> Map.get(d, :raw, false)
+        end,
+        fn
+          {:held, labels}, d -> Map.put(d, :held, labels)
+          {:raw, on}, d -> Map.put(d, :raw, on)
+        end
+      ),
+      # `{:sim, event}` plays a driver event, such as `{:sim, :passkey_input}` from iex.
+      fake(
+        Badge.Ble.Link,
+        fn :status, d -> ble(d) end,
+        fn
+          :open, d -> Map.put(d, :status, Status.event(ble(d), :advertising))
+          :close, d -> Map.put(d, :status, Status.closed(ble(d)))
+          :forget, d -> Map.put(d, :status, Status.event(ble(d), :advertising))
+          {:passkey, _n}, d -> Map.put(d, :status, paired(ble(d)))
+          {:sim, event}, d -> Map.put(d, :status, Status.event(ble(d), event))
+          _, d -> d
+        end
       ),
       fake(Badge.Update.Link, fn :status, _ ->
         %{
@@ -77,6 +97,10 @@ defmodule Badge.Sim.Fakes do
       fake(Badge.Ir.Link, fn _, _ -> :ok end)
     ]
   end
+
+  defp ble(d), do: Map.get(d, :status, Status.new("Badge SIM1"))
+
+  defp paired(status), do: status |> Status.event({:encrypted, true}) |> Status.event(:ready)
 
   defp fake(name, calls, casts \\ fn _msg, data -> data end) do
     %{id: name, start: {Fake, :start_link, [{name, calls, casts}]}}
