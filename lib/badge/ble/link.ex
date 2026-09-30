@@ -2,8 +2,10 @@ defmodule Badge.Ble.Link do
   @moduledoc """
   Owns the `ble_hid` port while the Keyboard page shows.
 
-  `open/0` starts the Bluetooth stack and puts `Badge.Keyboard` in raw mode;
-  `close/0` does the reverse, so raw mode never outlives the link. In
+  `open/0` stops wifi, starts the Bluetooth stack and puts `Badge.Keyboard`
+  in raw mode; `close/0` does the reverse, so raw mode never outlives the
+  link and wifi comes back once it is gone. The controller lives in internal
+  RAM, which wifi would otherwise leave too little of. In
   between, `report/1` turns a raw label set into an input report, and
   `passkey/1` and `forget/0` drive pairing.
 
@@ -22,6 +24,7 @@ defmodule Badge.Ble.Link do
   alias Badge.Ble.Status
   alias Badge.Identity
   alias Badge.Keyboard
+  alias Badge.Wifi
 
   @mem_interval 1_000
   @battery_every 30
@@ -158,6 +161,7 @@ defmodule Badge.Ble.Link do
   def handle_info({:EXIT, port, reason}, %{port: port} = state) when port != nil do
     :io.format(~c"BLE: port exited ~p~n", [reason])
     Keyboard.raw(false)
+    radio(&Wifi.resume/0)
 
     {:noreply, %{state | port: nil, status: Status.failed(state.status, :port_exited)}}
   end
@@ -177,12 +181,14 @@ defmodule Badge.Ble.Link do
   def terminate(_reason, state) do
     Driver.close(state.port)
     Keyboard.raw(false)
+    radio(&Wifi.resume/0)
 
     :ok
   end
 
   defp opening(state) do
     :io.format(~c"BLE: opening as ~s~n", [state.status.name])
+    radio(&Wifi.stop/0)
 
     case Driver.open(state.status.name) do
       {:ok, port} ->
@@ -197,15 +203,24 @@ defmodule Badge.Ble.Link do
 
       {:error, reason} ->
         :io.format(~c"BLE: open failed ~p~n", [reason])
+        radio(&Wifi.resume/0)
 
         %{state | status: Status.failed(state.status, :open_failed)}
     end
+  end
+
+  # Wifi is not running in every test; the link is fine without it.
+  defp radio(fun) do
+    fun.()
+  catch
+    :exit, _reason -> :ok
   end
 
   # Releases every key first, so nothing stays held on the host.
   defp shut(state) do
     Driver.report(state.port, Badge.Hid.empty())
     logged(:close, Driver.close(state.port))
+    radio(&Wifi.resume/0)
 
     %{state | port: nil, status: Status.closed(state.status), battery: nil}
   end

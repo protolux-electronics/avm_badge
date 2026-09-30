@@ -220,8 +220,18 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - `Badge.Ble.Status` holds every transition as plain data; the link is a
   shell that traps exits. Match `{:ble_hid, _port, _}` without pinning
 - Reports go out only over an encrypted link; before pairing they are dropped
-  in the driver
-- The VM image is at 1,931,552 of 1,966,080 bytes with the component in, so
+  in the driver. `ready` means encrypted: a bonded Mac may never re-subscribe
+- **Wifi is stopped while the page is open** (`Badge.Wifi.stop/0`, resumed on
+  every exit path): the controller lives in internal RAM and left ~5 kB free
+  next to wifi. Expect a reconnect after leaving
+- **Driver events can arrive in reverse order.** AtomVM's cross-task queue is
+  a stack drained in one go, and NimBLE posts `connect` only after the remote
+  version exchange, so `encrypted` and even `ready` can precede `connected`.
+  `Badge.Ble.Status` and the driver both tolerate any order
+- Closing re-runs the host's private `ble_gatts_init` between esp_hid's deinit
+  and `nimble_port_deinit`; without it the second `ble_gatts_stop` reads a
+  freed block and the badge reboots (see the component README)
+- The VM image is at 1,928,032 of 1,966,080 bytes with the component in, so
   anything else added to the VM needs a size check first. The fork symlinks
   the component from the main checkout: build the VM with `ble-keyboard`
   checked out, or the driver is silently left out

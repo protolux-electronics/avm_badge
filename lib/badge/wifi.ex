@@ -97,9 +97,13 @@ defmodule Badge.Wifi do
   @spec suspend() :: :ok
   def suspend, do: GenServer.call(__MODULE__, :suspend)
 
-  @doc "Rejoins the saved network after a suspend."
+  @doc "Rejoins the saved network after a suspend or a stop."
   @spec resume() :: :ok
   def resume, do: GenServer.cast(__MODULE__, :resume)
+
+  @doc "Stops the driver and frees its memory; `resume/0` starts it again."
+  @spec stop() :: :ok
+  def stop, do: GenServer.call(__MODULE__, :stop)
 
   @doc "Title bar icon for a radio state."
   @spec icon(atom) :: atom
@@ -191,6 +195,23 @@ defmodule Badge.Wifi do
     disconnect(state)
 
     {:reply, :ok, %{state | radio: :disabled, pending: nil, attempts: 0}}
+  end
+
+  def handle_call(:stop, _from, %{started: false} = state), do: {:reply, :ok, state}
+
+  def handle_call(:stop, _from, state) do
+    :io.format(~c"Wifi: stopped ~p~n", [:network.stop()])
+
+    {:reply, :ok,
+     %{
+       state
+       | started: false,
+         radio: :disabled,
+         ip: nil,
+         pending: nil,
+         attempts: 0,
+         scanning: false
+     }}
   end
 
   @impl true

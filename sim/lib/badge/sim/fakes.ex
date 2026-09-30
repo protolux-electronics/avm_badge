@@ -28,6 +28,12 @@ defmodule Badge.Sim.Fakes do
               %{ssid: "Kontoret", rssi: -61, authmode: :wpa2_psk},
               %{ssid: "Open Sesame", rssi: -70, authmode: :open}
             ]
+
+          :stop, _ ->
+            :ok
+
+          :suspend, _ ->
+            :ok
         end,
         fn
           :scan, d -> Map.update(d, :scan_id, 1, &(&1 + 1))

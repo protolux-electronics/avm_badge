@@ -169,6 +169,10 @@ open the badge does not light-sleep, and the Log tab records how much
 internal RAM the stack took. `tools/provision.py` keeps the bonds. The Mac's
 Bluetooth menu shows the badge's battery charge, refreshed every half minute.
 
+Wifi is stopped while the page is open: the Bluetooth controller lives in
+internal RAM and the two do not fit side by side. The saved network is
+rejoined when you leave, which takes a few seconds.
+
 ## Flash layout
 
 Partition table read back off the board (`esptool read_flash` +
