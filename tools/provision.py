@@ -21,8 +21,9 @@ badge.
 
 Needs ESP-IDF: . $IDF_PATH/export.sh
 
-The three namespaces ESP-IDF owns (`nvs.net80211`, `phy`, `misc`) are not
-preserved; they hold wifi driver config and RF calibration, and are rebuilt on
+The Bluetooth keyboard's bonds (namespace `nimble_bond`) are carried over
+unchanged, so a paired Mac stays paired. The three namespaces ESP-IDF owns
+(`nvs.net80211`, `phy`, `misc`) are not preserved; they hold wifi driver config and RF calibration, and are rebuilt on
 the next boot at the cost of a slower first connection.
 """
 import argparse
@@ -40,6 +41,8 @@ from serial_port import find_port
 NVS_OFFSET = 0x9000
 NVS_SIZE = 0x6000
 NAMESPACE = "badge"
+# Written by NimBLE, not by the firmware; kept byte for byte.
+BONDS = "nimble_bond"
 CHIP = "esp32s3"
 
 # Never printed back, whether they were supplied or read off the badge.
@@ -141,8 +144,8 @@ def entry_data(entry):
     return bytes(buf[: entry.data["size"]])
 
 
-def read_namespace(parser, image):
-    """Every key of the badge namespace, as {key: bytes}."""
+def read_namespace(parser, image, namespace=NAMESPACE):
+    """Every key of one namespace, as {key: bytes}."""
     partition = parser.NVS_Partition("nvs", bytearray(image))
 
     names = {}
@@ -156,7 +159,7 @@ def read_namespace(parser, image):
         for entry in page.entries:
             if entry.state != "Written":
                 continue
-            if names.get(entry.metadata["namespace"]) != NAMESPACE:
+            if names.get(entry.metadata["namespace"]) != namespace:
                 continue
 
             kind = entry.metadata["type"]
@@ -183,12 +186,15 @@ def read_namespace(parser, image):
     return values
 
 
-def write_csv(path, values):
+def write_csv(path, values, bonds):
     with open(path, "w", newline="") as fh:
         fh.write("key,type,encoding,value\n")
-        fh.write(f"{NAMESPACE},namespace,,\n")
-        for key in sorted(values):
-            fh.write(f"{key},data,hex2bin,{values[key].hex()}\n")
+        for namespace, entries in ((NAMESPACE, values), (BONDS, bonds)):
+            if not entries and namespace != NAMESPACE:
+                continue
+            fh.write(f"{namespace},namespace,,\n")
+            for key in sorted(entries):
+                fh.write(f"{key},data,hex2bin,{entries[key].hex()}\n")
 
 
 def run(command, dry_run, quiet=False):
@@ -278,7 +284,9 @@ def main():
             quiet=True,
         )
 
-        existing = read_namespace(parser, open(image, "rb").read())
+        raw = open(image, "rb").read()
+        existing = read_namespace(parser, raw)
+        bonds = read_namespace(parser, raw, BONDS)
         values = dict(existing)
         values.update(supplied)
 
@@ -300,7 +308,10 @@ def main():
                 mark = "kept "
             print(f"  {mark}{key:12} {shown(key, values[key])}")
 
-        write_csv(source, values)
+        if bonds:
+            print(f"\n{BONDS} namespace, {len(bonds)} keys: kept (Bluetooth bonds)")
+
+        write_csv(source, values, bonds)
 
         run(
             generator() + ["generate", source, merged, hex(NVS_SIZE)],
