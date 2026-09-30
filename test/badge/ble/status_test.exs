@@ -95,6 +95,24 @@ defmodule Badge.Ble.StatusTest do
     end
   end
 
+  describe "closing a link that never opened" do
+    test "leaves it off, so a failed open does not hold sleep back" do
+      failed = Status.failed(Status.new("Badge 0001"), :open_failed)
+      state = %{port: nil, status: failed, measured: false, ticker: nil}
+
+      assert {:noreply, %{status: %{state: :off}}} = Link.handle_cast(:close, state)
+    end
+  end
+
+  describe "status/0" do
+    test "answers off rather than exiting when the link is not running" do
+      case Process.whereis(Link) do
+        nil -> assert Link.status().state == :off
+        _running -> assert is_map(Link.status())
+      end
+    end
+  end
+
   describe "the advertised name" do
     test "ends in the last four hex digits of the chip id" do
       assert Link.name(<<0x90, 0xDA, 0x72, 0x00, 0x1A, 0x2B>>) == "Badge 1A2B"

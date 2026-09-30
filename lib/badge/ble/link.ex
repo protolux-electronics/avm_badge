@@ -55,9 +55,16 @@ defmodule Badge.Ble.Link do
   @spec forget() :: :ok
   def forget, do: GenServer.cast(__MODULE__, :forget)
 
-  @doc "Where the link is; see `Badge.Ble.Status`."
+  @doc "Where the link is; see `Badge.Ble.Status`. Off while the link is not running."
   @spec status() :: Status.t()
-  def status, do: GenServer.call(__MODULE__, :status)
+  def status do
+    case Process.whereis(__MODULE__) do
+      nil -> Status.new("Badge")
+      pid -> GenServer.call(pid, :status)
+    end
+  catch
+    :exit, _reason -> Status.new("Badge")
+  end
 
   @doc "The advertised name: \"Badge \" and the last four hex digits of the chip id."
   @spec name(binary) :: binary
@@ -85,7 +92,9 @@ defmodule Badge.Ble.Link do
   @impl true
   def handle_cast(:open, %{port: nil} = state), do: {:noreply, opening(state)}
 
-  def handle_cast(:close, %{port: nil} = state), do: {:noreply, state}
+  def handle_cast(:close, %{port: nil} = state) do
+    {:noreply, %{state | status: Status.closed(state.status)}}
+  end
 
   def handle_cast(:close, state), do: {:noreply, shut(state)}
 
@@ -143,6 +152,9 @@ defmodule Badge.Ble.Link do
 
     {:noreply, %{state | port: nil, status: Status.failed(state.status, :port_exited)}}
   end
+
+  # A port closed by shut/1 exits after the state already forgot it.
+  def handle_info({:EXIT, _port, :normal}, state), do: {:noreply, state}
 
   def handle_info(message, state) do
     :io.format(~c"BLE: unhandled ~p~n", [message])
