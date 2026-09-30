@@ -18,13 +18,19 @@ defmodule Badge.MixProject do
       elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.target()),
+      erlc_paths: ["src"],
       test_paths: test_paths(Mix.target()),
       deps: deps(),
       # ExAtomVM writes no application.bin, and NervesHub cannot identify
       # firmware without one. The flash task bypasses the packbeam alias.
       aliases: [
         "atomvm.packbeam": ["atomvm.application_bin", "atomvm.packbeam"],
-        "atomvm.esp32.flash": ["atomvm.application_bin", "atomvm.esp32.flash"]
+        "atomvm.esp32.flash": [
+          "atomvm.application_bin",
+          "atomvm.packbeam",
+          "badge.fits",
+          "atomvm.esp32.flash"
+        ]
       ],
       atomvm: [
         start: Badge,
@@ -42,8 +48,12 @@ defmodule Badge.MixProject do
   defp mod(:host, env) when env != :test, do: [mod: {Badge.Sim.Application, []}]
   defp mod(_target, _env), do: []
 
-  defp elixirc_paths(:badge), do: ["lib"]
-  defp elixirc_paths(_target), do: ["lib", "sim/lib"]
+  defp elixirc_paths(:badge), do: probe(["lib"])
+  defp elixirc_paths(_target), do: probe(["lib", "sim/lib"])
+
+  # GAMELINK_PROBE=1 adds the two-badge GameLink smoke-test page; never shipped.
+  defp probe(paths),
+    do: if(System.get_env("GAMELINK_PROBE") == "1", do: paths ++ ["probe"], else: paths)
 
   defp test_paths(:badge), do: ["test"]
   defp test_paths(_target), do: ["test", "sim/test"]

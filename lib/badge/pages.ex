@@ -15,17 +15,17 @@ defmodule Badge.Pages do
   # The first screen is what an attendee reaches for; the rest follow.
   # `Badge.Page.Text` is deliberately absent: it is an example, not a page.
   @pages [
-    Badge.Page.Name,
-    Badge.Page.Share,
-    Badge.Page.Chat,
-    Badge.Page.Schedule,
-    Badge.Page.About,
-    Badge.Page.Settings,
-    Badge.Page.Led,
-    Badge.Page.Sensors,
-    Badge.Page.Agent,
-    Badge.Page.Cluster
-  ]
+           Badge.Page.Name,
+           Badge.Page.Share,
+           Badge.Page.Chat,
+           Badge.Page.Schedule,
+           Badge.Page.About,
+           Badge.Page.Settings,
+           Badge.Page.Led,
+           Badge.Page.Sensors,
+           Badge.Page.Cluster
+         ] ++
+           if(System.get_env("GAMELINK_PROBE") == "1", do: [Badge.Page.GameLinkProbe], else: [])
 
   @per_screen length(@keys)
   @screens div(length(@pages) + @per_screen - 1, @per_screen)

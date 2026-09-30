@@ -42,20 +42,30 @@ defmodule Mix.Tasks.Badge.Assets do
     rickroll = Path.join(stage, "assets/priv/rickroll")
     fonts = Path.join(stage, "assets/priv/fonts")
     logo = Path.join(stage, "assets/priv/logo")
+    art = Path.join(stage, "assets/priv/art")
+    qr = Path.join(stage, "assets/priv/qr")
 
     try do
       File.mkdir_p!(rickroll)
       File.mkdir_p!(fonts)
       File.mkdir_p!(logo)
+      File.mkdir_p!(art)
+      File.mkdir_p!(qr)
       frames = Path.wildcard("assets/rickroll/*.rgba")
       uf_fonts = Path.wildcard("assets/fonts/*.uf")
       logos = Path.wildcard("assets/logo/*.rgba")
+      masks = Path.wildcard("assets/art/*.mask")
+      qr_templates = Path.wildcard("assets/qr/*.bin")
       if frames == [], do: Mix.raise("no frames found in assets/rickroll")
       if uf_fonts == [], do: Mix.raise("no fonts found in assets/fonts")
       if logos == [], do: Mix.raise("no logo found in assets/logo")
+      if masks == [], do: Mix.raise("no art found in assets/art")
+      if qr_templates == [], do: Mix.raise("no QR templates found in assets/qr")
       copy(frames, rickroll)
       copy(uf_fonts, fonts)
       copy(logos, logo)
+      copy(masks, art)
+      copy(qr_templates, qr)
 
       out = Path.expand(@out)
       # Names inside the archive are relative to the staging directory.
@@ -63,7 +73,9 @@ defmodule Mix.Tasks.Badge.Assets do
         inputs =
           (Path.wildcard("assets/priv/rickroll/*.rgba") ++
              Path.wildcard("assets/priv/fonts/*.uf") ++
-             Path.wildcard("assets/priv/logo/*.rgba"))
+             Path.wildcard("assets/priv/logo/*.rgba") ++
+             Path.wildcard("assets/priv/art/*.mask") ++
+             Path.wildcard("assets/priv/qr/*.bin"))
           |> Enum.map(&to_charlist/1)
 
         :ok = :packbeam_api.create(to_charlist(out), inputs, %{lib: true})

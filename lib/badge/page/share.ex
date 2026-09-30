@@ -10,6 +10,7 @@ defmodule Badge.Page.Share do
 
   use Badge.Page
 
+  alias Badge.Art
   alias Badge.Font
   alias Badge.Icons
   alias Badge.Identity
@@ -80,7 +81,6 @@ defmodule Badge.Page.Share do
   @detail_x @margin + @icon_w + 6
 
   # Two badges meeting, centred between the chip id and the badge heard.
-  @art :badge_share
   @art_y 90
 
   @dot_y 228
@@ -123,13 +123,26 @@ defmodule Badge.Page.Share do
       opened: nil,
       id: nil,
       chip: "",
-      loaded: false
+      loaded: false,
+      art: nil,
+      art_tint: nil
     }
   end
 
   # Hardware is only touched here, never from a key handler.
   @impl true
-  def tick(state), do: state |> load() |> beam() |> settle() |> persist()
+  def tick(state), do: state |> load() |> load_art() |> beam() |> settle() |> persist()
+
+  # Loaded once per page entry, and again only if the skin's glyph colour changed.
+  defp load_art(state) do
+    tint = Theme.glyph()
+
+    if state.art_tint == tint do
+      state
+    else
+      %{state | art: Art.share(tint), art_tint: tint}
+    end
+  end
 
   # Everything stored arrives on the first tick, so init/0 stays pure.
   defp load(%{loaded: true} = state), do: state
@@ -338,7 +351,7 @@ defmodule Badge.Page.Share do
   def render(%{mode: :detail, opened: %{profile: profile}}), do: detail_screen(profile)
 
   def render(%{screen: @share_screen} = state) do
-    [art()] ++ share_screen(state) ++ dots(@share_screen)
+    art(state.art) ++ share_screen(state) ++ dots(@share_screen)
   end
 
   def render(%{screen: @sharing_screen} = state),
@@ -516,10 +529,13 @@ defmodule Badge.Page.Share do
   defp badge_icon(nil, _y), do: []
   defp badge_icon(icon, y), do: [Icons.item(icon, @margin, y)]
 
-  defp art do
-    {width, _height} = Icons.size(@art)
+  # With no assets partition, state.art is nil and the share screen renders without it.
+  defp art(nil), do: []
 
-    Icons.item(@art, div(Theme.width() - width, 2), @art_y)
+  defp art(image) do
+    {width, _height} = Art.share_size()
+
+    [{:image, div(Theme.width() - width, 2), @art_y, Theme.bg(), image}]
   end
 
   # Before anyone has been heard there is nothing to report but the count.

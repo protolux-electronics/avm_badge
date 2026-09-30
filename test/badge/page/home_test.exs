@@ -62,7 +62,7 @@ defmodule Badge.Page.HomeTest do
     end
 
     test "the label under a cell is the page in that slot, not the first screen's" do
-      assert "Agent" in texts(Home.render(on(1)))
+      assert "Cluster" in texts(Home.render(on(1)))
       refute "Name" in texts(Home.render(on(1)))
     end
 

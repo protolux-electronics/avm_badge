@@ -1,6 +1,8 @@
 defmodule Badge.WifiTest do
-  use ExUnit.Case, async: true
+  # A couple of tests register Badge.GameLink.Radio to catch the wifi/2 cast.
+  use ExUnit.Case, async: false
 
+  alias Badge.GameLink.Radio
   alias Badge.Icons
   alias Badge.Wifi
 
@@ -75,6 +77,32 @@ defmodule Badge.WifiTest do
     test "has no address for a payload it does not recognise" do
       assert Wifi.address(:undefined) == nil
       assert Wifi.address({}) == nil
+    end
+  end
+
+  describe "the GameLink.Radio hook" do
+    test "an association tells GameLink.Radio, unconditionally" do
+      Process.register(self(), Radio)
+
+      assert {:noreply, _state} =
+               Wifi.handle_info(:connected, state(%{backoff: 1_000, ssid: "Home"}))
+
+      assert_receive {:"$gen_cast", {:wifi, true, "Home"}}
+    end
+
+    test "a drop tells GameLink.Radio before the existing retry logic runs" do
+      Process.register(self(), Radio)
+
+      assert {:noreply, _state} = Wifi.handle_info(:disconnected, state(%{radio: :disabled}))
+
+      assert_receive {:"$gen_cast", {:wifi, false, nil}}
+    end
+
+    test "the hook is harmless when GameLink.Radio is not running" do
+      assert {:noreply, _state} =
+               Wifi.handle_info(:connected, state(%{backoff: 1_000, ssid: "Home"}))
+
+      assert {:noreply, _state} = Wifi.handle_info(:disconnected, state(%{radio: :disabled}))
     end
   end
 end

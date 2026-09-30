@@ -401,6 +401,10 @@ defmodule Badge.Page.Name do
     [centred("Link is too long", @qr_mid_y, Theme.alert())]
   end
 
+  defp qr_body(%{qr_result: {:error, :no_assets}}) do
+    [centred("QR unavailable", @qr_mid_y, Theme.alert())]
+  end
+
   defp qr_body(_state), do: [centred("Set a link in the editor", @qr_mid_y, Theme.dim())]
 
   defp qr_scale(outer), do: min(max(div(@qr_box, outer), 1), @qr_max_scale)

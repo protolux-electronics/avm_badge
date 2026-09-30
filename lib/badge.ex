@@ -43,6 +43,8 @@ defmodule Badge do
 
     children = [
       {Badge.UI, display},
+      {Badge.GameLink.Radio, :ok},
+      {Badge.GameLink, :ok},
       {Badge.Backlight, :ok},
       {Badge.Keyboard, :ok},
       {Badge.Wifi, :ok},

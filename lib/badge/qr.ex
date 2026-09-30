@@ -35,14 +35,38 @@ defmodule Badge.QR do
   @quiet 4
   @white <<255, 255, 255, 255>>
   @black <<0, 0, 0, 255>>
-  @doc "Encodes a binary in QR byte mode at error-correction level L, up to version 10."
-  @spec encode(binary) :: {:ok, map} | {:error, :too_long}
+  @doc """
+  Encodes a binary in QR byte mode at error-correction level L, up to version 10.
+
+  `{:error, :no_assets}` means the payload fits a supported version, but its
+  template is missing from the assets partition.
+  """
+  @spec encode(binary) :: {:ok, map} | {:error, :too_long} | {:error, :no_assets}
   def encode(payload) when is_binary(payload) do
     case version_for(byte_size(payload), @versions) do
       nil -> {:error, :too_long}
-      spec -> {:ok, build(payload, spec, Geometry.for_version(spec.version))}
+      spec -> result(payload, spec, Geometry.for_version(spec.version))
     end
   end
+
+  @doc """
+  The width in modules, quiet zone included, of the code `encode/1` draws for
+  a payload of `length` bytes; nil past version 10. Needs no assets.
+  """
+  @spec width(non_neg_integer) :: pos_integer | nil
+  def width(length) when is_integer(length) and length >= 0 do
+    case version_for(length, @versions) do
+      nil -> nil
+      %{version: version} -> 17 + 4 * version + 2 * @quiet
+    end
+  end
+
+  @doc "The encode outcome from what `Geometry.for_version/1` answered: `{:error, :no_assets}` unless it is a template map."
+  @spec result(binary, map, map | nil) :: {:ok, map} | {:error, :no_assets}
+  def result(payload, spec, geometry) when is_map(geometry),
+    do: {:ok, build(payload, spec, geometry)}
+
+  def result(_payload, _spec, _absent), do: {:error, :no_assets}
 
   @doc "Draws encoded QR data at an integer number of panel pixels per module."
   @spec item(map, integer, integer, pos_integer) :: tuple

@@ -33,6 +33,8 @@ import zlib
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "assets", "src", "icons")
 OUT = os.path.join(ROOT, "assets", "icons")
+# Too big to bake per tint into Badge.Icons; Badge.Art reads it from the assets partition.
+ART = {"badge_share": os.path.join(ROOT, "assets", "art")}
 
 # Source art is named for how it looks; the firmware wants what it means.
 RENAME = {
@@ -170,7 +172,7 @@ def main():
             data, suffix, mode = to_rgba8888(pixels), "rgba", "colour"
             assert len(data) == width * height * 4
 
-        target = os.path.join(OUT, f"{name}@{width}x{height}.{suffix}")
+        target = os.path.join(ART.get(name, OUT), f"{name}@{width}x{height}.{suffix}")
         total += len(data)
 
         if check:

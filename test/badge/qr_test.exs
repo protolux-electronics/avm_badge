@@ -4,6 +4,19 @@ defmodule Badge.QRTest do
   alias Badge.QR
   alias Badge.QR.Geometry
 
+  @qr_asset_checksums %{
+    1 => "90920fb05c124a44dee1abbf87636feb0a33c7e6a80bcd36c8d00582aa3613c1",
+    2 => "425451af400e56d8eb273afa123598530646d583c65694d5d994e8d6510ad9a4",
+    3 => "3d617dbc8c355bf7074afb201dd87f09bed91c4211a7b0a031aae4dc2bbdb0e3",
+    4 => "f834c6fb6ec729a87cbb8a632fb9456075e444a35d799c94e4db6cc6d9c2c152",
+    5 => "240b4a7b9d7927e2ef46bdba51d8ee26fe5ab8d279cdadc65ed7cfb066f8855a",
+    6 => "857c9ef82a844ce868b163568d1711a04c9ad0c352e80ab1b17007cc471f61ca",
+    7 => "d628b3ae3bd48f4bc2b097df7da73070820645089189f1a063d51d8f87c74773",
+    8 => "6318c95ce70ef9b89877d46a1534129af200a4f314d977ea9026beb417d47ad3",
+    9 => "0328774de53a01893759f6c4e55eb0969afe1f9a080d104a7fbb1ec7ceb109bd",
+    10 => "ebe31cbda3aef88dfca57bb2f0d69a1361831ac33335b1fc1ec55181ea21b38b"
+  }
+
   @hello """
   111111100101101111111
   100000100111001000001
@@ -153,5 +166,45 @@ defmodule Badge.QRTest do
              :binary.copy(<<255, 255, 255, 255>>, 29 * 4)
 
     assert :binary.part(pixels, (4 * 29 + 4) * 4, 4) == <<0, 0, 0, 255>>
+  end
+
+  test "width/1 matches the image encode/1 draws, without reading assets" do
+    for length <- [0, 17, 18, 53, 54, 271] do
+      {:ok, %{image: {:rgba8888, width, width, _pixels}}} = QR.encode(:binary.copy("a", length))
+      assert QR.width(length) == width
+    end
+
+    assert QR.width(272) == nil
+  end
+
+  test "the asset files hold the exact bytes the geometry once compiled in" do
+    for version <- Geometry.versions() do
+      %{template: template} = Geometry.for_version(version)
+
+      assert :crypto.hash(:sha256, template) |> Base.encode16(case: :lower) ==
+               Map.fetch!(@qr_asset_checksums, version)
+    end
+  end
+
+  describe "Geometry.template/2" do
+    test "a partition without the template answers undefined, which is nil rather than a crash" do
+      assert Geometry.template(:undefined, 1) == nil
+    end
+
+    test "anything that is not the bytes is no template either" do
+      assert Geometry.template(:some_other_atom, 1) == nil
+    end
+
+    test "wraps real bytes with the version's size" do
+      %{template: bytes} = Geometry.for_version(3)
+
+      assert Geometry.template(bytes, 3) == %{size: 29, template: bytes}
+    end
+  end
+
+  describe "result/3" do
+    test "a missing template yields :no_assets rather than a crash" do
+      assert QR.result("HELLO", %{version: 1}, nil) == {:error, :no_assets}
+    end
   end
 end

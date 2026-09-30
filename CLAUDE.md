@@ -50,15 +50,19 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - Two packbeam slots: `main.avm` at `0x2B8000` and `alt.avm` at `0x35C000`,
   656K each. NervesHub writes whichever is not running and flips
   `atomvm`/`boot_path` in NVS
-- `assets.avm` at `0x278000` holds the rickroll frames, the `.uf` fonts and
-  the splash logo, mounted by `Badge.start/0`. `mix badge.assets --flash`
-  packs and writes it; it is **not** updated over the air
+- `assets.avm` at `0x278000` holds the rickroll frames, the `.uf` fonts, the
+  splash logo, the Share screen art and the QR version templates, mounted by
+  `Badge.start/0`. `mix badge.assets --flash` packs and writes it; it is
+  **not** updated over the air
 - `python3 tools/check_partitions.py <partitions.csv> [label=path ...]` fails
   if an artifact outgrows its partition
+- `mix badge.fits` refuses to flash a `main.avm`/`alt.avm` build over 656K
+  (0xA4000 = 671,744 bytes); wired into `mix atomvm.esp32.flash`
 - A missing assets partition is survivable: the badge boots, prints
   `Badge: no assets partition:` and skips the splash. `:atomvm.read_priv/2`
   answers `:undefined` rather than raising, so a guard that only catches will
-  hand AtomGL `:undefined`
+  hand AtomGL `:undefined`. A badge without it draws no QR codes: `Badge.QR.encode/1`
+  returns `{:error, :no_assets}` instead
 - `dogica` and `pixel_operator` are compiled into `main.avm`, so text survives
   a missing assets partition. `w95fa` is read from it on demand
 
@@ -163,6 +167,27 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - Page tests never write NVS — that would exit the test process.
   `sim/test/badge/sim/share_nvs_test.exs` starts `Badge.Sim.Nvs` and covers
   the writes
+
+## GameLink
+
+- `Badge.GameLink` gives pages 2-8 player sessions over ESP-NOW, joined by
+  pointing IR. The page-facing contract is in `docs/gamelink.md`
+- Call it from `tick/1`, `handle_link/2` or `leave/1`, never `init/0` or a
+  key handler. `open/3` tags the session with `Badge.UI`'s page generation;
+  every page change bumps it and releases the session
+- `handle_link/2` is the one page callback `Badge.UI` wraps in a catch,
+  since it carries other badges' payloads: a raise logs and goes Home
+- IR payloads starting `0x1F` are GameLink's: `Badge.Ir.Link` routes them to
+  `Join.Ir`, never to the page
+- `Badge.GameLink.Radio` is the only caller of the vendored `:espnow`. It
+  opens the port only once a page has opened a session and wifi is
+  associated. On a base image without the driver (`badge-v1`) the port is
+  `:dead` until reboot and pages see `{:waiting, :no_radio}`
+- Protocol logic lives in the pure `Badge.GameLink.State`, tested through
+  `Badge.GameLink.Switchboard`; keep the GenServers shells
+- `atomvm.check` flags `erlang:port_close/1` from `espnow:close/1`, which
+  nothing calls
+- `GAMELINK_PROBE=1` compiles the probe page from `probe/` into the build
 
 ## Chat transport
 

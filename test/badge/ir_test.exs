@@ -1,5 +1,6 @@
 defmodule Badge.IrTest do
-  use ExUnit.Case, async: true
+  # Registers Badge.UI and Badge.GameLink to catch what deliver/2 routes.
+  use ExUnit.Case, async: false
 
   alias Badge.Ir
   alias Badge.Ir.Frame
@@ -38,6 +39,49 @@ defmodule Badge.IrTest do
 
     test "an empty payload is legal" do
       assert Ir.send(<<>>) == :ok
+    end
+  end
+
+  describe "routing game link frames" do
+    test "a 0x1F payload is never forwarded to Badge.UI" do
+      Process.register(self(), Badge.UI)
+
+      Link.deliver(<<0, 0, 0, 0, 0, 1>>, %{
+        from: <<0, 0, 0, 0, 0, 2>>,
+        payload: <<0x1F, 0x01, 0x01>>
+      })
+
+      refute_received {:ir, _from, _payload}
+    end
+
+    test "a heard hello reaches the registered Badge.GameLink as an offer" do
+      Process.register(self(), Badge.GameLink)
+      from = <<0, 0, 0, 0, 0, 2>>
+
+      offer = %{
+        version: 1,
+        app: "demo",
+        session: nil,
+        token: <<0, 0, 0, 0>>,
+        transport: :espnow,
+        scope: %{channel: 6, net: <<1, 1>>},
+        host_reference: from,
+        host_addr: nil,
+        available: true,
+        present: true,
+        admitting: true
+      }
+
+      payload = Badge.GameLink.Wire.encode({:hello, offer})
+      Link.deliver(<<0, 0, 0, 0, 0, 1>>, %{from: from, payload: payload})
+
+      assert_receive {:gamelink_offer, ^offer}
+    end
+
+    test "the self-echo clause still wins over a 0x1F payload" do
+      id = <<0, 0, 0, 0, 0, 1>>
+
+      assert Link.deliver(id, %{from: id, payload: <<0x1F, 0x01, 0x01>>}) == :ok
     end
   end
 end

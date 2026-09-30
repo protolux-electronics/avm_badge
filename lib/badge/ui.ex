@@ -32,6 +32,12 @@ defmodule Badge.UI do
 
   The saved `Badge.Skin` is activated here, because pages render inside this
   process and read their colours from its dictionary.
+
+  `Badge.GameLink` delivers a page's session events here in batches tagged
+  with the page generation, which moves on with every page change. Only the
+  page of the current generation is offered them, through `handle_link/2`,
+  and every batch is answered with `Badge.GameLink.taken/0`. A page that
+  raises in `handle_link/2` is logged and replaced by Home.
   """
 
   use GenServer
@@ -41,6 +47,7 @@ defmodule Badge.UI do
   alias Badge.Clock
   alias Badge.Display
   alias Badge.Display.AtomGL
+  alias Badge.GameLink
   alias Badge.Keyboard
   alias Badge.Page.Home
   alias Badge.Page.Splash
@@ -141,6 +148,7 @@ defmodule Badge.UI do
     }
 
     Skin.activate(Skin.load())
+    :erlang.put(:game_link_generation, 0)
 
     # Renders once immediately so the home grid is up before the first tick.
     render(state)
@@ -228,6 +236,19 @@ defmodule Badge.UI do
     end
   end
 
+  # GameLink holds its next batch until this one is taken, stale or not.
+  def handle_info({:game_link, generation, events}, state)
+      when is_integer(generation) and is_list(events) do
+    state = link_events(state, generation, events)
+    GameLink.taken()
+
+    {:noreply, state}
+  end
+
+  def handle_info({:game_link, :reset}, state) do
+    {:noreply, offer_link(state, {:closed, :reset})}
+  end
+
   # A page's own process can only send to this GenServer, which owns the
   # mailbox; anything it does not recognise is dropped rather than fatal.
   def handle_info(message, state) do
@@ -239,6 +260,44 @@ defmodule Badge.UI do
 
       :ignore ->
         {:noreply, state}
+    end
+  end
+
+  # Stops as soon as the generation moves on, which a crash mid-batch does.
+  defp link_events(state, _generation, []), do: state
+
+  defp link_events(state, generation, [event | rest]) do
+    case :erlang.get(:game_link_generation) == generation do
+      true -> link_events(offer_link(state, event), generation, rest)
+      false -> state
+    end
+  end
+
+  # Link events carry other badges' payloads, so a crash goes Home, not UI-down.
+  defp offer_link(%{page: page, page_state: old} = state, event) do
+    case page.handle_link(event, old) do
+      {:ok, page_state} ->
+        %{state | page_state: page_state, dirty: state.dirty or page_state != old}
+
+      :ignore ->
+        state
+    end
+  catch
+    kind, reason ->
+      :io.format(~c"UI: page ~p crashed in handle_link: ~p ~p~n", [page, kind, reason])
+      goto(state, Home)
+  end
+
+  # Strands the old page's undelivered batches and ends its GameLink session.
+  defp new_generation do
+    :erlang.put(:game_link_generation, generation() + 1)
+    GameLink.release()
+  end
+
+  defp generation do
+    case :erlang.get(:game_link_generation) do
+      generation when is_integer(generation) -> generation
+      _unset -> 0
     end
   end
 
@@ -453,6 +512,7 @@ defmodule Badge.UI do
 
   defp goto(state, page) do
     state.page.leave(state.page_state)
+    new_generation()
     :io.format(~c"UI: page ~p~n", [page])
 
     %{state | page: page, page_state: page.init(), dirty: true, countdown: 0}
