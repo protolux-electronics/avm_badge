@@ -168,6 +168,27 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   `sim/test/badge/sim/share_nvs_test.exs` starts `Badge.Sim.Nvs` and covers
   the writes
 
+## GameLink
+
+- `Badge.GameLink` gives pages 2-8 player sessions over ESP-NOW, joined by
+  pointing IR. The page-facing contract is in `docs/gamelink.md`
+- Call it from `tick/1`, `handle_link/2` or `leave/1`, never `init/0` or a
+  key handler. `open/3` tags the session with `Badge.UI`'s page generation;
+  every page change bumps it and releases the session
+- `handle_link/2` is the one page callback `Badge.UI` wraps in a catch,
+  since it carries other badges' payloads: a raise logs and goes Home
+- IR payloads starting `0x1F` are GameLink's: `Badge.Ir.Link` routes them to
+  `Join.Ir`, never to the page
+- `Badge.GameLink.Radio` is the only caller of the vendored `:espnow`. It
+  opens the port only once a page has opened a session and wifi is
+  associated. On a base image without the driver (`badge-v1`) the port is
+  `:dead` until reboot and pages see `{:waiting, :no_radio}`
+- Protocol logic lives in the pure `Badge.GameLink.State`, tested through
+  `Badge.GameLink.Switchboard`; keep the GenServers shells
+- `atomvm.check` flags `erlang:port_close/1` from `espnow:close/1`, which
+  nothing calls
+- `GAMELINK_PROBE=1` compiles the probe page from `probe/` into the build
+
 ## Chat transport
 
 - The chat rides a websocket from the `atomvm_websocket_client` ESP-IDF
