@@ -18,4 +18,9 @@ defmodule Badge.SleepTest do
   test "a download in flight holds it back" do
     refute Sleep.allowed?(%{usb: false, downloading: true})
   end
+
+  test "an open Bluetooth link holds it back, since sleep would drop the host" do
+    refute Sleep.allowed?(%{usb: false, downloading: false, bluetooth: true})
+    assert Sleep.allowed?(%{usb: false, downloading: false, bluetooth: false})
+  end
 end
