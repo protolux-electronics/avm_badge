@@ -269,7 +269,10 @@ defmodule Badge.Page.Keyboard do
 
   defp body(%{state: :connected} = status, _state) do
     peer(status) ++
-      lines([{"Waiting for the Mac...", Theme.dim()}], @body_y + 2 * Readout.pitch())
+      lines(
+        [{"Connected, not paired yet:", Theme.dim()}, {"keys stay on the badge.", Theme.dim()}],
+        @body_y + 2 * Readout.pitch()
+      )
   end
 
   defp body(%{state: :ready} = status, state) do

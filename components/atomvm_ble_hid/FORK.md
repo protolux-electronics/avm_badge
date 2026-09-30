@@ -73,6 +73,10 @@ Append to `src/platforms/esp32/sdkconfig.defaults.in` (never the generated
     CONFIG_ESP_WIFI_IRAM_OPT=n
     CONFIG_ESP_WIFI_RX_IRAM_OPT=n
     CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+    # 3 marks every HID characteristic as needing an authenticated, encrypted
+    # link (the service checks == 3, one above the Kconfig help's numbering), so a
+    # Mac pairs with a passkey instead of reading the keyboard unauthenticated.
+    CONFIG_BT_NIMBLE_SM_LVL=3
 
 `CONFIG_BT_NIMBLE_NVS_PERSIST` keeps bonds in the NVS namespace
 `nimble_bond`. `tools/provision.py` in `avm_badge` carries that namespace
@@ -127,6 +131,13 @@ The first image with the stack enabled failed at `esp_bt_controller_init` with
 only, and the badge had too little of it free. The controller and wifi lines
 above are the answer; if the driver still logs `Internal RAM at open` with a
 failure, the next lever is `network:stop/0` while the page is open.
+
+Without `CONFIG_BT_NIMBLE_SM_LVL`, NimBLE's HID service leaves every
+characteristic readable over a plain link and esp_hid enforces nothing. Apple
+hosts ignore a peripheral's security request and pair only when access to a
+protected characteristic fails, so a Mac connected, subscribed and never
+paired: the driver refused to send over the unencrypted link and the Mac,
+holding no bond, never reconnected on its own.
 
 `boot.avm` from the same checkout (OTP 28, Elixir 1.19, as in CI) is 527,616
 bytes of the 557,056-byte partition.

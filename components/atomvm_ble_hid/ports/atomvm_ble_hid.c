@@ -402,7 +402,10 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             }
 
             /* Pairs a new host, or re-encrypts with the stored key for a bonded one. */
-            ble_gap_security_initiate(event->connect.conn_handle);
+            int rc = ble_gap_security_initiate(event->connect.conn_handle);
+            if (rc != 0) {
+                ESP_LOGW(TAG, "Security request failed: %d", rc);
+            }
             return 0;
 
         case BLE_GAP_EVENT_DISCONNECT:
@@ -437,6 +440,9 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 return 0;
             }
 
+            ESP_LOGI(TAG, "Encrypted %d, authenticated %d, bonded %d, key size %d",
+                desc.sec_state.encrypted, desc.sec_state.authenticated, desc.sec_state.bonded,
+                desc.sec_state.key_size);
             lock(data);
             data->encrypted = desc.sec_state.encrypted;
             data->bonded = desc.sec_state.bonded;
