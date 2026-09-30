@@ -18,6 +18,9 @@ defmodule Badge.Keyboard do
   discarded.
 
   Scanning runs on a timer rather than a tight loop.
+
+  Raw mode, switched by `raw/1`, hands the page the whole set of labels held
+  after every change as `{:raw, labels}`, with no decoding and no repeat.
   """
 
   use GenServer
@@ -143,6 +146,26 @@ defmodule Badge.Keyboard do
   @spec light_sleep() :: :ok
   def light_sleep, do: GenServer.cast(__MODULE__, :light_sleep)
 
+  @doc """
+  Turns raw mode on or off. A no-op while the scanner is not running.
+
+  While on, every change to the held set reaches `Badge.UI` as
+  `{:raw, labels}` and nothing is decoded or repeated.
+  """
+  @spec raw(boolean) :: :ok
+  def raw(on) when is_boolean(on) do
+    case Process.whereis(__MODULE__) do
+      nil -> :ok
+      pid -> GenServer.cast(pid, {:raw, on})
+    end
+  end
+
+  @doc false
+  # The event raw mode sends for a new held set, or `:none` when nothing changed.
+  @spec raw_event([charlist], [charlist]) :: {:raw, [charlist]} | :none
+  def raw_event(held, held), do: :none
+  def raw_event(_held, labels), do: {:raw, labels}
+
   @impl true
   def handle_call({:holding?, label}, _from, state) do
     {:reply, :lists.member(label, state.held), state}
@@ -150,6 +173,8 @@ defmodule Badge.Keyboard do
 
   @impl true
   def handle_cast(:light_sleep, state), do: {:noreply, %{state | sleep: true}}
+
+  def handle_cast({:raw, on}, state), do: {:noreply, %{state | raw: on, repeat: KeyRepeat.new()}}
 
   @impl true
   def init(:ok) do
@@ -162,7 +187,7 @@ defmodule Badge.Keyboard do
 
     send(self(), :scan)
 
-    {:ok, %{candidate: [], count: 0, held: [], repeat: KeyRepeat.new(), sleep: false}}
+    {:ok, %{candidate: [], count: 0, held: [], repeat: KeyRepeat.new(), sleep: false, raw: false}}
   end
 
   @impl true
@@ -419,6 +444,18 @@ defmodule Badge.Keyboard do
   defp report_ghosting(state, ambiguous) do
     :io.format(~c"GHOST ~p keys form a rectangle; reading discarded~n", [length(ambiguous)])
     state
+  end
+
+  # Raw mode hands over the whole held set whenever it changes.
+  defp emit(%{raw: true} = state, pressed) do
+    labels = Enum.map(label_once(pressed), fn {label, _pos} -> label end)
+
+    case raw_event(state.held, labels) do
+      :none -> :ok
+      event -> route_event(event)
+    end
+
+    %{state | held: labels}
   end
 
   # One event per key on the way down: held keys don't repeat, and shift is read from the full pressed set.

@@ -53,6 +53,7 @@ defmodule Badge do
       {Badge.Chat.Link, :ok},
       {Badge.Update.Link, :ok},
       {Badge.Cluster.Link, :ok},
+      {Badge.Ble.Link, :ok},
       {Badge.Schedule.Link, :ok}
     ]
 

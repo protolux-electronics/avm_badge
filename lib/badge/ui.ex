@@ -32,12 +32,18 @@ defmodule Badge.UI do
 
   The saved `Badge.Skin` is activated here, because pages render inside this
   process and read their colours from its dictionary.
+
+  Starting also closes the Bluetooth keyboard link, which takes the keyboard
+  out of raw mode: a restart lands on the home grid, where raw keys would
+  leave the badge deaf. A raw key that wakes the screen still reaches the
+  page, since the host on the other end is waiting for it.
   """
 
   use GenServer
 
   alias Badge.Backlight
   alias Badge.Battery
+  alias Badge.Ble
   alias Badge.Clock
   alias Badge.Display
   alias Badge.Display.AtomGL
@@ -141,6 +147,7 @@ defmodule Badge.UI do
     }
 
     Skin.activate(Skin.load())
+    Ble.Link.close()
 
     # Renders once immediately so the home grid is up before the first tick.
     render(state)
@@ -156,6 +163,10 @@ defmodule Badge.UI do
   @impl true
   def handle_cast({:goto, page}, state) do
     {:noreply, goto(%{state | idle: 0}, page)}
+  end
+
+  def handle_cast({:key, {:raw, _labels}} = key, %{asleep: true} = state) do
+    handle_cast(key, wake(state))
   end
 
   def handle_cast({:key, _event}, %{asleep: true} = state) do
@@ -318,11 +329,12 @@ defmodule Badge.UI do
   # Screen off: count on towards the CPU sleep, unless one is already requested.
   defp drowse(%{asleep: true, napping: true} = state), do: state
 
+  # A refused sleep starts the count again, so the holds are asked once per threshold.
   defp drowse(%{asleep: true} = state) do
     idle = state.idle + 1
 
-    case idle >= Sleep.ticks(@base_interval) and Sleep.allowed?(holds()) do
-      true -> nap(state)
+    case idle >= Sleep.ticks(@base_interval) do
+      true -> nap_or_wait(state)
       false -> %{state | idle: idle}
     end
   end
@@ -344,8 +356,22 @@ defmodule Badge.UI do
     %{state | asleep: true, idle: 0}
   end
 
+  # USB alone refuses, so the links are only asked on battery.
   defp holds do
-    %{usb: Power.usb_present?(), downloading: Update.Link.status().state == :downloading}
+    usb = Power.usb_present?()
+
+    %{
+      usb: usb,
+      downloading: not usb and Update.Link.status().state == :downloading,
+      bluetooth: not usb and Ble.Link.status().state != :off
+    }
+  end
+
+  defp nap_or_wait(state) do
+    case Sleep.allowed?(holds()) do
+      true -> nap(state)
+      false -> %{state | idle: 0}
+    end
   end
 
   # The radio is parked before the CPU, so the disconnect is out before it stops.

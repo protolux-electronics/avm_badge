@@ -136,6 +136,43 @@ into the image, so a Let's Encrypt certificate needs no work on the badge;
 certificates or a tunnel. `mix phx.server` in `avm_badge_server` already
 listens on `0.0.0.0:4000`.
 
+## Bluetooth keyboard
+
+The Keyboard page (second screen of the home grid, Clover) makes the badge a
+Bluetooth LE keyboard. Every key goes to the paired computer with its real
+press, release and modifiers — `SP` is Cmd — so Keynote takes Space or Right
+for the next slide, Left for the previous one and Esc to end the show. No
+companion software and no wifi are involved.
+
+The six shape keys stay the badge's own: Cross leaves the page, Diamond
+pressed twice within three seconds forgets every paired computer (the first
+press only asks, and any other key keeps the pairing), and the other four are
+reserved.
+
+To pair from macOS:
+
+1. Open the page. It advertises as `Badge XXXX`, the last four hex digits of
+   the chip id.
+2. System Settings → Bluetooth lists it; click Connect. macOS shows a
+   six-digit code.
+3. The badge switches to its passkey screen. Type the digits on the badge,
+   then Enter.
+4. The page says ready and the keys type on the Mac. Leave with Cross; next
+   time the Mac reconnects without asking. After forgetting with Diamond, remove
+   the badge in System Settings too before pairing again; the page says the
+   same when pairing fails because the Mac kept an old pairing.
+
+The page needs a VM built with the `atomvm_ble_hid` component in
+`components/`; `components/atomvm_ble_hid/FORK.md` says how. On the published
+base image the page reports that Bluetooth did not start. While the page is
+open the badge does not light-sleep, and the Log tab records how much
+internal RAM the stack took. `tools/provision.py` keeps the bonds. The Mac's
+Bluetooth menu shows the badge's battery charge, refreshed every half minute.
+
+Wifi is stopped while the page is open: the Bluetooth controller lives in
+internal RAM and the two do not fit side by side. The saved network is
+rejoined when you leave, which takes a few seconds.
+
 ## Flash layout
 
 Partition table read back off the board (`esptool read_flash` +
@@ -228,3 +265,8 @@ build system, packbeam format and NIF interface.
 
 Once built, flash the VM at `0x10000` and `boot.avm` at `0x1F0000`; both must
 come from the same build. The application at `0x2B8000` survives.
+
+The Bluetooth keyboard's port driver is an ESP-IDF component kept in this
+repository, `components/atomvm_ble_hid`. Its `README.md` documents the port
+and `FORK.md` how to build it into the fork, with the `sdkconfig` lines and
+the measured image size.
