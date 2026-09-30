@@ -4,6 +4,7 @@ defmodule Badge.SkinTest do
   alias Badge.Skin
   alias Badge.Skin.Dark
   alias Badge.Skin.Macintosh
+  alias Badge.Skin.NeXTSTEP
   alias Badge.Skin.Solaris
   alias Badge.Skin.Win95
   alias Badge.Skin.WinXP
@@ -42,8 +43,9 @@ defmodule Badge.SkinTest do
       assert Skin.shift(Win95, 1) == WinXP
       assert Skin.shift(WinXP, 1) == Macintosh
       assert Skin.shift(Macintosh, 1) == Solaris
-      assert Skin.shift(Solaris, 1) == Solaris
-      assert Skin.shift(Solaris, -1) == Macintosh
+      assert Skin.shift(Solaris, 1) == NeXTSTEP
+      assert Skin.shift(NeXTSTEP, 1) == NeXTSTEP
+      assert Skin.shift(NeXTSTEP, -1) == Solaris
     end
   end
 
@@ -99,7 +101,30 @@ defmodule Badge.SkinTest do
     end
   end
 
-  for skin <- [Dark, Win95, WinXP, Macintosh, Solaris] do
+  describe "the NeXTSTEP title bar" do
+    @greys [0x000000, 0x555555, 0xAAAAAA, 0xFFFFFF]
+
+    test "is drawn in the four two-bit greys only" do
+      for item <- NeXTSTEP.chrome("Badge", @long) do
+        case item do
+          {:rect, _x, _y, _w, _h, colour} -> assert colour in @greys
+          {:text, _x, _y, _f, fg, bg, _b} -> assert fg in @greys and bg in @greys
+          {:image, _x, _y, bg, _image} -> assert bg in @greys
+        end
+      end
+    end
+
+    test "keeps the longest title clear of the longest clock and the miniaturise button" do
+      items = NeXTSTEP.chrome("Sudo Mode", @long)
+      [clock_x] = for {:text, x, _y, _f, _fg, _bg, "12:34:56 UTC"} <- items, do: x
+      [{title_x, title}] = for {:text, x, _y, :pixel_operator, _fg, _bg, b} <- items, do: {x, b}
+
+      assert title_x + Badge.Font.width(:pixel_operator, title) < clock_x
+      assert title_x > 20
+    end
+  end
+
+  for skin <- [Dark, Win95, WinXP, Macintosh, Solaris, NeXTSTEP] do
     describe "#{inspect(skin)}" do
       @skin skin
 
