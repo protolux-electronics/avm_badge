@@ -329,11 +329,12 @@ defmodule Badge.UI do
   # Screen off: count on towards the CPU sleep, unless one is already requested.
   defp drowse(%{asleep: true, napping: true} = state), do: state
 
+  # A refused sleep starts the count again, so the holds are asked once per threshold.
   defp drowse(%{asleep: true} = state) do
     idle = state.idle + 1
 
-    case idle >= Sleep.ticks(@base_interval) and Sleep.allowed?(holds()) do
-      true -> nap(state)
+    case idle >= Sleep.ticks(@base_interval) do
+      true -> nap_or_wait(state)
       false -> %{state | idle: idle}
     end
   end
@@ -364,6 +365,13 @@ defmodule Badge.UI do
       downloading: not usb and Update.Link.status().state == :downloading,
       bluetooth: not usb and Ble.Link.status().state != :off
     }
+  end
+
+  defp nap_or_wait(state) do
+    case Sleep.allowed?(holds()) do
+      true -> nap(state)
+      false -> %{state | idle: 0}
+    end
   end
 
   # The radio is parked before the CPU, so the disconnect is out before it stops.
