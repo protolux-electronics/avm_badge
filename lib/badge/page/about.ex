@@ -36,9 +36,7 @@ defmodule Badge.Page.About do
   @blue 0x3B82F6
 
   @qr_scale 3
-  @qr_w (case QR.encode(@repository) do
-           {:ok, %{image: {:rgba8888, width, _height, _pixels}}} -> width * @qr_scale
-         end)
+  @qr_w QR.width(byte_size(@repository)) * @qr_scale
   @qr_text_x @margin + @qr_w + 12
 
   @impl true

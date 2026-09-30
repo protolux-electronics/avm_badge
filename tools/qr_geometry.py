@@ -8,7 +8,6 @@ that mask here, so the runtime encoder never scores or selects one.
 """
 
 import argparse
-import base64
 from pathlib import Path
 
 FIXED_LIGHT = 0xFFFE
@@ -169,59 +168,31 @@ def geometry(version, mask):
     return size, b"".join(value.to_bytes(2, "big") for value in cells)
 
 
-def module_source(versions, mask):
+def write_templates(versions, mask, out_dir):
     records = [(version, *geometry(version, mask)) for version in versions]
-    lines = [
-        "defmodule Badge.QR.Geometry do",
-        "  @moduledoc false",
-        "",
-        f"  @mask {mask}",
-        f"  @versions {versions!r}",
-        f"  @fixed_light {FIXED_LIGHT}",
-        f"  @fixed_dark {FIXED_DARK}",
-        f"  @data_position {DATA_POSITION}",
-    ]
 
     for version, _size, template in records:
-        encoded = base64.b64encode(template).decode("ascii")
-        value_indent = " " * (7 + len(str(version)))
-        close_indent = " " * (5 + len(str(version)))
-        lines.extend(
-            [
-                f"  @v{version} Base.decode64!(",
-                f'{value_indent}"{encoded}"',
-                f"{close_indent})",
-            ]
-        )
+        path = out_dir / f"v{version}.bin"
+        path.write_bytes(template)
 
-    lines.extend(
-        [
-            "",
-            "  def mask, do: @mask",
-            "",
-            "  def versions, do: @versions",
-            "",
-            "  def fixed_light, do: @fixed_light",
-            "",
-            "  def fixed_dark, do: @fixed_dark",
-            "",
-            "  def data_position, do: @data_position",
-            "",
-        ]
-    )
+    return records
 
-    for version, size, _template in records:
-        lines.append(
-            f"  def for_version({version}), do: %{{size: {size}, template: @v{version}}}"
-        )
 
-    lines.extend(["  def for_version(_version), do: nil", "end", ""])
-    return "\n".join(lines)
+def check_templates(versions, mask, out_dir, tool_name):
+    records = [(version, *geometry(version, mask)) for version in versions]
+
+    for version, _size, template in records:
+        path = out_dir / f"v{version}.bin"
+
+        if not path.exists() or path.read_bytes() != template:
+            raise SystemExit(f"{path} is stale; regenerate with {tool_name}")
+
+    print(f"{out_dir} is current")
 
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    default_output = root / "lib" / "badge" / "qr" / "geometry.ex"
+    default_output = root / "assets" / "qr"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--versions", default="1-10")
     parser.add_argument("--mask", type=int, default=0, help="fixed mask, 0 to 7")
@@ -232,18 +203,15 @@ def main():
     if not 0 <= args.mask <= 7:
         raise SystemExit("--mask must be between 0 and 7")
 
-    source = module_source(parse_versions(args.versions), args.mask)
+    versions = parse_versions(args.versions)
 
     if args.check:
-        if not args.output.exists() or args.output.read_text() != source:
-            raise SystemExit(f"{args.output} is stale; regenerate with {Path(__file__).name}")
-
-        print(f"{args.output} is current")
+        check_templates(versions, args.mask, args.output, Path(__file__).name)
         return
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(source)
-    print(f"wrote {args.output}")
+    args.output.mkdir(parents=True, exist_ok=True)
+    write_templates(versions, args.mask, args.output)
+    print(f"wrote {len(versions)} templates to {args.output}")
 
 
 if __name__ == "__main__":

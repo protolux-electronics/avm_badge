@@ -51,15 +51,16 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   656K each. NervesHub writes whichever is not running and flips
   `atomvm`/`boot_path` in NVS
 - `assets.avm` at `0x278000` holds the rickroll frames, the `.uf` fonts, the
-  splash logo and the Share screen art, mounted by `Badge.start/0`.
-  `mix badge.assets --flash` packs and writes it; it is **not** updated over
-  the air
+  splash logo, the Share screen art and the QR version templates, mounted by
+  `Badge.start/0`. `mix badge.assets --flash` packs and writes it; it is
+  **not** updated over the air
 - `python3 tools/check_partitions.py <partitions.csv> [label=path ...]` fails
   if an artifact outgrows its partition
 - A missing assets partition is survivable: the badge boots, prints
   `Badge: no assets partition:` and skips the splash. `:atomvm.read_priv/2`
   answers `:undefined` rather than raising, so a guard that only catches will
-  hand AtomGL `:undefined`
+  hand AtomGL `:undefined`. A badge without it draws no QR codes: `Badge.QR.encode/1`
+  returns `{:error, :no_assets}` instead
 - `dogica` and `pixel_operator` are compiled into `main.avm`, so text survives
   a missing assets partition. `w95fa` is read from it on demand
 
