@@ -13,8 +13,10 @@
  * on a temporary heap and posted with port_send_message_from_task. Commands
  * arrive as port:call/2 requests on the VM's scheduler.
  *
- * There is one Bluetooth stack, so there is at most one port. Opening a
- * second one while the first is still up tears the first down.
+ * There is one Bluetooth stack, so there is at most one port. Its state lives
+ * only in s_data, never in ctx->platform_data: a port killed with its owner
+ * would have that freed under a still running stack. Opening a new port
+ * while the stack is still up tears the old one down first.
  */
 
 #include <sdkconfig.h>
@@ -72,6 +74,7 @@
 #define BATTERY_LEVEL 100
 #define PASSKEY_MAX 999999
 #define ADDR_LEN 6
+#define DISCONNECT_WAIT_MS 1000
 
 /* Flags, appearance and the HID UUID take 11 of the 31 advertising bytes. */
 #define ADV_NAME_ROOM 18
@@ -174,6 +177,8 @@ struct ble_hid_data
 
     /* Guards the connection fields below, which the host task and the VM share. */
     SemaphoreHandle_t lock;
+    /* Given by the disconnect callback while closing. */
+    SemaphoreHandle_t gone;
     uint16_t conn_handle;
     bool connected;
     bool encrypted;
@@ -191,7 +196,6 @@ struct ble_hid_data
 };
 
 static struct ble_hid_data *s_data = NULL;
-static Context *s_ctx = NULL;
 
 static int gap_event(struct ble_gap_event *event, void *arg);
 
@@ -361,9 +365,10 @@ static void on_passkey_action(struct ble_hid_data *data, struct ble_gap_event *e
             break;
 
         case BLE_SM_IOACT_NUMCMP:
-            /* A keyboard-only device has nothing to compare against; the host decides. */
+            /* Accepting a comparison nobody saw would defeat MITM protection. */
+            ESP_LOGW(TAG, "Rejecting numeric comparison");
             io.action = BLE_SM_IOACT_NUMCMP;
-            io.numcmp_accept = 1;
+            io.numcmp_accept = 0;
             ble_sm_inject_io(event->passkey.conn_handle, &io);
             break;
 
@@ -403,7 +408,10 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         case BLE_GAP_EVENT_DISCONNECT:
             ESP_LOGI(TAG, "Disconnected, reason %d", event->disconnect.reason);
             reset_connection(data);
-            if (!closing(data)) {
+            if (closing(data)) {
+                /* esp_hid's listener ran before this callback, so its event is already queued. */
+                xSemaphoreGive(data->gone);
+            } else {
                 post_atom(data, disconnected_atom);
                 start_advertising(data);
             }
@@ -511,8 +519,11 @@ static void host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-/* The reverse of start_stack; the host task has stopped when nimble_port_stop returns. */
-static void stop_stack(struct ble_hid_data *data)
+/*
+ * The reverse of start_stack; the host task has stopped when nimble_port_stop
+ * returns. False when it did not stop, and the data must then stay allocated.
+ */
+static bool stop_stack(struct ble_hid_data *data)
 {
     lock(data);
     data->closing = true;
@@ -525,7 +536,11 @@ static void stop_stack(struct ble_hid_data *data)
     uint16_t conn = data->conn_handle;
     unlock(data);
     if (connected) {
-        ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM);
+        xSemaphoreTake(data->gone, 0);
+        if (ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM) == 0
+            && xSemaphoreTake(data->gone, pdMS_TO_TICKS(DISCONNECT_WAIT_MS)) != pdTRUE) {
+            ESP_LOGW(TAG, "No disconnect within %d ms", DISCONNECT_WAIT_MS);
+        }
     }
 
     if (!IS_NULL_PTR(data->hid_dev)) {
@@ -533,23 +548,33 @@ static void stop_stack(struct ble_hid_data *data)
         data->hid_dev = NULL;
     }
 
-    if (nimble_port_stop() == 0) {
-        nimble_port_deinit();
-    } else {
-        ESP_LOGE(TAG, "nimble_port_stop failed");
+    if (nimble_port_stop() != 0) {
+        ESP_LOGE(TAG, "nimble_port_stop failed; the stack stays up");
+        return false;
     }
+    nimble_port_deinit();
+    return true;
 }
 
 static void free_data(struct ble_hid_data *data)
 {
     if (s_data == data) {
         s_data = NULL;
-        s_ctx = NULL;
     }
     if (!IS_NULL_PTR(data->lock)) {
         vSemaphoreDelete(data->lock);
     }
+    if (!IS_NULL_PTR(data->gone)) {
+        vSemaphoreDelete(data->gone);
+    }
     free(data);
+}
+
+/* The stack this port opened, or NULL once it was closed or replaced. */
+static struct ble_hid_data *port_data(Context *ctx)
+{
+    struct ble_hid_data *data = s_data;
+    return (!IS_NULL_PTR(data) && data->port_pid == ctx->process_id) ? data : NULL;
 }
 
 static esp_err_t start_stack(struct ble_hid_data *data)
@@ -640,7 +665,6 @@ static term do_passkey(Context *ctx, struct ble_hid_data *data, term req)
     lock(data);
     bool pending = data->passkey_pending;
     uint16_t conn = data->conn_handle;
-    data->passkey_pending = false;
     unlock(data);
 
     if (!pending) {
@@ -657,6 +681,10 @@ static term do_passkey(Context *ctx, struct ble_hid_data *data, term req)
         ESP_LOGW(TAG, "ble_sm_inject_io failed: %d", rc);
         return port_create_error_tuple(ctx, globalcontext_make_atom(ctx->global, pairing_failed_atom));
     }
+
+    lock(data);
+    data->passkey_pending = false;
+    unlock(data);
 
     return OK_ATOM;
 }
@@ -699,7 +727,7 @@ static NativeHandlerResult consume_mailbox(Context *ctx)
             continue;
         }
 
-        struct ble_hid_data *data = (struct ble_hid_data *) ctx->platform_data;
+        struct ble_hid_data *data = port_data(ctx);
         term req = gen_message.req;
         term cmd_term = term_is_tuple(req) ? term_get_tuple_element(req, 0) : req;
         int cmd = interop_atom_term_select_int(cmd_table, cmd_term, global);
@@ -738,9 +766,9 @@ static NativeHandlerResult consume_mailbox(Context *ctx)
                     break;
 
                 case BleHidCloseCmd:
-                    stop_stack(data);
-                    free_data(data);
-                    ctx->platform_data = NULL;
+                    if (stop_stack(data)) {
+                        free_data(data);
+                    }
                     reply = OK_ATOM;
                     closed = true;
                     break;
@@ -784,10 +812,9 @@ Context *atomvm_ble_hid_create_port(GlobalContext *global, term opts)
     if (!IS_NULL_PTR(s_data)) {
         ESP_LOGW(TAG, "Replacing a port that was never closed");
         struct ble_hid_data *stale = s_data;
-        if (!IS_NULL_PTR(s_ctx)) {
-            s_ctx->platform_data = NULL;
+        if (!stop_stack(stale)) {
+            return NULL;
         }
-        stop_stack(stale);
         free_data(stale);
     }
 
@@ -797,8 +824,9 @@ Context *atomvm_ble_hid_create_port(GlobalContext *global, term opts)
     }
 
     data->lock = xSemaphoreCreateMutex();
-    if (IS_NULL_PTR(data->lock)) {
-        free(data);
+    data->gone = xSemaphoreCreateBinary();
+    if (IS_NULL_PTR(data->lock) || IS_NULL_PTR(data->gone)) {
+        free_data(data);
         return NULL;
     }
 
@@ -824,15 +852,12 @@ Context *atomvm_ble_hid_create_port(GlobalContext *global, term opts)
 
     Context *ctx = context_new(global);
     ctx->native_handler = consume_mailbox;
-    ctx->platform_data = data;
     data->port_pid = ctx->process_id;
 
     s_data = data;
-    s_ctx = ctx;
 
     if (start_stack(data) != ESP_OK) {
         free_data(data);
-        ctx->platform_data = NULL;
         context_destroy(ctx);
         return NULL;
     }
