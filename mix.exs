@@ -18,6 +18,7 @@ defmodule Badge.MixProject do
       elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.target()),
+      erlc_paths: ["src"],
       test_paths: test_paths(Mix.target()),
       deps: deps(),
       # ExAtomVM writes no application.bin, and NervesHub cannot identify
