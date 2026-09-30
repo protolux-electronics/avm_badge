@@ -62,6 +62,7 @@ All are `port:call/2`, which blocks until the driver answers.
 | `{report, Bin}`    | `ok`, or `{error, Reason}` with `Reason` one of `not_connected`, `not_encrypted`, `send_failed`. `Bin` is the 8-byte boot keyboard input report: modifiers, reserved, six usages |
 | `{passkey, N}`     | `ok`, or `{error, no_passkey}` or `{error, pairing_failed}`. `N` is 0..999999 |
 | `forget`           | `ok`. Deletes every bond and drops the connection; advertising carries on |
+| `{battery, N}`     | `ok`. Sets the Battery Service level, `N` 0..100; the host is notified of a change. 100 until first set |
 | `mem`              | `{ok, InternalFree, LargestInternalBlock}` now, in bytes  |
 | `mem_at_open`      | the same two figures, taken just before the stack started |
 | `close`            | `ok`. Disconnects, stops the host and the controller and destroys the port |

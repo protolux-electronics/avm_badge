@@ -113,6 +113,17 @@ defmodule Badge.Ble.StatusTest do
     end
   end
 
+  describe "the battery level to report" do
+    test "is the charge percentage of a real reading" do
+      assert Link.level(%{battery_mv: 3_700}) == Badge.Battery.percent(3_700)
+    end
+
+    test "is nil before the first sample or without a reading" do
+      assert Link.level(%{battery_mv: 0}) == nil
+      assert Link.level(%{}) == nil
+    end
+  end
+
   describe "the advertised name" do
     test "ends in the last four hex digits of the chip id" do
       assert Link.name(<<0x90, 0xDA, 0x72, 0x00, 0x1A, 0x2B>>) == "Badge 1A2B"

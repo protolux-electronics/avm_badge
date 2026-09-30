@@ -77,6 +77,8 @@ Append to `src/platforms/esp32/sdkconfig.defaults.in` (never the generated
     # link (the service checks == 3, one above the Kconfig help's numbering), so a
     # Mac pairs with a passkey instead of reading the keyboard unauthenticated.
     CONFIG_BT_NIMBLE_SM_LVL=3
+    # The host hears battery level changes instead of polling for them.
+    CONFIG_BT_NIMBLE_SVC_BAS_BATTERY_LEVEL_NOTIFY=y
 
 `CONFIG_BT_NIMBLE_NVS_PERSIST` keeps bonds in the NVS namespace
 `nimble_bond`. `tools/provision.py` in `avm_badge` carries that namespace

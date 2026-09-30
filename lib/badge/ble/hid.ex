@@ -44,6 +44,10 @@ defmodule Badge.Ble.Hid do
   @spec forget(port) :: :ok | {:error, term}
   def forget(port), do: call(port, :forget, @timeout)
 
+  @doc "Sets the Battery Service level, 0 to 100."
+  @spec battery(port, 0..100) :: :ok | {:error, term}
+  def battery(port, level), do: call(port, {:battery, level}, @timeout)
+
   @doc "Free internal RAM and its largest block, in bytes."
   @spec mem(port) :: {:ok, integer, integer} | {:error, term}
   def mem(port), do: call(port, :mem, @timeout)

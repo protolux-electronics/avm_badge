@@ -8,7 +8,9 @@ defmodule Badge.Ble.Link do
   `passkey/1` and `forget/0` drive pairing.
 
   `status/0` answers from memory: a ticker reads the internal RAM figures
-  once a second, never the caller. Every driver event is logged.
+  once a second, never the caller. The same ticker reports the battery
+  charge to the host every half minute, when it has changed. Every driver
+  event is logged.
 
   Traps exits, so a port that dies becomes an `:error` status rather than a
   dead link, which would take `Badge.UI` with it.
@@ -22,6 +24,7 @@ defmodule Badge.Ble.Link do
   alias Badge.Keyboard
 
   @mem_interval 1_000
+  @battery_every 30
 
   def start_link(:ok), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
@@ -66,6 +69,11 @@ defmodule Badge.Ble.Link do
     :exit, _reason -> Status.new("Badge")
   end
 
+  @doc "The charge to report from a `Badge.Power.status/0` map, or nil before the first sample."
+  @spec level(map) :: 0..100 | nil
+  def level(%{battery_mv: mv}) when is_integer(mv) and mv > 0, do: Badge.Battery.percent(mv)
+  def level(_status), do: nil
+
   @doc "The advertised name: \"Badge \" and the last four hex digits of the chip id."
   @spec name(binary) :: binary
   def name(chip) do
@@ -81,7 +89,8 @@ defmodule Badge.Ble.Link do
 
     status = Status.new(name(Identity.chip_id()))
 
-    {:ok, %{port: nil, status: status, measured: false, ticker: start_ticker()}}
+    {:ok,
+     %{port: nil, status: status, measured: false, battery: nil, beats: 0, ticker: start_ticker()}}
   end
 
   @impl true
@@ -125,7 +134,7 @@ defmodule Badge.Ble.Link do
   @impl true
   def handle_info(:mem, %{port: nil} = state), do: {:noreply, state}
 
-  def handle_info(:mem, state), do: {:noreply, measure(state)}
+  def handle_info(:mem, state), do: {:noreply, state |> measure() |> beat()}
 
   # A port closed before its last events were read.
   def handle_info({:ble_hid, _port, event}, %{port: nil} = state) do
@@ -177,7 +186,14 @@ defmodule Badge.Ble.Link do
 
     case Driver.open(state.status.name) do
       {:ok, port} ->
-        %{state | port: port, status: Status.starting(state.status), measured: false}
+        push_battery(%{
+          state
+          | port: port,
+            status: Status.starting(state.status),
+            measured: false,
+            battery: nil,
+            beats: 0
+        })
 
       {:error, reason} ->
         :io.format(~c"BLE: open failed ~p~n", [reason])
@@ -191,7 +207,7 @@ defmodule Badge.Ble.Link do
     Driver.report(state.port, Badge.Hid.empty())
     logged(:close, Driver.close(state.port))
 
-    %{state | port: nil, status: Status.closed(state.status)}
+    %{state | port: nil, status: Status.closed(state.status), battery: nil}
   end
 
   defp measure(state) do
@@ -221,6 +237,42 @@ defmodule Badge.Ble.Link do
       _error ->
         :ok
     end
+  end
+
+  defp beat(%{beats: beats} = state) when beats + 1 >= @battery_every do
+    push_battery(%{state | beats: 0})
+  end
+
+  defp beat(state), do: %{state | beats: state.beats + 1}
+
+  defp push_battery(state) do
+    level = power_level()
+
+    case level != nil and level != state.battery do
+      true -> report_battery(state, level)
+      false -> state
+    end
+  end
+
+  defp report_battery(state, level) do
+    case Driver.battery(state.port, level) do
+      :ok ->
+        :io.format(~c"BLE: battery ~p%~n", [level])
+
+        %{state | battery: level}
+
+      other ->
+        logged(:battery, other)
+
+        state
+    end
+  end
+
+  # The ADC owner may not be running on the host; the last level then stands.
+  defp power_level do
+    level(Badge.Power.status())
+  catch
+    :exit, _reason -> nil
   end
 
   # Keys pressed before the host has paired or listened go nowhere, quietly.

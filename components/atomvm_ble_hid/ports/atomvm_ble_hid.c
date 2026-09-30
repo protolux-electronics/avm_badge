@@ -72,6 +72,7 @@
 #define KEYBOARD_MAP_INDEX 0
 #define APPEARANCE_KEYBOARD 0x03C1
 #define BATTERY_LEVEL 100
+#define BATTERY_MAX 100
 #define PASSKEY_MAX 999999
 #define ADDR_LEN 6
 #define DISCONNECT_WAIT_MS 1000
@@ -111,6 +112,7 @@ enum ble_hid_cmd
     BleHidReportCmd,
     BleHidPasskeyCmd,
     BleHidForgetCmd,
+    BleHidBatteryCmd,
     BleHidMemCmd,
     BleHidMemAtOpenCmd,
     BleHidCloseCmd
@@ -120,6 +122,7 @@ static const AtomStringIntPair cmd_table[] = {
     { ATOM_STR("\x6", "report"), BleHidReportCmd },
     { ATOM_STR("\x7", "passkey"), BleHidPasskeyCmd },
     { ATOM_STR("\x6", "forget"), BleHidForgetCmd },
+    { ATOM_STR("\x7", "battery"), BleHidBatteryCmd },
     { ATOM_STR("\x3", "mem"), BleHidMemCmd },
     { ATOM_STR("\xB", "mem_at_open"), BleHidMemAtOpenCmd },
     { ATOM_STR("\x5", "close"), BleHidCloseCmd },
@@ -619,6 +622,7 @@ static esp_err_t start_stack(struct ble_hid_data *data)
         nimble_port_deinit();
         return err;
     }
+    /* Until the owner reports a reading. */
     esp_hidd_dev_battery_set(data->hid_dev, BATTERY_LEVEL);
 
     ble_svc_gap_device_name_set(data->name);
@@ -695,6 +699,21 @@ static term do_passkey(Context *ctx, struct ble_hid_data *data, term req)
     return OK_ATOM;
 }
 
+/* The Battery Service level; the host is notified of a change if it listens. */
+static term do_battery(Context *ctx, struct ble_hid_data *data, term req)
+{
+    term value = term_get_tuple_element(req, 1);
+    if (!term_is_integer(value) || term_to_int(value) < 0 || term_to_int(value) > BATTERY_MAX) {
+        return BADARG_ATOM;
+    }
+
+    if (esp_hidd_dev_battery_set(data->hid_dev, (uint8_t) term_to_int(value)) != ESP_OK) {
+        return port_create_error_tuple(ctx, globalcontext_make_atom(ctx->global, send_failed_atom));
+    }
+
+    return OK_ATOM;
+}
+
 /* Advertising carries on, or restarts when the disconnect lands. */
 static term do_forget(struct ble_hid_data *data)
 {
@@ -760,6 +779,10 @@ static NativeHandlerResult consume_mailbox(Context *ctx)
 
                 case BleHidForgetCmd:
                     reply = do_forget(data);
+                    break;
+
+                case BleHidBatteryCmd:
+                    reply = arity2 ? do_battery(ctx, data, req) : BADARG_ATOM;
                     break;
 
                 case BleHidMemCmd:

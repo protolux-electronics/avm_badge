@@ -166,7 +166,8 @@ The page needs a VM built with the `atomvm_ble_hid` component in
 `components/`; `components/atomvm_ble_hid/FORK.md` says how. On the published
 base image the page reports that Bluetooth did not start. While the page is
 open the badge does not light-sleep, and the Log tab records how much
-internal RAM the stack took. `tools/provision.py` keeps the bonds.
+internal RAM the stack took. `tools/provision.py` keeps the bonds. The Mac's
+Bluetooth menu shows the badge's battery charge, refreshed every half minute.
 
 ## Flash layout
 
