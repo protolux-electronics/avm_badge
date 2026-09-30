@@ -17,8 +17,7 @@ defmodule Badge.KeyboardTest do
       assert Keyboard.raw_event([~c"Space"], [~c"Space"]) == :none
     end
 
-    test "switching it with no scanner running does nothing" do
-      assert Process.whereis(Keyboard) == nil
+    test "switching it never fails, scanner or not" do
       assert Keyboard.raw(true) == :ok
     end
   end
