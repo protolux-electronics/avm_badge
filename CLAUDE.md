@@ -220,7 +220,7 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   shell that traps exits. Match `{:ble_hid, _port, _}` without pinning
 - Reports go out only over an encrypted link; before pairing they are dropped
   in the driver
-- The VM image is at 1,949,600 of 1,966,080 bytes with the component in, so
+- The VM image is at 1,955,136 of 1,966,080 bytes with the component in, so
   anything else added to the VM needs a size check first
 - An open link refuses light sleep (`Badge.Sleep`), and a raw key that wakes
   the screen still reaches the page

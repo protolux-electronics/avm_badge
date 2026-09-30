@@ -99,7 +99,10 @@ v5.5.5:
 | Image                               | Bytes     | Free in `factory` |
 |-------------------------------------|-----------|-------------------|
 | `badge-v1` VM, no Bluetooth         | 1,742,512 | 223,568           |
-| this build, with `atomvm_ble_hid`   | 1,949,600 | 16,480            |
+| this build, with `atomvm_ble_hid`   | 1,955,136 | 10,944            |
+
+`boot.avm` from the same checkout (OTP 28, Elixir 1.19, as in CI) is 527,616
+bytes of the 557,056-byte partition.
 
 `idf.py size-components` puts the Bluetooth part at about 184 kB of flash
 (`libbt` 92 kB, `libbtdm_app` 73 kB, `libesp_hid` 7 kB, `libcoexist` 6 kB,
