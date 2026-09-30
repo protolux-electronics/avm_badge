@@ -1,0 +1,4 @@
+description: AtomVM port driver for a Bluetooth LE HID keyboard over NimBLE and esp_hid
+dependencies:
+  idf:
+    version: ">=5.5"
