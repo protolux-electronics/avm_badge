@@ -48,8 +48,12 @@ defmodule Badge.MixProject do
   defp mod(:host, env) when env != :test, do: [mod: {Badge.Sim.Application, []}]
   defp mod(_target, _env), do: []
 
-  defp elixirc_paths(:badge), do: ["lib"]
-  defp elixirc_paths(_target), do: ["lib", "sim/lib"]
+  defp elixirc_paths(:badge), do: probe(["lib"])
+  defp elixirc_paths(_target), do: probe(["lib", "sim/lib"])
+
+  # GAMELINK_PROBE=1 adds the two-badge GameLink smoke-test page; never shipped.
+  defp probe(paths),
+    do: if(System.get_env("GAMELINK_PROBE") == "1", do: paths ++ ["probe"], else: paths)
 
   defp test_paths(:badge), do: ["test"]
   defp test_paths(_target), do: ["test", "sim/test"]
