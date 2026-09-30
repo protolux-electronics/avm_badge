@@ -92,7 +92,7 @@ defmodule Badge.Page.KeyboardTest do
       assert says?(state, "80K free, 40K block")
       assert says?(page([:advertising]), "internal RAM")
       assert says?(page([:advertising]), "Cross exit")
-      assert says?(page([:advertising]), "Diamond re-pair")
+      assert says?(page([:advertising]), "Diamond x2 re-pair")
       assert says?(page([:advertising]), "reserved")
     end
   end
@@ -114,9 +114,57 @@ defmodule Badge.Page.KeyboardTest do
       assert Keyboard.handle_key({:nav, :home}, ready()) == :ignore
     end
 
+    test "a decoded Cross leaves once the page is open, so a lost raw mode can still exit" do
+      {:ok, state} = Keyboard.handle_key({:nav, :cross}, ready())
+
+      assert state.leave
+    end
+
     test "other decoded keys are ignored" do
       assert Keyboard.handle_key({:char, ?a}, ready()) == :ignore
-      assert Keyboard.handle_key({:nav, :cross}, ready()) == :ignore
+      assert Keyboard.handle_key({:nav, :diamond}, ready()) == :ignore
+      assert Keyboard.handle_key({:nav, :cross}, Keyboard.init()) == :ignore
+    end
+  end
+
+  describe "forgetting the bond" do
+    test "one Diamond only asks, and the screen says so" do
+      state = raw(ready(), [~c"Diamond"])
+
+      assert is_integer(state.forget_at)
+      assert says?(state, "Diamond again forgets the Mac")
+    end
+
+    test "a second Diamond in time forgets" do
+      state = ready() |> raw([~c"Diamond"]) |> raw([]) |> raw([~c"Diamond"])
+
+      assert state.forget_at == nil
+      refute says?(state, "Diamond again")
+    end
+
+    test "any other key keeps the bond" do
+      state = ready() |> raw([~c"Diamond"]) |> raw([]) |> raw([~c"Space"])
+
+      assert state.forget_at == nil
+      assert state.sent == [~c"Space"]
+    end
+
+    test "the question lapses after three seconds" do
+      state = %{
+        raw(ready(), [~c"Diamond"])
+        | forget_at: :erlang.monotonic_time(:millisecond) - 4_000
+      }
+
+      assert Keyboard.tick(state).forget_at == nil
+    end
+  end
+
+  describe "a failed pairing" do
+    test "tells the user to remove the badge on the Mac, not to reopen the page" do
+      state = page([{:connected, @addr}, {:error, :pairing_failed}])
+
+      assert says?(state, "remove the")
+      refute says?(state, "Leave and open")
     end
   end
 

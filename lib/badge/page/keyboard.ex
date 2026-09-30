@@ -8,8 +8,9 @@ defmodule Badge.Page.Keyboard do
   link again.
 
   The six shape keys are never forwarded; they are the badge's own. Cross
-  leaves the page and Diamond forgets every bonded host. Square, Triangle,
-  Circle and Clover are reserved. Esc is forwarded, since it ends a Keynote
+  leaves the page. Diamond pressed twice within three seconds forgets every
+  bonded host; the first press only asks. Square, Triangle, Circle and Clover
+  are reserved. Esc is forwarded, since it ends a Keynote
   show.
 
   While the host asks for a passkey, digits, Bksp and Enter go to the
@@ -28,6 +29,9 @@ defmodule Badge.Page.Keyboard do
   @shapes [~c"Square", ~c"Triangle", ~c"Cross", ~c"Circle", ~c"Clover", ~c"Diamond"]
   @digits for c <- ?0..?9, into: %{}, do: {[c], c}
   @passkey_len 6
+
+  # How long a first Diamond waits for the second, in milliseconds.
+  @confirm 3_000
 
   # Status is polled no more often than this, in milliseconds.
   @poll 250
@@ -51,7 +55,9 @@ defmodule Badge.Page.Keyboard do
   def icon, do: :link
 
   @impl true
-  def init, do: %{status: nil, opened: false, leave: false, held: [], sent: [], digits: ""}
+  def init do
+    %{status: nil, opened: false, leave: false, held: [], sent: [], digits: "", forget_at: nil}
+  end
 
   @impl true
   def refresh(_state), do: 250
@@ -66,11 +72,22 @@ defmodule Badge.Page.Keyboard do
   end
 
   def tick(state) do
+    state = expire(state)
+
     case due?() do
       true -> polled(state)
       false -> state
     end
   end
+
+  defp expire(%{forget_at: at} = state) when is_integer(at) do
+    case now() - at > @confirm do
+      true -> %{state | forget_at: nil}
+      false -> state
+    end
+  end
+
+  defp expire(state), do: state
 
   @impl true
   def leave(_state) do
@@ -84,10 +101,11 @@ defmodule Badge.Page.Keyboard do
   def handle_key({:raw, labels}, state) do
     pressed = labels -- state.held
 
-    {:ok, pressed(pressed, %{state | held: labels})}
+    {:ok, pressed(pressed, cancel(pressed, %{state | held: labels}))}
   end
 
-  # Decoded keys only come before raw mode or after a scanner restart; Esc then goes home.
+  # Decoded keys come before raw mode is on or after it was lost; Cross and Esc still leave.
+  def handle_key({:nav, :cross}, %{opened: true} = state), do: {:ok, %{state | leave: true}}
   def handle_key(_event, _state), do: :ignore
 
   defp pressed(pressed, state) do
@@ -96,14 +114,30 @@ defmodule Badge.Page.Keyboard do
         %{state | leave: true}
 
       :lists.member(~c"Diamond", pressed) ->
-        Link.forget()
-        %{state | digits: ""}
+        diamond(state)
 
       passkey?(state) ->
         typing(pressed, state)
 
       true ->
         forward(state)
+    end
+  end
+
+  defp diamond(%{forget_at: at} = state) when is_integer(at) do
+    Link.forget()
+    %{state | digits: "", forget_at: nil}
+  end
+
+  defp diamond(state), do: %{state | forget_at: now()}
+
+  # Any other key pressed after the first Diamond keeps the bond.
+  defp cancel([], state), do: state
+
+  defp cancel(pressed, state) do
+    case :lists.member(~c"Diamond", pressed) do
+      true -> state
+      false -> %{state | forget_at: nil}
     end
   end
 
@@ -180,7 +214,7 @@ defmodule Badge.Page.Keyboard do
 
     Readout.right_row("bluetooth", state_text(status), @state_y, state_colour(status)) ++
       Readout.right_row("name", status.name, @name_y, Theme.fg()) ++
-      body(status, state) ++ ram(status) ++ hints()
+      body(status, state) ++ ram(status) ++ hints(state)
   end
 
   defp starting, do: %{state: :starting, name: "", reason: nil, internal_free: nil}
@@ -244,6 +278,18 @@ defmodule Badge.Page.Keyboard do
       Readout.right_row("keys", held(state.sent), @body_y + 3 * Readout.pitch(), Theme.select())
   end
 
+  defp body(%{state: :error, reason: :pairing_failed}, _state) do
+    lines(
+      [
+        {"Pairing failed. The Mac may still", Theme.fg()},
+        {"hold an old pairing: remove the", Theme.fg()},
+        {"badge in its Bluetooth settings,", Theme.fg()},
+        {"then connect again.", Theme.fg()}
+      ],
+      @body_y
+    )
+  end
+
   defp body(%{state: :error} = status, _state) do
     lines(
       [
@@ -274,8 +320,15 @@ defmodule Badge.Page.Keyboard do
 
   defp ram(_status), do: Readout.right_row("internal RAM", "-", @ram_y, Theme.dim())
 
-  defp hints do
-    Nav.hint([{"Cross", "exit"}, {"Diamond", "re-pair"}], @hint_y, Theme.accent()) ++
+  defp hints(%{forget_at: at}) when is_integer(at) do
+    [
+      line(@row_x, @hint_y, Theme.alert(), "Diamond again forgets the Mac"),
+      line(@row_x, @reserved_y, Theme.dim(), "Any other key keeps it")
+    ]
+  end
+
+  defp hints(_state) do
+    Nav.hint([{"Cross", "exit"}, {"Diamond x2", "re-pair"}], @hint_y, Theme.accent()) ++
       [line(@row_x, @reserved_y, Theme.dim(), "Square Triangle Circle Clover reserved")]
   end
 
