@@ -76,7 +76,7 @@ defmodule Badge.PagesTest do
                Badge.Page.Sensors,
                Badge.Page.Agent,
                Badge.Page.Cluster,
-               nil,
+               Badge.Page.Keyboard,
                nil
              ]
     end
@@ -89,7 +89,6 @@ defmodule Badge.PagesTest do
     end
 
     test "an empty slot is nil, not a crash" do
-      assert Pages.for_key(:clover, 1) == nil
       assert Pages.for_key(:diamond, 1) == nil
       assert Pages.for_key(:square, 99) == nil
     end

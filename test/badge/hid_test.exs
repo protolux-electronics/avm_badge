@@ -78,7 +78,9 @@ defmodule Badge.HidTest do
     end
 
     test "usages are in ascending order whatever order they are held in" do
-      assert Hid.report([~c"Right", ~c"A", ~c"Space"]) == Hid.report([~c"Space", ~c"Right", ~c"A"])
+      assert Hid.report([~c"Right", ~c"A", ~c"Space"]) ==
+               Hid.report([~c"Space", ~c"Right", ~c"A"])
+
       assert Hid.report([~c"Right", ~c"A"]) == <<0, 0, 0x04, 0x4F, 0, 0, 0, 0>>
     end
 

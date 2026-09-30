@@ -35,7 +35,8 @@ defmodule Badge.Ble.StatusTest do
       assert through([:advertising, {:connected, @addr}]).state == :connected
       assert through([:advertising, {:connected, @addr}, :passkey_input]).state == :passkey
 
-      ready = through([:advertising, {:connected, @addr}, :passkey_input, {:encrypted, true}, :ready])
+      ready =
+        through([:advertising, {:connected, @addr}, :passkey_input, {:encrypted, true}, :ready])
 
       assert ready.state == :ready
       assert ready.bonded
