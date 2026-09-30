@@ -13,8 +13,11 @@ bonding.
   the device advertises from its public, efuse-derived Bluetooth address, so a
   bonded host reconnects after a reboot without pairing again.
 - Reports are sent only over an encrypted link.
+- A numeric comparison request is rejected: with nothing to show it on, it
+  could not be checked.
 - One port at a time: there is one Bluetooth stack. Opening a second port
-  while one is still open tears the first down.
+  while one is still open tears the first down. A port killed with its owner
+  leaves the stack running until the next open does that.
 
 See `FORK.md` for wiring the component into the badge's AtomVM fork.
 

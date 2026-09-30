@@ -1,7 +1,9 @@
 # Building atomvm_ble_hid into the badge's AtomVM fork
 
-The fork is [protolux-electronics/AtomVM](https://github.com/protolux-electronics/AtomVM),
-branch `main`; its `src/platforms/esp32/BADGE-BUILD.md` covers the build as
+The fork is [protolux-electronics/AtomVM](https://github.com/protolux-electronics/AtomVM).
+The lines below are not on its `main` yet: they are committed on a local fork
+branch `ble-hid` (on top of `main` at `d5a1dc3`), which is what was built and
+measured. The fork's `src/platforms/esp32/BADGE-BUILD.md` covers the build as
 a whole. ESP-IDF picks up any component under `src/platforms/esp32/components/`,
 so the work is: put the component there, switch Bluetooth on in
 `sdkconfig.defaults.in`, rebuild the VM, and flash it with a `boot.avm` from
@@ -25,8 +27,15 @@ then, in the fork:
 
 For a local build a symlink does the same job and needs no new repository:
 
-    ln -s /path/to/avm_badge/components/atomvm_ble_hid \
+    ln -s /Users/Stefan.Fochler/Developer/avm_badge/components/atomvm_ble_hid \
         src/platforms/esp32/components/atomvm_ble_hid
+
+The symlink only resolves while the `avm_badge` checkout it points into has
+the `ble-keyboard` branch checked out. On any other branch the directory is
+missing and **the VM builds without the driver, silently**. Check that
+`CONFIG_AVM_BLE_HID_ENABLE=y` is in the generated `sdkconfig` and that
+`libatomvm_ble_hid.a` appears in `build/esp-idf/atomvm_ble_hid/` before
+flashing.
 
 ## 2. sdkconfig.defaults.in
 
@@ -52,7 +61,7 @@ Append to `src/platforms/esp32/sdkconfig.defaults.in` (never the generated
     CONFIG_BT_NIMBLE_MESH=n
     CONFIG_BT_NIMBLE_HID_SERVICE=y
     CONFIG_BT_NIMBLE_SVC_GAP_APPEARANCE=0x3C1
-    CONFIG_BT_NIMBLE_LOG_LEVEL_ERROR=y
+    CONFIG_BT_NIMBLE_LOG_LEVEL_NONE=y
     CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 
 `CONFIG_BT_NIMBLE_NVS_PERSIST` keeps bonds in the NVS namespace
@@ -93,27 +102,27 @@ means a serial reflash of every badge, so it is not an option. From
         /path/to/AtomVM/src/platforms/esp32/partitions-elixir.csv \
         factory=/path/to/AtomVM/src/platforms/esp32/build/atomvm-esp32.bin
 
-Measured 2026-09-30, fork `main` at `d5a1dc3` plus the lines above, ESP-IDF
-v5.5.5:
+Measured 2026-09-30, fork branch `ble-hid` (`main` at `d5a1dc3` plus the
+lines above), ESP-IDF v5.5.5:
 
 | Image                               | Bytes     | Free in `factory` |
 |-------------------------------------|-----------|-------------------|
 | `badge-v1` VM, no Bluetooth         | 1,742,512 | 223,568           |
-| this build, with `atomvm_ble_hid`   | 1,955,136 | 10,944            |
+| with `atomvm_ble_hid`, NimBLE log level `ERROR` | 1,955,136 | 10,944 |
+| with `atomvm_ble_hid`, NimBLE log level `NONE`  | 1,931,552 | 34,528 |
 
 `boot.avm` from the same checkout (OTP 28, Elixir 1.19, as in CI) is 527,616
 bytes of the 557,056-byte partition.
 
-`idf.py size-components` puts the Bluetooth part at about 184 kB of flash
+With the log level at `ERROR`, `idf.py size-components` put the Bluetooth part at about 184 kB of flash
 (`libbt` 92 kB, `libbtdm_app` 73 kB, `libesp_hid` 7 kB, `libcoexist` 6 kB,
 this driver 4 kB, `libbtbb` 3 kB) and about 16 kB of static internal RAM,
 mostly the controller's. What the stack allocates while running is only
 visible on the badge: the Keyboard page shows it, and the Log tab records
 free internal RAM before and after `open`.
 
-If a later change overflows `factory`, the levers are, in order: NimBLE log
-level `NONE`, `CONFIG_BT_NIMBLE_SVC_DIS_*` strings off, then optimising
-components for size; `-DAVM_USE_LIBSODIUM=OFF` is not one, since updates need
+If a later change overflows `factory`, the levers are, in order:
+`CONFIG_BT_NIMBLE_SVC_DIS_*` strings off, then optimising components for size; `-DAVM_USE_LIBSODIUM=OFF` is not one, since updates need
 it.
 
 ## 5. Flash
