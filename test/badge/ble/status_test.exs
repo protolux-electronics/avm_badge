@@ -63,6 +63,13 @@ defmodule Badge.Ble.StatusTest do
     test "a bonded host re-encrypts after ready without leaving it" do
       assert through([{:connected, @addr}, :ready, {:encrypted, true}]).state == :ready
     end
+
+    test "a connect that arrives after ready keeps ready and names the peer" do
+      status = through([{:encrypted, true}, :ready, {:connected, @addr}])
+
+      assert status.state == :ready
+      assert status.peer == "90:DA:72:00:00:01"
+    end
   end
 
   describe "losing the host" do

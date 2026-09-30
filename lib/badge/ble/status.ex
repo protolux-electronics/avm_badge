@@ -4,7 +4,9 @@ defmodule Badge.Ble.Status do
 
   Every transition the driver's events cause is a pure function here, so the
   link GenServer only moves messages. `state` is one of `:off`, `:starting`,
-  `:advertising`, `:passkey`, `:connected`, `:ready` and `:error`.
+  `:advertising`, `:passkey`, `:connected`, `:ready` and `:error`. Events
+  posted in a burst can arrive in reverse order, so a late `connected` never
+  undoes `ready`.
   """
 
   @type t :: %{
@@ -54,6 +56,8 @@ defmodule Badge.Ble.Status do
   def event(status, :advertising) do
     %{status | state: :advertising, peer: nil, bonded: false, passkey: nil, reason: nil}
   end
+
+  def event(%{state: :ready} = status, {:connected, addr}), do: %{status | peer: address(addr)}
 
   def event(status, {:connected, addr}) do
     %{status | state: :connected, peer: address(addr), passkey: nil, reason: nil}
