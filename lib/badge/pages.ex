@@ -23,7 +23,6 @@ defmodule Badge.Pages do
     Badge.Page.Settings,
     Badge.Page.Led,
     Badge.Page.Sensors,
-    Badge.Page.Agent,
     Badge.Page.Cluster
   ]
 

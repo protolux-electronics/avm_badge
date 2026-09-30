@@ -74,8 +74,8 @@ defmodule Badge.PagesTest do
       assert for({_key, module} <- Pages.screen(1), do: module) == [
                Badge.Page.Led,
                Badge.Page.Sensors,
-               Badge.Page.Agent,
                Badge.Page.Cluster,
+               nil,
                nil,
                nil
              ]
@@ -92,6 +92,12 @@ defmodule Badge.PagesTest do
       assert Pages.for_key(:clover, 1) == nil
       assert Pages.for_key(:diamond, 1) == nil
       assert Pages.for_key(:square, 99) == nil
+    end
+
+    test "the agent page is gone from the firmware" do
+      refute :lists.member(Badge.Page.Agent, Pages.all())
+      refute Code.ensure_loaded?(Badge.Page.Agent)
+      refute Code.ensure_loaded?(Badge.Eliza)
     end
   end
 
