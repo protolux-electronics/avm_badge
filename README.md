@@ -145,7 +145,9 @@ for the next slide, Left for the previous one and Esc to end the show. No
 companion software and no wifi are involved.
 
 The six shape keys stay the badge's own: Cross leaves the page, Diamond
-forgets every paired computer, and the other four are reserved.
+pressed twice within three seconds forgets every paired computer (the first
+press only asks, and any other key keeps the pairing), and the other four are
+reserved.
 
 To pair from macOS:
 
@@ -156,8 +158,9 @@ To pair from macOS:
 3. The badge switches to its passkey screen. Type the digits on the badge,
    then Enter.
 4. The page says ready and the keys type on the Mac. Leave with Cross; next
-   time the Mac reconnects without asking. After Diamond, remove the badge in
-   System Settings too before pairing again.
+   time the Mac reconnects without asking. After forgetting with Diamond, remove
+   the badge in System Settings too before pairing again; the page says the
+   same when pairing fails because the Mac kept an old pairing.
 
 The page needs a VM built with the `atomvm_ble_hid` component in
 `components/`; `components/atomvm_ble_hid/FORK.md` says how. On the published

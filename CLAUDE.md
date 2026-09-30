@@ -214,14 +214,19 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   page `{:raw, labels}`, the whole held set, instead of decoded events.
   `Badge.Ble.Link.open/0` turns it on, `close/0` off; the page's `leave/1`
   calls `close/0`, and so does `Badge.UI.init/1`, so a UI restart is not deaf
-- The six shape keys are never forwarded: Cross leaves, Diamond forgets the
-  bonds, the rest are reserved. Esc *is* forwarded, since it ends a show
+- The six shape keys are never forwarded: Cross leaves, Diamond twice within
+  3 s forgets the bonds, the rest are reserved. Esc *is* forwarded, since it
+  ends a show. A decoded Cross leaves too, for when raw mode was lost
 - `Badge.Ble.Status` holds every transition as plain data; the link is a
   shell that traps exits. Match `{:ble_hid, _port, _}` without pinning
 - Reports go out only over an encrypted link; before pairing they are dropped
   in the driver
-- The VM image is at 1,955,136 of 1,966,080 bytes with the component in, so
-  anything else added to the VM needs a size check first
+- The VM image is at 1,931,552 of 1,966,080 bytes with the component in, so
+  anything else added to the VM needs a size check first. The fork symlinks
+  the component from the main checkout: build the VM with `ble-keyboard`
+  checked out, or the driver is silently left out
+- Driver state lives only in the C file's `s_data`, never in the port's
+  `platform_data`, which AtomVM frees when a port is killed
 - An open link refuses light sleep (`Badge.Sleep`), and a raw key that wakes
   the screen still reaches the page
 - Bonds live in the NVS namespace `nimble_bond`, which `tools/provision.py`
