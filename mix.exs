@@ -50,10 +50,9 @@ defmodule Badge.MixProject do
 
   defp deps do
     [
+      {:atomvm, "~> 0.7.0-alpha.1", runtime: false},
       {:exatomvm,
-       github: "atomvm/ExAtomVM",
-       ref: "7802373f107d0b83e36206bb06bb1ed1bb43ac90",
-       runtime: false},
+       github: "atomvm/ExAtomVM", ref: "7802373f107d0b83e36206bb06bb1ed1bb43ac90", runtime: false},
       # ExAtomVM runs esptool inside this embedded Python.
       {:pythonx, "~> 0.4.0", runtime: false},
       # The Erlang side of the port driver built into the VM. A rebar3
