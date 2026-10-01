@@ -2,7 +2,8 @@ defmodule Badge.QR do
   @moduledoc """
   QR byte-mode encoding and AtomGL rendering shared by the badge and simulator.
 
-  Error-correction level L and versions 1 through 10 are supported. `encode/1`
+  Error-correction level L and versions 1 through 8 are supported, so a payload
+  holds at most 192 bytes. `encode/1`
   chooses the smallest version that fits; `item/4` scales its one-pixel modules
   by an integer without rebuilding the code.
 
@@ -23,9 +24,7 @@ defmodule Badge.QR do
     %{version: 5, capacity: 106, data: 108, blocks: 1, ecc: 26},
     %{version: 6, capacity: 134, data: 136, blocks: 2, ecc: 18},
     %{version: 7, capacity: 154, data: 156, blocks: 2, ecc: 20},
-    %{version: 8, capacity: 192, data: 194, blocks: 2, ecc: 24},
-    %{version: 9, capacity: 230, data: 232, blocks: 2, ecc: 30},
-    %{version: 10, capacity: 271, data: 274, blocks: 4, ecc: 18}
+    %{version: 8, capacity: 192, data: 194, blocks: 2, ecc: 24}
   ]
 
   @fixed_light Geometry.fixed_light()
@@ -33,9 +32,11 @@ defmodule Badge.QR do
   @data_position Geometry.data_position()
 
   @quiet 4
+  # Byte mode's length field is 8 bits for every version up to 9.
+  @count_bits 8
   @white <<255, 255, 255, 255>>
   @black <<0, 0, 0, 255>>
-  @doc "Encodes a binary in QR byte mode at error-correction level L, up to version 10."
+  @doc "Encodes a binary in QR byte mode at error-correction level L, up to version 8."
   @spec encode(binary) :: {:ok, map} | {:error, :too_long}
   def encode(payload) when is_binary(payload) do
     case version_for(byte_size(payload), @versions) do
@@ -80,7 +81,7 @@ defmodule Badge.QR do
 
     bits =
       integer_bits(4, 4) ++
-        integer_bits(byte_size(payload), count_width(spec.version)) ++ byte_bits(payload)
+        integer_bits(byte_size(payload), @count_bits) ++ byte_bits(payload)
 
     bits = bits ++ :lists.duplicate(min(4, capacity - length(bits)), 0)
     bits = bits ++ :lists.duplicate(rem(8 - rem(length(bits), 8), 8), 0)
@@ -88,9 +89,6 @@ defmodule Badge.QR do
 
     pad_bytes(bytes, spec.data, 0xEC)
   end
-
-  defp count_width(version) when version < 10, do: 8
-  defp count_width(_version), do: 16
 
   defp integer_bits(_value, 0), do: []
 

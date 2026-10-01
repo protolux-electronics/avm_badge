@@ -366,7 +366,7 @@ defmodule Badge.Page.NameTest do
     end
 
     test "leaves the space above the code empty, so a big code cannot run into text" do
-      for length <- [20, 60, 140, 271] do
+      for length <- [20, 60, 140, 192] do
         {:ok, code} = QR.encode(:binary.copy("a", length))
         items = Name.render(%{qrcode() | qr_result: {:ok, code}})
 
@@ -417,7 +417,7 @@ defmodule Badge.Page.NameTest do
     end
 
     test "a longer link draws a smaller code, never one off the panel" do
-      for length <- [20, 60, 140, 271] do
+      for length <- [20, 60, 140, 192] do
         {:ok, code} = QR.encode(:binary.copy("a", length))
 
         assert [{:scaled_cropped_image, x, y, w, h, _bg, 0, 0, scale, _ys, [], _img}] =

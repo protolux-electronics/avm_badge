@@ -60,8 +60,6 @@ defmodule Badge.QRTest do
   11111110100100011101110110011
   """
 
-  @max_hash Base.decode16!("AB5D4C958687EB5ECC9CB8B2319824B06D79594E8B99B11530309263C67EE37A")
-
   defp bits(rows) do
     rows
     |> String.replace("\n", "")
@@ -101,29 +99,22 @@ defmodule Badge.QRTest do
           {135, 7},
           {154, 7},
           {155, 8},
-          {192, 8},
-          {193, 9},
-          {230, 9},
-          {231, 10},
-          {271, 10}
+          {192, 8}
         ] do
       assert {:ok, %{version: ^version}} = QR.encode(:binary.copy("a", length))
     end
   end
 
-  test "encodes 255 bytes with version ten's two-byte count and mixed block lengths" do
-    assert {:ok, %{version: 10, size: 57, modules: modules}} =
-             QR.encode(:binary.copy("a", 255))
-
-    assert :crypto.hash(:sha256, modules) == @max_hash
+  test "encodes 192 bytes, the most it holds, at version eight" do
+    assert {:ok, %{version: 8, size: 49}} = QR.encode(:binary.copy("a", 192))
   end
 
-  test "rejects payloads beyond version ten" do
-    assert QR.encode(:binary.copy("a", 272)) == {:error, :too_long}
+  test "rejects payloads beyond version eight" do
+    assert QR.encode(:binary.copy("a", 193)) == {:error, :too_long}
   end
 
   test "has generated geometry for every supported version" do
-    assert Geometry.versions() == :lists.seq(1, 10)
+    assert Geometry.versions() == :lists.seq(1, 8)
 
     for version <- Geometry.versions() do
       %{size: size, template: template} = Geometry.for_version(version)

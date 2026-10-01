@@ -223,7 +223,7 @@ def main():
     root = Path(__file__).resolve().parent.parent
     default_output = root / "lib" / "badge" / "qr" / "geometry.ex"
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--versions", default="1-10")
+    parser.add_argument("--versions", default="1-8")
     parser.add_argument("--mask", type=int, default=0, help="fixed mask, 0 to 7")
     parser.add_argument("--output", type=Path, default=default_output)
     parser.add_argument("--check", action="store_true")
