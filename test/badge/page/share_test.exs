@@ -252,6 +252,17 @@ defmodule Badge.Page.ShareTest do
       assert Page.handle_ir(@other, <<0, 1, "x">>, loaded()) == :ignore
     end
 
+    test "another page's traffic is dropped without a word" do
+      output =
+        ExUnit.CaptureIO.capture_io(fn ->
+          for first <- [0x10, 0x1F] do
+            assert Page.handle_ir(@other, <<first, 0, 1, 0, 0, 0, 0>>, loaded()) == :ignore
+          end
+        end)
+
+      assert output == ""
+    end
+
     test "our own frame reflected back is dropped" do
       assert Page.handle_ir(@me, name_frame("Gus"), loaded()) == :ignore
     end

@@ -10,6 +10,14 @@ defmodule Badge.Ir do
   Nothing is transmitted unless a page asks for it. The payload is opaque
   and the sender's chip id travels in the frame header, so a page never has
   to put its own identity in its bytes.
+
+  A payload's first byte says whose it is, so a page can tell its own
+  traffic from another's:
+
+    * `0x01`–`0x08`: `Badge.Sharing.Wire`, one profile field
+    * `0x10`: the RPS app from the app store
+    * `0x11`–`0x1F`: free for other pages and apps
+    * `0x20` and up: a bare name from older firmware
   """
 
   alias Badge.Ir.Frame

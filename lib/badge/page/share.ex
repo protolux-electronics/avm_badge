@@ -220,6 +220,8 @@ defmodule Badge.Page.Share do
 
   def handle_ir(_from, _payload, _state), do: :ignore
 
+  defp hear(:other, _from, _state), do: :ignore
+
   defp hear(:error, from, _state) do
     :io.format(~c"Share: bad frame from ~s~n", [Identity.format(from)])
 

@@ -6,7 +6,8 @@ defmodule Badge.Sharing.Wire do
       <<tag, mask, value::binary>>
 
   Tags sit below 0x20, so a payload whose first byte is printable is a bare
-  name from a badge on older firmware and decodes as one.
+  name from a badge on older firmware and decodes as one. Bytes 0x10 to 0x1F
+  are left to other pages' and apps' traffic, and decode as `:other`.
   """
 
   import Bitwise
@@ -27,6 +28,7 @@ defmodule Badge.Sharing.Wire do
 
   @header 2
   @max_value Ir.max_payload() - @header
+  @reserved 0x10
   @legacy 0x20
 
   @doc "The fields a frame can carry, in tag order."
@@ -53,13 +55,16 @@ defmodule Badge.Sharing.Wire do
   end
 
   @doc """
-  What a payload carries: `{:ok, key, shared, value}`, or `:error` for a
-  payload no badge of ours sends. A printable first byte is a bare name.
+  What a payload carries: `{:ok, key, shared, value}`, `:other` for another
+  page's traffic, or `:error` for a payload no badge of ours sends. A
+  printable first byte is a bare name.
   """
-  @spec decode(binary) :: {:ok, atom, [atom], binary} | :error
+  @spec decode(binary) :: {:ok, atom, [atom], binary} | :other | :error
   def decode(<<first, _rest::binary>> = payload) when first >= @legacy do
     {:ok, :name, [:name], payload}
   end
+
+  def decode(<<first, _rest::binary>>) when first >= @reserved, do: :other
 
   def decode(<<tag, mask, value::binary>>) do
     case key(tag) do

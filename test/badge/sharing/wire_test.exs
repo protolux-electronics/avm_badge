@@ -71,6 +71,16 @@ defmodule Badge.Sharing.WireTest do
       assert Wire.decode(" spaced") == {:ok, :name, [:name], " spaced"}
     end
 
+    test "bytes 0x10 to 0x1F are other pages' traffic" do
+      assert Wire.decode(<<0x10, 0, 1, 0, 0, 0, 1>>) == :other
+      assert Wire.decode(<<0x1F>>) == :other
+      assert Wire.decode(<<0x0F, 1, "x">>) == :error
+    end
+
+    test "no field takes a byte left to other pages" do
+      for key <- Wire.fields(), do: assert(Wire.tag(key) < 0x10)
+    end
+
     test "a tag naming no field is an error" do
       assert Wire.decode(<<0, 1, "x">>) == :error
       assert Wire.decode(<<9, 1, "x">>) == :error
