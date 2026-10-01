@@ -321,7 +321,7 @@ defmodule Badge.Page.ConnectFour do
     end
   end
 
-  defp hint_items(%{screen: :over}), do: [centred("Esc for home", @hint_y, Theme.dim())]
+  defp hint_items(%{screen: :over}), do: [centred("Esc for Games", @hint_y, Theme.dim())]
 
   defp hint_items(state) do
     if my_turn?(state.link) do

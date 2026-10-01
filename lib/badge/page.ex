@@ -33,9 +33,9 @@ defmodule Badge.Page do
   Applies an event, or returns `:ignore` if the page has no use for it.
 
   Every key reaches the page first, shape keys included, and a shape key the
-  page ignores goes nowhere — only the home grid opens pages. Escape arrives
+  page ignores goes nowhere — only Home and Games open pages. Escape arrives
   as `{:nav, :home}`: answer it with `{:ok, state}` to spend it backing out a
-  level of your own, or ignore it and the router returns to the home grid.
+  level of your own, or ignore it and the router returns to the parent menu.
   """
   @callback handle_key(event, state) :: {:ok, state} | :ignore
 

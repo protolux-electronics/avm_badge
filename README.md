@@ -65,6 +65,19 @@ air, so run it again whenever anything under `assets/` changes — see
 Reflashing leaves NVS alone, so the profile, the badges you have collected and
 the wifi credentials all survive.
 
+### Games
+
+On the second home screen, circle opens **Games**, using the same shape-key
+grid as Home: square opens Connect Four, triangle Raycaster, cross Tamagotchi.
+Esc returns from a game to Games, then from Games to Home.
+
+Tamagotchi starts a fresh egg every visit; exiting discards the pet. Keep all
+three meters high: square/F feeds (Hunger shows fullness), triangle/P plays,
+cross/T trains, and circle/C cleans the poop. A meter left unattended for
+60 seconds, or poop left for 60 seconds, kills the pet. It grows from egg to
+baby, child and adult; surviving five minutes wins. Enter starts a new pet
+after a win or death. There is no background game or saved progress.
+
 ### Flashing a batch
 
     tools/flashstation.exs
