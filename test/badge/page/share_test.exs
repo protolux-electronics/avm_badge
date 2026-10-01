@@ -79,12 +79,27 @@ defmodule Badge.Page.ShareTest do
   end
 
   describe "the share screen" do
+    test "draws two badges facing each other, the right one turned, at twice size" do
+      images =
+        for {:scaled_cropped_image, x, y, w, h, _bg, 0, 0, 2, 2, [], {:rgba8888, iw, ih, data}} <-
+              Page.render(loaded()),
+            do: {x, y, w, h, iw, ih, data}
+
+      assert [{lx, y, w, h, iw, ih, left}, {rx, y, w, h, iw, ih, right}] = images
+      assert {w, h} == {iw * 2, ih * 2}
+      assert rx == lx + w
+      assert lx + rx + w == Theme.width()
+      assert right == Badge.Icons.half_turn(left)
+    end
+
     test "shows two badges meeting, whatever else it has to say" do
       for state <- [Page.init(), loaded(), loaded(%{})] do
-        assert Enum.any?(
-                 Page.render(state),
-                 &match?({:image, 88, 90, _bg, {:rgba8888, 144, 64, _pixels}}, &1)
-               )
+        art =
+          for {:scaled_cropped_image, _x, 90, _w, _h, _bg, _, _, _, _, _, _} = item <-
+                Page.render(state),
+              do: item
+
+        assert length(art) == 2
       end
     end
 

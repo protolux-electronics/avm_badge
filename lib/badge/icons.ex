@@ -123,6 +123,13 @@ defmodule Badge.Icons do
 
   def binary(_name, _tint), do: nil
 
+  @doc "An `rgba8888` binary turned 180 degrees: the same pixels in reverse order."
+  def half_turn(rgba) do
+    pixels = for <<pixel::binary-size(4) <- rgba>>, do: pixel
+
+    :erlang.iolist_to_binary(:lists.reverse(pixels))
+  end
+
   @doc "The icon's `{width, height}` in pixels, or nil if there is no such icon."
   def size(name)
 

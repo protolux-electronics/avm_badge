@@ -79,9 +79,10 @@ defmodule Badge.Page.Share do
   @icon_w 16
   @detail_x @margin + @icon_w + 6
 
-  # Two badges meeting, centred between the chip id and the badge heard.
+  # Two badges meeting, centred between the chip id and the badge heard: one, and the same turned.
   @art :badge_share
   @art_y 90
+  @art_scale 2
 
   @dot_y 228
   @dot 6
@@ -123,7 +124,9 @@ defmodule Badge.Page.Share do
       opened: nil,
       id: nil,
       chip: "",
-      loaded: false
+      loaded: false,
+      # Turned once here, so a frame only reads it.
+      art: Icons.half_turn(Icons.binary(@art, Theme.glyph()))
     }
   end
 
@@ -338,7 +341,7 @@ defmodule Badge.Page.Share do
   def render(%{mode: :detail, opened: %{profile: profile}}), do: detail_screen(profile)
 
   def render(%{screen: @share_screen} = state) do
-    [art()] ++ share_screen(state) ++ dots(@share_screen)
+    art(state) ++ share_screen(state) ++ dots(@share_screen)
   end
 
   def render(%{screen: @sharing_screen} = state),
@@ -516,10 +519,19 @@ defmodule Badge.Page.Share do
   defp badge_icon(nil, _y), do: []
   defp badge_icon(icon, y), do: [Icons.item(icon, @margin, y)]
 
-  defp art do
-    {width, _height} = Icons.size(@art)
+  defp art(state) do
+    {width, height} = Icons.size(@art)
+    x = div(Theme.width() - 2 * width * @art_scale, 2)
 
-    Icons.item(@art, div(Theme.width() - width, 2), @art_y)
+    [
+      art_item(x, width, height, Icons.binary(@art, Theme.glyph())),
+      art_item(x + width * @art_scale, width, height, state.art)
+    ]
+  end
+
+  defp art_item(x, width, height, data) do
+    {:scaled_cropped_image, x, @art_y, width * @art_scale, height * @art_scale, Theme.bg(), 0, 0,
+     @art_scale, @art_scale, [], {:rgba8888, width, height, data}}
   end
 
   # Before anyone has been heard there is nothing to report but the count.

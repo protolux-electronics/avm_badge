@@ -127,6 +127,18 @@ defmodule Badge.IconsTest do
       end
     end
 
+    test "half_turn/1 turns an image 180 degrees" do
+      a = <<1, 1, 1, 1>>
+      b = <<2, 2, 2, 2>>
+      c = <<3, 3, 3, 3>>
+
+      assert Icons.half_turn(a <> b <> c) == c <> b <> a
+
+      art = Icons.binary(:badge_share, @white)
+      assert Icons.half_turn(Icons.half_turn(art)) == art
+      assert byte_size(Icons.half_turn(art)) == byte_size(art)
+    end
+
     test "an unknown name or an unbaked tint is nil rather than a crash" do
       assert Icons.binary(:nonesuch, @white) == nil
       assert Icons.binary(:wifi, 0x123456) == nil
