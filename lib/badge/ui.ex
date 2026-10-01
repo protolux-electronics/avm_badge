@@ -96,8 +96,8 @@ defmodule Badge.UI do
   @spec goto(module) :: :ok
   def goto(page), do: GenServer.cast(__MODULE__, {:goto, page})
 
-  @doc "From `Badge.Keyboard`: the CPU slept for `ms`, or the sleep was refused."
-  @spec slept({:ok, integer} | :refused) :: :ok
+  @doc "From `Badge.Keyboard`: the sleep was refused. A sleep that happens ends in a restart."
+  @spec slept(:refused) :: :ok
   def slept(result), do: GenServer.cast(__MODULE__, {:slept, result})
 
   @doc """
@@ -160,13 +160,6 @@ defmodule Badge.UI do
 
   def handle_cast({:key, _event}, %{asleep: true} = state) do
     {:noreply, prompt(wake(state))}
-  end
-
-  # The only wake source is a key, so the screen comes on without waiting for its event.
-  def handle_cast({:slept, {:ok, _ms}}, state) do
-    Wifi.resume()
-
-    {:noreply, wake(%{state | napping: false})}
   end
 
   def handle_cast({:slept, :refused}, state) do

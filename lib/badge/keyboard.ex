@@ -139,7 +139,10 @@ defmodule Badge.Keyboard do
     GenServer.call(__MODULE__, {:holding?, label})
   end
 
-  @doc "Stops the CPU on the next scan until a key is pressed, unless one is held."
+  @doc """
+  Stops the CPU on the next scan until a key is pressed, unless one is held.
+  The badge restarts when it wakes, so the key comes back as a fresh boot.
+  """
   @spec light_sleep() :: :ok
   def light_sleep, do: GenServer.cast(__MODULE__, :light_sleep)
 
@@ -221,14 +224,12 @@ defmodule Badge.Keyboard do
     slept = :erlang.monotonic_time(:millisecond) - started
     Enum.each(@rows ++ @cols, &GPIO.hold_dis/1)
 
-    :io.format(~c"Sleep: woke after ~ps (~p)~n", [div(slept, 1000), result])
-    Badge.UI.slept({:ok, slept})
+    :io.format(~c"Sleep: woke after ~ps (~p), restarting~n", [div(slept, 1000), result])
 
-    # Whatever is down now is the wake key; it must not arrive as a press.
-    pressed = full_scan()
-    labels = Enum.map(label_once(pressed), fn {label, _pos} -> label end)
+    # A fresh boot rather than a resume; see the light-sleep spec in ../docs.
+    :esp.restart()
 
-    %{state | candidate: pressed, count: @debounce, held: labels, repeat: KeyRepeat.new()}
+    state
   end
 
   defp setup do
