@@ -59,4 +59,16 @@ defmodule Badge.UITest do
       refute Badge.UI.key_due?(1_000, 1_034)
     end
   end
+
+  describe "the tick interval" do
+    test "is the base 100 ms for a page that refreshes no faster" do
+      assert Badge.UI.interval(100) == 100
+      assert Badge.UI.interval(333) == 100
+    end
+
+    test "halves for a page that asks for faster frames" do
+      assert Badge.UI.interval(50) == 50
+      assert Badge.UI.interval(20) == 50
+    end
+  end
 end

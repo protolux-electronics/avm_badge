@@ -83,12 +83,13 @@ defmodule Badge.PagesTest do
       assert Pages.for_key(:diamond, 1) == Badge.Page.Vote
     end
 
-    test "the console and the agent make a third screen" do
+    test "the console, the agent and pong make a third screen" do
       assert Pages.screens() == 3
 
       assert for({_key, module} <- Pages.screen(2), do: module) == [
                Badge.Page.Console,
-               Badge.Page.Agent | List.duplicate(nil, 4)
+               Badge.Page.Agent,
+               Badge.Page.Pong | List.duplicate(nil, 3)
              ]
 
       assert Pages.for_key(:square, 2) == Badge.Page.Console
