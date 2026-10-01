@@ -29,7 +29,8 @@ defmodule Badge.ScheduleTest do
         when: "Wed 30 Sep 09:15-09:55",
         where: "Varbergs Teater, NervesConf EU",
         who: "Peter Ullrich",
-        row: "09:15 Texting Lora"
+        row: "09:15 Texting Lora",
+        description_lines: []
       },
       overrides
     )
@@ -134,6 +135,44 @@ defmodule Badge.ScheduleTest do
           ~s({"title":"Lost","start_time":"10:00","end_time":"11:00"}]}]}]})
 
       assert Schedule.parse(body, @columns) == {:ok, []}
+    end
+  end
+
+  describe "a session's abstract" do
+    defp body(fields \\ "") do
+      ~s({"days":[{"date":"2026-10-03","spaces":[{"name":"Hall","sessions":[) <>
+        ~s({"title":"Talk","start_time":"10:00","end_time":"11:00"#{fields}}]}]}]})
+    end
+
+    defp body_with(description) do
+      body(~s(,"description":#{:erlang.iolist_to_binary(:json.encode(description))}))
+    end
+
+    test "is absent when the talk page gave nothing back" do
+      assert {:ok, [session]} = Schedule.parse(body(), @columns)
+      assert session.description_lines == []
+    end
+
+    test "wraps a long line, keeping it a line of its own" do
+      long = "This workshop walks through building a complete multimedia pipeline from scratch."
+
+      assert {:ok, [session]} = Schedule.parse(body_with(long), 20)
+      assert session.description_lines == Badge.Text.wrap(long, 20)
+    end
+
+    test "keeps every line break the site renders as pre-wrap, blank lines included" do
+      text = "Intro.\n\n* first point\n* second point\n\nClosing line."
+
+      assert {:ok, [session]} = Schedule.parse(body_with(text), @columns)
+
+      assert session.description_lines == [
+               "Intro.",
+               "",
+               "* first point",
+               "* second point",
+               "",
+               "Closing line."
+             ]
     end
   end
 
