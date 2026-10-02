@@ -8,13 +8,13 @@ defmodule Badge.Page.GamesTest do
   test "Home has one Games entry and no individual games" do
     assert Pages.for_key(:circle, 1) == Games
     for game <- Games.pages(), do: refute(game in Pages.all())
-    assert Games.pages() == [Badge.Page.ConnectFour, Badge.Page.Raycaster, Badge.Page.Tamagotchi]
+    assert Games.pages() == [Badge.Page.ConnectFour, Badge.Page.Raycaster, Badge.Page.Tamagoatchi]
   end
 
   test "renders exactly the shared Home grid over the game list" do
     assert Games.render(Games.init()) == Menu.render(Games.pages(), Menu.init())
     labels = for {:text, _, _, _, _, _, body} <- Games.render(Games.init()), do: body
-    assert labels == ["Connect Four", "Raycaster", "Tamagotchi"]
+    assert labels == ["Connect Four", "Raycaster", "Tamagoatchi"]
   end
 
   test "shape keys select the games; unused slots stay empty" do

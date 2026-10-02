@@ -5,7 +5,7 @@ defmodule Badge.Page.Games do
 
   alias Badge.Menu
 
-  @pages [Badge.Page.ConnectFour, Badge.Page.Raycaster, Badge.Page.Tamagotchi]
+  @pages [Badge.Page.ConnectFour, Badge.Page.Raycaster, Badge.Page.Tamagoatchi]
 
   @doc "Games in shape-key order."
   def pages, do: @pages

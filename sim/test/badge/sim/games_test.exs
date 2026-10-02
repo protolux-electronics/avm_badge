@@ -3,7 +3,7 @@ defmodule Badge.Sim.GamesTest do
 
   alias Badge.Page.Games
   alias Badge.Page.Home
-  alias Badge.Page.Tamagotchi
+  alias Badge.Page.Tamagoatchi
   alias Badge.UI
 
   setup do
@@ -45,12 +45,12 @@ defmodule Badge.Sim.GamesTest do
     assert state().page_state.screen == 0
   end
 
-  test "a pet is discarded on exit, never ticks behind Games, and re-entry starts an egg" do
+  test "a goat is discarded on exit, never ticks behind Games, and re-entry starts a newborn" do
     open_games()
-    assert key({:nav, :cross}).page == Tamagotchi
+    assert key({:nav, :cross}).page == Tamagoatchi
 
     :sys.replace_state(UI, fn state ->
-      %{state | page_state: Tamagotchi.step(state.page_state, 40_000)}
+      %{state | page_state: Tamagoatchi.step(state.page_state, 40_000)}
     end)
 
     assert state().page_state.pet.age == 40
@@ -58,8 +58,8 @@ defmodule Badge.Sim.GamesTest do
     assert key({:nav, :home}).page == Games
     for _ <- 1..20, do: send(UI, :render_tick)
     assert state().page_state == Games.init()
-    assert key({:nav, :cross}).page == Tamagotchi
-    assert state().page_state.pet == Badge.Tamagotchi.new()
+    assert key({:nav, :cross}).page == Tamagoatchi
+    assert state().page_state.pet == Badge.Tamagoatchi.new()
   end
 
   test "even a remote page change discards the pet" do
@@ -68,6 +68,6 @@ defmodule Badge.Sim.GamesTest do
     UI.goto(Home)
     assert state().page == Home
     open_games()
-    assert key({:nav, :cross}).page_state.pet == Badge.Tamagotchi.new()
+    assert key({:nav, :cross}).page_state.pet == Badge.Tamagoatchi.new()
   end
 end

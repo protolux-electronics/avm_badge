@@ -1,6 +1,6 @@
-defmodule Badge.Page.Tamagotchi do
+defmodule Badge.Page.Tamagoatchi do
   @moduledoc """
-  A fresh five-minute pet on every visit, ticking only while this page shows.
+  A fresh five-minute goat on every visit, ticking only while this page shows.
 
   Square feeds, triangle plays, cross trains and circle cleans. F/P/T/C work
   too. Enter restarts a finished game; Esc leaves without saving anything.
@@ -9,12 +9,12 @@ defmodule Badge.Page.Tamagotchi do
 
   use Badge.Page
 
-  alias Badge.Tamagotchi
-  alias Badge.Tamagotchi.Art
+  alias Badge.Tamagoatchi
+  alias Badge.Tamagoatchi.Art
   alias Badge.Theme
 
   @impl true
-  def title, do: "Tamagotchi"
+  def title, do: "Tamagoatchi"
 
   @impl true
   def icon, do: :cross
@@ -23,7 +23,7 @@ defmodule Badge.Page.Tamagotchi do
   def refresh(_state), do: 200
 
   @impl true
-  def init, do: %{pet: Tamagotchi.new(), at: nil, fraction: 0, phase: 0}
+  def init, do: %{pet: Tamagoatchi.new(), at: nil, fraction: 0, phase: 0}
 
   @impl true
   def tick(%{pet: %{status: :dead}} = state), do: state
@@ -38,7 +38,7 @@ defmodule Badge.Page.Tamagotchi do
   @doc "Advances by elapsed milliseconds, without reading a clock."
   def step(state, milliseconds) do
     total = state.fraction + max(milliseconds, 0)
-    pet = Tamagotchi.advance(state.pet, div(total, 1000))
+    pet = Tamagoatchi.advance(state.pet, div(total, 1000))
     fraction = rem(total, 1000)
     %{state | pet: pet, fraction: fraction, phase: div(fraction, 250)}
   end
@@ -58,11 +58,11 @@ defmodule Badge.Page.Tamagotchi do
 
   def handle_key(_event, _state), do: :ignore
 
-  defp care(state, action), do: {:ok, %{state | pet: Tamagotchi.care(state.pet, action)}}
+  defp care(state, action), do: {:ok, %{state | pet: Tamagoatchi.care(state.pet, action)}}
 
   @impl true
   def render(%{pet: pet, phase: phase}) do
-    meters = Tamagotchi.meters(pet)
+    meters = Tamagoatchi.meters(pet)
 
     meter("Happiness", meters.happiness, 30) ++
       meter("Hunger", meters.hunger, 50) ++
@@ -91,7 +91,7 @@ defmodule Badge.Page.Tamagotchi do
   end
 
   defp controls(%{status: status}) when status == :dead or status == :won,
-    do: [centred("Enter: new pet", 204), centred("Esc: Games (no save)", 224)]
+    do: [centred("Enter: new goat", 204), centred("Esc: Games (no save)", 224)]
 
   defp controls(_pet),
     do: [
@@ -123,10 +123,10 @@ defmodule Badge.Page.Tamagotchi do
     end
   end
 
-  defp stage(:egg), do: "Egg"
-  defp stage(:baby), do: "Baby"
-  defp stage(:child), do: "Child"
-  defp stage(:adult), do: "Adult"
+  defp stage(:egg), do: "Newborn"
+  defp stage(:baby), do: "Kid"
+  defp stage(:child), do: "Young goat"
+  defp stage(:adult), do: "Goat"
 
   defp time(age) do
     seconds = rem(age, 60)

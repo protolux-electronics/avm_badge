@@ -1,6 +1,6 @@
-defmodule Badge.Tamagotchi do
+defmodule Badge.Tamagoatchi do
   @moduledoc """
-  A five-minute pet, as plain data. `advance/2` takes elapsed seconds.
+  A five-minute goat, as plain data. `advance/2` takes elapsed seconds.
 
   Feed, play and train refill their meters. Any unattended meter is fatal
   after 60 seconds. Poop appears every 30 seconds and must be cleaned within

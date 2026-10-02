@@ -1,7 +1,7 @@
-defmodule Badge.TamagotchiTest do
+defmodule Badge.TamagoatchiTest do
   use ExUnit.Case, async: true
 
-  alias Badge.Tamagotchi, as: Pet
+  alias Badge.Tamagoatchi, as: Pet
 
   defp attend(pet, actions) do
     Enum.reduce(actions, pet, fn action, state -> Pet.care(state, action) end)
@@ -14,7 +14,7 @@ defmodule Badge.TamagotchiTest do
     end)
   end
 
-  test "a new egg starts with three full meters and a clean home" do
+  test "a newborn goat starts with three full meters and a clean home" do
     pet = Pet.new()
     assert pet.stage == :egg
     assert pet.age == 0
@@ -78,7 +78,7 @@ defmodule Badge.TamagotchiTest do
     assert pet.dirty == 0
   end
 
-  test "care grows the egg through baby, child and adult, winning at five minutes" do
+  test "care grows the goat through the same stages, winning at five minutes" do
     actions = [:feed, :play, :train, :clean]
     assert Pet.advance(Pet.new(), 4).stage == :egg
     baby = Pet.advance(Pet.new(), 5)

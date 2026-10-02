@@ -1,10 +1,62 @@
-defmodule Badge.Page.TamagotchiTest do
+defmodule Badge.Page.TamagoatchiTest do
   use ExUnit.Case, async: true
 
-  alias Badge.Page.Tamagotchi, as: Page
-  alias Badge.Tamagotchi, as: Pet
-  alias Badge.Tamagotchi.Art
+  alias Badge.Page.Tamagoatchi, as: Page
+  alias Badge.Tamagoatchi, as: Pet
+  alias Badge.Tamagoatchi.Art
   alias Badge.Theme
+
+  test "uses the goat name and labels without changing lifecycle stages" do
+    assert Page.title() == "Tamagoatchi"
+
+    for {stage, label} <- [egg: "Newborn", baby: "Kid", child: "Young goat", adult: "Goat"] do
+      items = Page.render(%{Page.init() | pet: %{Pet.new() | stage: stage}})
+      assert {:text, 8, 92, :default16px, Theme.fg(), Theme.bg(), label} in items
+    end
+  end
+
+  test "every growth stage draws four hooves and a goat's ear and muzzle" do
+    for {stage, hooves} <- [
+          egg: [5, 7, 10, 12],
+          baby: [4, 6, 10, 12],
+          child: [3, 6, 10, 13],
+          adult: [3, 6, 10, 13]
+        ] do
+      items = Art.frame(%{Pet.new() | stage: stage}, 0)
+
+      for x <- hooves do
+        assert pixel?(items, 120 + x * 4, 176)
+      end
+
+      ear_y = if stage == :egg, do: 132, else: 128
+      assert pixel?(items, 164, ear_y)
+      assert pixel?(items, 196, 140)
+    end
+  end
+
+  test "grown goats have horns and a beard in every living pose" do
+    base = %{Pet.new() | stage: :adult, age: 180}
+
+    for pose <- [:idle, :feed, :play, :train, :clean, :grow], phase <- 0..3 do
+      pet = %{base | animation: pose}
+      scale = if pose == :grow and rem(phase, 2) == 0, do: 3, else: 4
+      bounce = if pose == :idle or pose == :play, do: rem(phase, 2) * 4, else: 0
+      bounce = if pose == :train, do: rem(phase, 2) * 8, else: bounce
+      x = 160 - 10 * scale
+      y = 180 - 16 * scale - bounce
+      items = Art.frame(pet, phase)
+
+      assert pixel?(items, x + 11 * scale, y)
+      assert pixel?(items, x + 17 * scale, y)
+      assert pixel?(items, x + 17 * scale, y + 10 * scale)
+    end
+  end
+
+  defp pixel?(items, px, py) do
+    Enum.any?(items, fn {:rect, x, y, w, h, _colour} ->
+      px >= x and px < x + w and py >= y and py < y + h
+    end)
+  end
 
   test "the page starts fresh, leaves without resources, and ignores Esc" do
     state = Page.step(Page.init(), 40_000)
@@ -77,7 +129,7 @@ defmodule Badge.Page.TamagotchiTest do
           "Cr/T Train",
           "Ci/C Clean",
           "0:00 / 5:00",
-          "Egg"
+          "Newborn"
         ] do
       assert body in texts
     end
@@ -103,7 +155,7 @@ defmodule Badge.Page.TamagotchiTest do
     stages ++ actions ++ needs ++ deaths
   end
 
-  test "retro figures, every animation and every growth stage stay inside the panel" do
+  test "goat figures, every animation and every growth stage stay inside the panel" do
     for pet <- variants(), phase <- 0..3, skin <- Badge.Skin.all() do
       Badge.Skin.activate(skin)
       items = Page.render(%{Page.init() | pet: pet, phase: phase})
@@ -124,7 +176,7 @@ defmodule Badge.Page.TamagotchiTest do
     end
   end
 
-  test "care, moods, growth, dirt and death have distinct moving retro art" do
+  test "care, moods, growth, dirt and death have distinct moving goat art" do
     base = %{Pet.new() | age: 10, stage: :baby}
 
     poses = [

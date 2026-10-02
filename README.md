@@ -68,15 +68,15 @@ the wifi credentials all survive.
 ### Games
 
 On the second home screen, circle opens **Games**, using the same shape-key
-grid as Home: square opens Connect Four, triangle Raycaster, cross Tamagotchi.
+grid as Home: square opens Connect Four, triangle Raycaster, cross Tamagoatchi.
 Esc returns from a game to Games, then from Games to Home.
 
-Tamagotchi starts a fresh egg every visit; exiting discards the pet. Keep all
+Tamagoatchi starts a newborn goat every visit; exiting discards it. Keep all
 three meters high: square/F feeds (Hunger shows fullness), triangle/P plays,
 cross/T trains, and circle/C cleans the poop. A meter left unattended for
-60 seconds, or poop left for 60 seconds, kills the pet. It grows from egg to
-baby, child and adult; surviving five minutes wins. Enter starts a new pet
-after a win or death. There is no background game or saved progress.
+60 seconds, or poop left for 60 seconds, kills the goat. It grows from newborn
+to kid, young goat and adult goat; surviving five minutes wins. Enter starts a
+new goat after a win or death. There is no background game or saved progress.
 
 ### Flashing a batch
 
