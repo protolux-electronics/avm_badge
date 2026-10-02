@@ -83,16 +83,20 @@ defmodule Badge.PagesTest do
       assert Pages.for_key(:diamond, 1) == Badge.Page.Vote
     end
 
-    test "the console, the agent and the cluster make a third screen" do
+    test "the console, the agent and the cluster make a third screen, and the store follows them" do
       assert Pages.screens() == 3
 
       assert for({_key, module} <- Pages.screen(2), do: module) == [
                Badge.Page.Console,
                Badge.Page.Agent,
-               Badge.Page.Cluster | List.duplicate(nil, 3)
+               Badge.Page.Cluster,
+               Badge.Page.Store | List.duplicate(nil, 2)
              ]
 
       assert Pages.for_key(:square, 2) == Badge.Page.Console
+      assert Pages.for_key(:triangle, 2) == Badge.Page.Agent
+      assert Pages.for_key(:cross, 2) == Badge.Page.Cluster
+      assert Pages.for_key(:circle, 2) == Badge.Page.Store
     end
 
     test "the text page is kept but unreachable, an example rather than a page" do
@@ -146,6 +150,35 @@ defmodule Badge.PagesTest do
 
     test "home itself does not trap escape either" do
       assert Badge.Page.Home.handle_key({:nav, :home}, Badge.Page.Home.init()) == :ignore
+    end
+  end
+
+  describe "installed apps" do
+    setup do
+      Badge.Store.Installed.set([
+        %{
+          id: "demo",
+          name: "Demo",
+          version: "1.0.0",
+          size: 10,
+          storage: "ram",
+          api: 1,
+          sha256: "",
+          sig: ""
+        }
+      ])
+
+      :ok
+    end
+
+    test "follow the firmware pages" do
+      assert List.last(Pages.all()) == Badge.App.Demo.Page
+      assert Pages.screens() == div(length(Pages.all()) + 5, 6)
+    end
+
+    test "are labelled with their manifest name, firmware pages with their title" do
+      assert Pages.label(Badge.App.Demo.Page) == "Demo"
+      assert Pages.label(Badge.Page.Chat) == "Chat"
     end
   end
 end

@@ -16,6 +16,8 @@ badge.
     --wifi-psk    BADGE_WIFI_PSK      prompted for, hidden, when a network is named
     --utc-offset  BADGE_UTC_OFFSET    minutes, -720..840; a fallback for time_zone
     --chat-url    AVM_BADGE_SERVER_URL
+    --store-url   BADGE_STORE_URL     app store base URL; the firmware defaults to the public store
+    --store-key   BADGE_STORE_PUB     path to the store signer's store_key.pub; defaults to the compiled one
 
 `--forget-wifi` drops the saved network, keeping everything else.
 
@@ -53,6 +55,8 @@ SETTINGS = [
     ("wifi_psk", "--wifi-psk", "BADGE_WIFI_PSK"),
     ("chat_url", "--chat-url", "AVM_BADGE_SERVER_URL"),
     ("utc_offset_m", "--utc-offset", "BADGE_UTC_OFFSET"),
+    ("store_url", "--store-url", "BADGE_STORE_URL"),
+    ("store_key", "--store-key", "BADGE_STORE_PUB"),
 ]
 
 WIFI = ("wifi_ssid", "wifi_psk")
@@ -226,6 +230,19 @@ def offset(value):
     return str(minutes).encode()
 
 
+def public_key(path):
+    """The raw 65-byte P-256 point in a `store_key.pub` file."""
+    try:
+        key = open(os.path.expanduser(path), "rb").read()
+    except OSError as error:
+        sys.exit(f"cannot read the store key: {error}")
+
+    if len(key) != 65 or key[0] != 4:
+        sys.exit(f"{path} is not a raw P-256 public key (65 bytes, starting 0x04).")
+
+    return key
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -243,7 +260,12 @@ def main():
     for key, flag, env in SETTINGS:
         value = getattr(args, flag.lstrip("-").replace("-", "_")) or os.environ.get(env)
         if value:
-            supplied[key] = offset(value) if key == "utc_offset_m" else value.encode()
+            if key == "utc_offset_m":
+                supplied[key] = offset(value)
+            elif key == "store_key":
+                supplied[key] = public_key(value)
+            else:
+                supplied[key] = value.encode()
 
     # Typed rather than passed, so a passphrase stays out of the shell history.
     if "wifi_ssid" in supplied and "wifi_psk" not in supplied:

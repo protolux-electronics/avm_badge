@@ -136,6 +136,13 @@ into the image, so a Let's Encrypt certificate needs no work on the badge;
 certificates or a tunnel. `mix phx.server` in `avm_badge_server` already
 listens on `0.0.0.0:4000`.
 
+## App store
+
+Pages can be installed without a cable from signed packs in
+[mwingert/avm_badge_apps](https://github.com/mwingert/avm_badge_apps), through
+the Store page. [docs/app-store.md](docs/app-store.md) covers creating,
+building, publishing, browsing and installing apps.
+
 ## Flash layout
 
 Partition table read back off the board (`esptool read_flash` +

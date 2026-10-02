@@ -138,9 +138,9 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
 - A page is a `Badge.Page` behaviour module listed in `Badge.Pages`, opened by
   a shape key from the home grid. `init/0` is pure; hardware is touched only
   from `tick/1`, `leave/1` and `handle_ir/3`, never from a key handler
-- **A dying page GenServer kills `Badge.UI` silently** — the badge drops back
-  to Home and AtomVM prints nothing. An unmatched clause on a callback, or a
-  `call` to a process that has exited, is enough
+- **A page callback that raises or exits is caught by `Badge.UI.Guard`**: the
+  console shows `UI: page … crashed in …` and the badge returns to Home. A
+  process the page linked to `Badge.UI` still takes it down silently
 - A page ends itself by returning `{:goto, page}` from `tick/1`
 - **Shape keys are not global.** Every key reaches the page on screen first,
   and one it ignores goes nowhere; only `Badge.Page.Home` turns a shape key

@@ -32,6 +32,10 @@ defmodule Badge.UI do
 
   The saved `Badge.Skin` is activated here, because pages render inside this
   process and read their colours from its dictionary.
+
+  Every call into a page goes through `Badge.UI.Guard`: a page that raises or
+  exits is logged and replaced by Home. An installed app whose code is not
+  loaded yet opens the Store page, which downloads it first.
   """
 
   use GenServer
@@ -45,12 +49,15 @@ defmodule Badge.UI do
   alias Badge.Keyboard
   alias Badge.Page.Home
   alias Badge.Page.Splash
+  alias Badge.Page.Store, as: StorePage
   alias Badge.Pages
   alias Badge.Pixels
   alias Badge.Power
   alias Badge.Skin
   alias Badge.Sleep
+  alias Badge.Store.Installed
   alias Badge.Theme
+  alias Badge.UI.Guard
   alias Badge.Update
   alias Badge.Wifi
 
@@ -130,6 +137,7 @@ defmodule Badge.UI do
 
   @impl true
   def init(display) do
+    Installed.load()
     page = first_page()
 
     state = %{
@@ -153,7 +161,8 @@ defmodule Badge.UI do
     Skin.activate(Skin.load())
 
     # Renders once immediately so the home grid is up before the first tick.
-    push(state, frame(state))
+    {state, items} = frame(state)
+    push(state, items)
 
     start_ticker()
 
@@ -183,37 +192,28 @@ defmodule Badge.UI do
   def handle_cast({:key, {:nav, key}}, state) do
     state = %{state | idle: 0}
 
-    case state.page.handle_key({:nav, key}, state.page_state) do
-      {:ok, page_state} ->
-        dirty = state.dirty or page_state != state.page_state
-
-        {:noreply, prompt(opened(%{state | page_state: page_state, dirty: dirty}))}
-
-      :ignore ->
-        {:noreply, prompt(escape(key, state))}
+    case offer(state, :handle_key, [{:nav, key}]) do
+      {:took, state} -> {:noreply, prompt(opened(state))}
+      :ignore -> {:noreply, prompt(escape(key, state))}
     end
   end
 
   def handle_cast({:key, event}, state) do
     state = %{state | idle: 0}
 
-    case state.page.handle_key(event, state.page_state) do
-      {:ok, page_state} ->
-        dirty = state.dirty or page_state != state.page_state
-
-        {:noreply, prompt(opened(%{state | page_state: page_state, dirty: dirty}))}
-
-      :ignore ->
-        {:noreply, state}
+    case offer(state, :handle_key, [event]) do
+      {:took, state} -> {:noreply, prompt(opened(state))}
+      :ignore -> {:noreply, state}
     end
   end
 
   # A page that is finished with the screen hands over by returning `{:goto, page}`.
   @impl true
-  def handle_info(:render_tick, state) do
-    case state.page.tick(state.page_state) do
-      {:goto, page} -> {:noreply, goto(state, page)}
-      page_state -> {:noreply, ticked(state, page_state)}
+  def handle_info(:render_tick, %{page: page, page_state: page_state} = state) do
+    case Guard.call(page, :tick, [page_state]) do
+      {:ok, {:goto, page}} -> {:noreply, goto(state, page)}
+      {:ok, page_state} -> {:noreply, ticked(state, page_state)}
+      :crashed -> {:noreply, crashed(state)}
     end
   end
 
@@ -235,29 +235,39 @@ defmodule Badge.UI do
   end
 
   def handle_info({:ir, from, payload}, state) do
-    case state.page.handle_ir(from, payload, state.page_state) do
-      {:ok, page_state} ->
-        dirty = state.dirty or page_state != state.page_state
-
-        {:noreply, %{state | page_state: page_state, dirty: dirty}}
-
-      :ignore ->
-        {:noreply, state}
+    case offer(state, :handle_ir, [from, payload]) do
+      {:took, state} -> {:noreply, state}
+      :ignore -> {:noreply, state}
     end
   end
 
   # A page's own process can only send to this GenServer, which owns the
   # mailbox; anything it does not recognise is dropped rather than fatal.
   def handle_info(message, state) do
-    case state.page.handle_info(message, state.page_state) do
-      {:ok, page_state} ->
-        dirty = state.dirty or page_state != state.page_state
-
-        {:noreply, %{state | page_state: page_state, dirty: dirty}}
-
-      :ignore ->
-        {:noreply, state}
+    case offer(state, :handle_info, [message]) do
+      {:took, state} -> {:noreply, state}
+      :ignore -> {:noreply, state}
     end
+  end
+
+  # Offers an event to the page on screen; a crash or an unexpected answer puts Home there instead.
+  defp offer(%{page: page, page_state: old, dirty: dirty} = state, fun, args) do
+    case Guard.call(page, fun, args ++ [old]) do
+      {:ok, {:ok, page_state}} ->
+        {:took, %{state | page_state: page_state, dirty: dirty or page_state != old}}
+
+      {:ok, :ignore} ->
+        :ignore
+
+      _crashed ->
+        {:took, crashed(state)}
+    end
+  end
+
+  @doc "The state after the page on screen crashed: it is left, so it can release what it holds, and Home takes its place."
+  def crashed(%{page: page, page_state: page_state} = state) do
+    Guard.call(page, :leave, [page_state])
+    %{state | page: Home, page_state: Home.init(), dirty: true, countdown: 0, pending: nil}
   end
 
   defp ticked(state, page_state) do
@@ -294,8 +304,8 @@ defmodule Badge.UI do
   end
 
   defp paint(state) do
-    drawn = sync_fonts(state)
-    push(drawn, frame(drawn))
+    {drawn, items} = frame(sync_fonts(state))
+    push(drawn, items)
 
     %{
       drawn
@@ -308,13 +318,13 @@ defmodule Badge.UI do
   end
 
   defp hold(state) do
-    drawn = sync_fonts(state)
+    {drawn, items} = frame(sync_fonts(state))
 
     %{
       drawn
       | dirty: false,
         countdown: reload(drawn.page, drawn.page_state),
-        pending: frame(drawn)
+        pending: items
     }
   end
 
@@ -432,7 +442,11 @@ defmodule Badge.UI do
   # Fonts are settled before the frame, never from a page, because a page runs
   # inside this process and a message to itself would arrive after the draw.
   defp sync_fonts(state) do
-    wanted = state.page.fonts(state.page_state)
+    wanted =
+      case Guard.call(state.page, :fonts, [state.page_state]) do
+        {:ok, fonts} -> fonts
+        :crashed -> []
+      end
 
     state
     |> free_fonts(state.fonts -- wanted)
@@ -470,7 +484,12 @@ defmodule Badge.UI do
     _, _ -> nil
   end
 
-  defp reload(page, page_state), do: max(div(page.refresh(page_state), @base_interval), 1) - 1
+  defp reload(page, page_state) do
+    case Guard.call(page, :refresh, [page_state]) do
+      {:ok, ms} -> max(div(ms, @base_interval), 1) - 1
+      :crashed -> 0
+    end
+  end
 
   # Retries next tick while a source is down, rather than calling a process that is not there.
   defp refresh_status(%{status_countdown: 0} = state) do
@@ -516,16 +535,49 @@ defmodule Badge.UI do
   # Re-entering the current page would reset it, and key repeat fires a held key 8 times a second.
   defp goto(%{page: page} = state, page), do: state
 
+  # A crashed app stays shut; an app whose code is not loaded opens the Store page, which fetches it.
   defp goto(state, page) do
-    state.page.leave(state.page_state)
+    case Installed.route(page) do
+      :disabled ->
+        state
+
+      {:fetch, id} ->
+        :erlang.put(:store_fetch, id)
+        open(state, StorePage)
+
+      page ->
+        open(state, page)
+    end
+  end
+
+  defp open(%{page: current, page_state: page_state} = state, page) do
+    Guard.call(current, :leave, [page_state])
     :io.format(~c"UI: page ~p~n", [page])
 
-    %{state | page: page, page_state: page.init(), dirty: true, countdown: 0, pending: nil}
+    case Guard.call(page, :init, []) do
+      {:ok, page_state} ->
+        %{state | page: page, page_state: page_state, dirty: true, countdown: 0, pending: nil}
+
+      :crashed ->
+        crashed(state)
+    end
   end
 
-  defp frame(%{page: page, page_state: page_state, status: status}) do
-    page.render(page_state) ++ Theme.chrome(page.title(), status)
+  # The frame with the state that drew it, which is Home's if the page crashed while drawing.
+  defp frame(state) do
+    with {:ok, items} <- Guard.call(state.page, :render, [state.page_state]),
+         {:ok, title} <- Guard.call(state.page, :title, []) do
+      {state, items ++ Theme.chrome(title, state.status)}
+    else
+      :crashed ->
+        case state.page == Home do
+          true -> {state, nil}
+          false -> frame(crashed(state))
+        end
+    end
   end
+
+  defp push(_state, nil), do: :ok
 
   defp push(%{display: display}, items) do
     :ok = Display.update(display, items)

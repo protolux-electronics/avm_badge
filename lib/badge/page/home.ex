@@ -17,6 +17,7 @@ defmodule Badge.Page.Home do
 
   alias Badge.Icons
   alias Badge.Pages
+  alias Badge.Store.Installed
   alias Badge.Theme
 
   @top Theme.content_top()
@@ -117,15 +118,23 @@ defmodule Badge.Page.Home do
   end
 
   defp cell_items([{key, module} | slots], [{x, y} | origins], acc) do
-    label = module.title()
+    label = Pages.label(module)
 
     {icon_w, _icon_h} = Icons.size(key)
     icon = Icons.item(key, x + div(@cell_w - icon_w, 2), y + @icon_dy)
 
     text =
       {:text, x + div(@cell_w - @char_w * byte_size(label), 2), y + @label_dy, :default16px,
-       Theme.fg(), Theme.bg(), label}
+       label_colour(module), Theme.bg(), label}
 
     cell_items(slots, origins, [text, icon | acc])
+  end
+
+  # An app that crashed this boot stays on the grid, dimmed, and does not open.
+  defp label_colour(module) do
+    case Installed.disabled_page?(module) do
+      true -> Theme.dim()
+      false -> Theme.fg()
+    end
   end
 end

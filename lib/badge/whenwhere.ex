@@ -13,62 +13,24 @@ defmodule Badge.Whenwhere do
   `parse/1` is pure.
   """
 
-  @compile {:no_warn_undefined, :ahttp_client}
+  alias Badge.Store.Fetch
 
   @host "whenwhere.nerves-project.org"
   @port 80
   @path "/"
 
-  # The whole answer is under 200 bytes, so one read almost always has it.
-  @chunk 512
-  @reads 16
+  # The whole answer is under 200 bytes.
+  @max_body 4_096
 
   @type place :: %{zone: binary, latitude: binary, longitude: binary, country: binary}
 
   @doc "Where the badge is, or an error when the service cannot be reached."
   @spec fetch() :: {:ok, place} | {:error, term}
   def fetch do
-    case :ahttp_client.connect(:http, @host, @port, active: false) do
-      {:ok, conn} -> request(conn)
-      {:error, reason} -> {:error, reason}
+    case Fetch.get({:http, @host, @port, @path}, @max_body) do
+      {:ok, body} -> parse(body)
+      error -> error
     end
-  end
-
-  defp request(conn) do
-    case :ahttp_client.request(conn, "GET", @path, [], nil) do
-      {:ok, conn, ref} -> collect(conn, ref, <<>>, @reads)
-      {:error, reason} -> close(conn, {:error, reason})
-    end
-  end
-
-  # Reads until the parser says the response is done, rather than trusting one read.
-  defp collect(conn, _ref, _body, 0), do: close(conn, {:error, :too_many_reads})
-
-  defp collect(conn, ref, body, left) do
-    case :ahttp_client.recv(conn, @chunk) do
-      {:ok, conn, responses} ->
-        {body, done} = harvest(responses, body, false)
-
-        continue(conn, ref, body, done, left)
-
-      {:error, reason} ->
-        close(conn, {:error, reason})
-    end
-  end
-
-  defp continue(conn, _ref, body, true, _left), do: close(conn, parse(body))
-  defp continue(conn, ref, body, false, left), do: collect(conn, ref, body, left - 1)
-
-  defp harvest([], body, done), do: {body, done}
-  defp harvest([{:data, _ref, chunk} | rest], body, done), do: harvest(rest, body <> chunk, done)
-  defp harvest([{:done, _ref} | rest], body, _done), do: harvest(rest, body, true)
-  defp harvest([:done | rest], body, _done), do: harvest(rest, body, true)
-  defp harvest([_other | rest], body, done), do: harvest(rest, body, done)
-
-  defp close(conn, result) do
-    :ahttp_client.close(conn)
-
-    result
   end
 
   @doc "Reads a response body, or `:error` when it is not one we can use."

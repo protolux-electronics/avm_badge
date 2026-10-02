@@ -22,19 +22,17 @@ defmodule Badge.Schedule do
   everything else is pure.
   """
 
+  alias Badge.Store.Fetch
   alias Badge.Text
   alias Badge.Zone
 
-  @compile {:no_warn_undefined, [:ahttp_client, :ssl]}
 
   @host "goatmire.com"
   @port 443
   @path "/schedule.json"
 
-  # A read of zero returns whatever has arrived; asking for a length would
-  # block until exactly that much had, which the last piece never does.
-  @chunk 0
-  @reads 256
+  # The programme is about 31K.
+  @max_body 131_072
 
   @zone "Europe/Stockholm"
   @fallback_offset 120
@@ -70,64 +68,17 @@ defmodule Badge.Schedule do
   @doc "The programme wrapped to `columns`, or an error when the site cannot be reached or read."
   @spec fetch(pos_integer) :: {:ok, [session]} | {:error, term}
   def fetch(columns) do
-    :ssl.start()
-
-    case :ahttp_client.connect(:https, @host, @port, active: false, verify: :verify_peer) do
-      {:ok, conn} -> request(conn, columns)
-      {:error, reason} -> {:error, reason}
-    end
-  catch
-    kind, error -> {:error, {kind, error}}
-  end
-
-  defp request(conn, columns) do
-    case :ahttp_client.request(conn, "GET", @path, [], nil) do
-      {:ok, conn, _ref} -> collect(conn, columns, [], @reads)
-      {:error, reason} -> close(conn, {:error, reason})
+    case Fetch.get({:https, @host, @port, @path}, @max_body) do
+      {:ok, body} -> parsed(body, columns)
+      error -> error
     end
   end
-
-  # Chunks are kept as a list until the end, since appending binaries copies.
-  defp collect(conn, _columns, _chunks, 0), do: close(conn, {:error, :too_many_reads})
-
-  defp collect(conn, columns, chunks, left) do
-    case :ahttp_client.recv(conn, @chunk) do
-      {:ok, conn, responses} ->
-        {chunks, done} = harvest(responses, chunks, false)
-
-        continue(conn, columns, chunks, done, left)
-
-      {:error, reason} ->
-        close(conn, {:error, reason})
-    end
-  end
-
-  defp continue(conn, columns, chunks, true, _left) do
-    close(conn, parsed(:erlang.iolist_to_binary(:lists.reverse(chunks)), columns))
-  end
-
-  defp continue(conn, columns, chunks, false, left), do: collect(conn, columns, chunks, left - 1)
-
-  defp harvest([], chunks, done), do: {chunks, done}
-
-  defp harvest([{:data, _ref, chunk} | rest], chunks, done),
-    do: harvest(rest, [chunk | chunks], done)
-
-  defp harvest([{:done, _ref} | rest], chunks, _done), do: harvest(rest, chunks, true)
-  defp harvest([:done | rest], chunks, _done), do: harvest(rest, chunks, true)
-  defp harvest([_other | rest], chunks, done), do: harvest(rest, chunks, done)
 
   defp parsed(body, columns) do
     case parse(body, columns) do
       {:ok, sessions} -> {:ok, sessions}
       :error -> {:error, :unreadable}
     end
-  end
-
-  defp close(conn, result) do
-    :ahttp_client.close(conn)
-
-    result
   end
 
   @doc """

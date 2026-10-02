@@ -187,4 +187,53 @@ defmodule Badge.Page.HomeTest do
       assert Home.tick(on(1)) == on(1)
     end
   end
+
+  test "an installed app's cell shows its manifest name" do
+    Badge.Store.Installed.set([
+      %{
+        id: "demo",
+        name: "Demo",
+        version: "1.0.0",
+        size: 10,
+        storage: "ram",
+        api: 1,
+        sha256: "",
+        sig: ""
+      }
+    ])
+
+    screen = div(length(Badge.Pages.all()) - 1, 6)
+
+    texts =
+      for {:text, _x, _y, _f, _c, _b, text} <-
+            Badge.Page.Home.render(%{screen: screen, goto: nil}),
+          do: text
+
+    assert "Demo" in texts
+  end
+
+  test "a disabled app's cell is dimmed" do
+    Badge.Store.Installed.set([
+      %{
+        id: "demo",
+        name: "Demo",
+        version: "1.0.0",
+        size: 10,
+        storage: "ram",
+        api: 1,
+        sha256: "",
+        sig: ""
+      }
+    ])
+
+    Badge.Store.Installed.disable("demo")
+    screen = div(length(Badge.Pages.all()) - 1, 6)
+
+    [colour] =
+      for {:text, _x, _y, _f, colour, _b, "Demo"} <-
+            Badge.Page.Home.render(%{screen: screen, goto: nil}),
+          do: colour
+
+    assert colour == Badge.Theme.dim()
+  end
 end

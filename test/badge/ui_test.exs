@@ -59,4 +59,20 @@ defmodule Badge.UITest do
       refute Badge.UI.key_due?(1_000, 1_034)
     end
   end
+
+  defmodule Holder do
+    def leave(owner) do
+      send(owner, :left)
+      :ok
+    end
+  end
+
+  test "a page that crashed is left before Home takes its place" do
+    state = Badge.UI.crashed(%{page: Holder, page_state: self(), dirty: false, countdown: 3, pending: [:frame]})
+
+    assert_received :left
+    assert state.page == Badge.Page.Home
+    assert state.dirty
+    assert state.pending == nil
+  end
 end
