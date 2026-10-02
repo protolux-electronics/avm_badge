@@ -232,8 +232,12 @@ Setup, flashing and the ESP-IDF workflow are in `README.md`.
   `Europe/Stockholm`, not the badge's own zone. A clock before 2024 is unset
 - `Badge.Clock.Keeper` saves the wall time to NVS key `clock` once a minute.
   Without SNTP the schedule runs from the saved time plus uptime, behind by
-  however long the badge was off. AtomVM cannot set the system clock, so the
-  title bar still shows uptime
+  however long the badge was off. The title bar shows uptime until something
+  sets the system clock
+- `:atomvm.posix_clock_settime/2` sets the system clock. Settings → Time
+  shows UTC, local time, zone, what set the clock (`Badge.Wifi.clock_set/1`)
+  and when, and takes a time by hand. SNTP asks the `sntp_host` NVS key's
+  server, default `pool.ntp.org`, read when the radio starts
 - `Badge.Page.AshConf` (second home screen) is `Badge.Page.Schedule` over
   `Badge.Schedule.AshConf`, compiled from `assets/ashconf-2026-schedule.json`.
   A source answers `status/0`, `entries/0` and `retry/0`

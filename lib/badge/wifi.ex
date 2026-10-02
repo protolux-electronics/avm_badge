@@ -7,6 +7,11 @@ defmodule Badge.Wifi do
   from `Badge.Whenwhere` once there is an IP, and the zone it reports becomes
   a UTC offset through `Badge.Zone`.
 
+  SNTP asks `pool.ntp.org` unless the `sntp_host` NVS key names another
+  server; a change applies when the radio next starts. Whatever set the
+  clock last, SNTP or something reporting through `clock_set/1`, is kept
+  with the time it did so, for the Settings Time tab.
+
   Credentials come from NVS, provisioned by `tools/provision.py`. With
   none present the radio never starts and the rest of the badge is
   unaffected.
@@ -40,17 +45,37 @@ defmodule Badge.Wifi do
     GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
   end
 
-  @doc "Radio state, whether the clock has synced, and the UTC offset if it is known."
+  @doc """
+  Radio state, whether the clock has synced, and the UTC offset if it is
+  known; also what set the clock last and when, in UTC seconds, and the SNTP
+  server.
+  """
   @spec status() :: %{
           radio: atom,
           ip: binary | nil,
           synced: boolean,
           offset: integer | nil,
-          zone: binary | nil
+          zone: binary | nil,
+          source: binary | nil,
+          updated: integer | nil,
+          sntp_host: binary
         }
   def status do
     GenServer.call(__MODULE__, :status)
   end
+
+  @doc "Records that `source` has just set the system clock, as SNTP does when it syncs."
+  @spec clock_set(binary) :: :ok
+  def clock_set(source), do: GenServer.cast(__MODULE__, {:clock_set, source})
+
+  @doc "Stores the SNTP server, or forgets it when empty; it applies when the radio next starts."
+  @spec set_sntp_host(binary) :: :ok
+  def set_sntp_host(host), do: GenServer.cast(__MODULE__, {:sntp_host, host})
+
+  @doc "The SNTP server for an `sntp_host` NVS value."
+  @spec sntp_host(binary | nil) :: binary
+  def sntp_host(stored) when is_binary(stored) and stored != "", do: stored
+  def sntp_host(_absent), do: @sntp_host
 
   @doc "Starts a scan for nearby networks; results arrive asynchronously."
   @spec scan() :: :ok
@@ -133,6 +158,9 @@ defmodule Badge.Wifi do
       synced: false,
       zone: Nvs.get(:time_zone),
       offset: nil,
+      source: nil,
+      updated: nil,
+      sntp_host: sntp_host(Nvs.get(:sntp_host)),
       backoff: @first_backoff,
       ssid: Nvs.get(:wifi_ssid),
       attempts: 0,
@@ -173,6 +201,9 @@ defmodule Badge.Wifi do
       synced: state.synced,
       offset: state.offset,
       zone: state.zone,
+      source: state.source,
+      updated: state.updated,
+      sntp_host: state.sntp_host,
       scanning: state.scanning,
       scan_id: state.scan_id
     }
@@ -194,6 +225,21 @@ defmodule Badge.Wifi do
   end
 
   @impl true
+  def handle_cast({:clock_set, source}, state) do
+    :io.format(~c"Wifi: clock set by ~s~n", [source])
+
+    {:noreply, offset(set_by(state, source))}
+  end
+
+  def handle_cast({:sntp_host, host}, state) do
+    case host do
+      "" -> Nvs.delete(:sntp_host)
+      host -> Nvs.put(:sntp_host, host)
+    end
+
+    {:noreply, %{state | sntp_host: sntp_host(host)}}
+  end
+
   def handle_cast(:scan, %{scanning: true} = state), do: {:noreply, state}
 
   def handle_cast(:scan, state) do
@@ -308,7 +354,7 @@ defmodule Badge.Wifi do
   # The offset is only meaningful once the clock is right, since summer time
   # depends on the date.
   def handle_info({:synchronized, _timeval}, state) do
-    next = offset(%{state | synced: true})
+    next = offset(set_by(state, "SNTP"))
 
     :io.format(~c"Wifi: clock synced, offset ~p~n", [next.offset])
 
@@ -334,6 +380,10 @@ defmodule Badge.Wifi do
     Nvs.put(:time_zone, place.zone)
     Nvs.put(:latitude, place.latitude)
     Nvs.put(:longitude, place.longitude)
+  end
+
+  defp set_by(state, source) do
+    %{state | synced: true, source: source, updated: :erlang.system_time(:second)}
   end
 
   # A zone we know beats a provisioned offset; with neither, the face reads UTC.
@@ -393,7 +443,7 @@ defmodule Badge.Wifi do
     :network.start(
       sta: sta,
       sntp: [
-        host: @sntp_host,
+        host: state.sntp_host,
         synchronized: fn timeval -> send(wifi, {:synchronized, timeval}) end
       ]
     )

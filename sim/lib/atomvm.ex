@@ -8,4 +8,12 @@ defmodule :atomvm do
       {:error, _reason} -> :undefined
     end
   end
+
+  # The host clock is not the simulator's to set.
+  def posix_clock_settime(:realtime, {seconds, _nanos}) when seconds < 0, do: {:error, :einval}
+
+  def posix_clock_settime(:realtime, {seconds, nanos}) do
+    IO.puts("Sim: clock would be set to #{seconds}.#{div(nanos, 1000)}")
+    :ok
+  end
 end
