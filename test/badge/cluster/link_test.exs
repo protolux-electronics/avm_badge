@@ -88,21 +88,30 @@ defmodule Badge.Cluster.LinkTest do
     end
   end
 
-  describe "cookie/1" do
-    test "falls back to the compiled default when nothing is provisioned" do
-      assert Link.cookie(nil) == "goatmire"
+  describe "cookie/2" do
+    test "prefers a provisioned cookie" do
+      assert Link.cookie("a-different-secret", "goat-000000000000") == "a-different-secret"
     end
 
-    test "prefers a provisioned cookie" do
-      assert Link.cookie("a-different-secret") == "a-different-secret"
+    test "takes the fresh one when nothing is provisioned" do
+      assert Link.cookie(nil, "goat-5a1d0c3e7b29") == "goat-5a1d0c3e7b29"
     end
 
     test "treats an empty key as unprovisioned, rather than clustering on no secret" do
-      assert Link.cookie("") == "goatmire"
+      assert Link.cookie("", "goat-5a1d0c3e7b29") == "goat-5a1d0c3e7b29"
+    end
+  end
+
+  describe "random_cookie/1" do
+    test "is goat- and the bytes as twelve lowercase hex digits" do
+      assert Link.random_cookie(<<0x5A, 0x1D, 0x0C, 0x3E, 0x7B, 0x29>>) == "goat-5a1d0c3e7b29"
+      assert Link.random_cookie(<<0, 0, 0, 0, 0, 255>>) == "goat-0000000000ff"
     end
 
-    test "names the default, so the page can show it before the link is up" do
-      assert Link.default_cookie() == "goatmire"
+    test "differs from badge to badge" do
+      cookies = for _ <- 1..20, do: Link.random_cookie(:crypto.strong_rand_bytes(6))
+
+      assert length(Enum.uniq(cookies)) == 20
     end
   end
 end

@@ -14,18 +14,23 @@ defmodule Badge.Cluster.Link do
   Distribution cannot start before wifi has an address, so `open/0` only
   records the intent and a ticker does the work once `Badge.Wifi.status/0`
   reports one.
+
+  Each badge has its own cookie, `goat-` and twelve random hex digits, made
+  on first start and kept in the `dist_cookie` NVS key. A host reads it off
+  the Cluster page.
   """
 
   use GenServer
+
+  import Bitwise
 
   alias Badge.Nvs
   alias Badge.Wifi
 
   @compile {:no_warn_undefined, [:epmd, :net_kernel]}
 
-  # Matches the cookie tools/cluster.exs uses, so an unprovisioned badge still
-  # clusters. The Cluster page edits it into :dist_cookie.
-  @cookie "goatmire"
+  @prefix "goat-"
+  @random_bytes 6
 
   @tick 1_000
 
@@ -45,8 +50,8 @@ defmodule Badge.Cluster.Link do
   @doc """
   Stores the cookie, and applies it at once if the node is already up.
 
-  An empty value forgets the key, so the badge falls back to the compiled
-  default rather than clustering on no secret at all.
+  An empty value is replaced by a fresh random cookie, so the badge never
+  clusters on no secret, or on one every badge shares.
   """
   @spec set_cookie(binary) :: :ok
   def set_cookie(value), do: GenServer.cast(__MODULE__, {:cookie, value})
@@ -85,7 +90,7 @@ defmodule Badge.Cluster.Link do
       ip: nil,
       reason: nil,
       peers: [],
-      cookie: cookie(Nvs.get(:dist_cookie))
+      cookie: provisioned(Nvs.get(:dist_cookie))
     }
 
     start_ticker()
@@ -119,9 +124,8 @@ defmodule Badge.Cluster.Link do
   def handle_cast(:close, state), do: {:noreply, %{stop_node(state) | want: false}}
 
   def handle_cast({:cookie, value}, state) do
-    store(value)
-
-    cookie = cookie(value)
+    cookie = cookie(value, fresh())
+    Nvs.put(:dist_cookie, cookie)
 
     # A running node takes it now; connections already made keep the old one.
     case state.state do
@@ -264,17 +268,36 @@ defmodule Badge.Cluster.Link do
   defp describe(term) when is_atom(term), do: :erlang.atom_to_binary(term, :latin1)
   defp describe(term), do: :erlang.iolist_to_binary(:io_lib.format(~c"~p", [term]))
 
-  @doc "The cookie to use, given what NVS holds under `:dist_cookie`."
-  @spec cookie(binary | nil) :: binary
-  def cookie(stored) when is_binary(stored) and stored != "", do: stored
-  def cookie(_absent), do: @cookie
+  @doc "The cookie to use: `stored` unless it is absent or empty, else `fresh`."
+  @spec cookie(binary | nil, binary) :: binary
+  def cookie(stored, _fresh) when is_binary(stored) and stored != "", do: stored
+  def cookie(_absent, fresh), do: fresh
 
-  @doc "The cookie a badge falls back to when nothing is provisioned."
-  @spec default_cookie() :: binary
-  def default_cookie, do: @cookie
+  @doc "A cookie from six random bytes: `goat-` and their twelve hex digits."
+  @spec random_cookie(<<_::48>>) :: binary
+  def random_cookie(<<_::48>> = bytes) do
+    digits = :lists.flatmap(&[hex(&1 >>> 4), hex(&1 &&& 15)], :erlang.binary_to_list(bytes))
 
-  defp store(value) when is_binary(value) and value != "", do: Nvs.put(:dist_cookie, value)
-  defp store(_empty), do: Nvs.delete(:dist_cookie)
+    @prefix <> :erlang.list_to_binary(digits)
+  end
+
+  defp hex(n) when n < 10, do: ?0 + n
+  defp hex(n), do: ?a + n - 10
+
+  defp fresh, do: random_cookie(:crypto.strong_rand_bytes(@random_bytes))
+
+  # A badge that has never had a cookie makes one, and keeps it.
+  defp provisioned(stored) do
+    case cookie(stored, nil) do
+      nil ->
+        made = fresh()
+        Nvs.put(:dist_cookie, made)
+        made
+
+      cookie ->
+        cookie
+    end
+  end
 
   defp start_ticker do
     link = self()
