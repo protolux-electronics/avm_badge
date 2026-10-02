@@ -4,10 +4,10 @@ defmodule Badge.UI do
 
   Pages are modules, not processes: this process holds the current page's
   state and calls `render/1`, `tick/1` and `handle_key/2` on it. Every key
-  reaches the page on screen first. A shape key it ignores goes nowhere: only
-  the home grid opens pages, by returning `{:goto, page}` from its `tick/1`.
+  reaches the page on screen first. A shape key it ignores goes nowhere:
+  Home and Games open pages by returning `{:goto, page}` from `tick/1`.
   Escape is the one key this process answers itself, and only when the page
-  ignores it too, so a page can spend it backing out a level of its own.
+  ignores it too. Games return to their menu; other pages return to Home.
 
   A key that changes the page is drawn at once, so the panel answers the
   hand rather than the next tick. Everything else only marks the page dirty,
@@ -43,6 +43,7 @@ defmodule Badge.UI do
   alias Badge.Display.AtomGL
   alias Badge.Icons
   alias Badge.Keyboard
+  alias Badge.Page.Games
   alias Badge.Page.Home
   alias Badge.Page.Splash
   alias Badge.Pages
@@ -351,10 +352,9 @@ defmodule Badge.UI do
   @spec key_due?(integer, integer) :: boolean
   def key_due?(drawn_at, now), do: now - drawn_at >= @key_gap
 
-  # The home grid opens a page from `tick/1`, a tick after the key. Its tick is
-  # pure, so it runs here to open the page with the key rather than after it.
-  defp opened(%{page: Home} = state) do
-    case Home.tick(state.page_state) do
+  # Grid navigation is pure, so a choice opens with the key rather than the next tick.
+  defp opened(%{page: page} = state) when page == Home or page == Games do
+    case page.tick(state.page_state) do
       {:goto, page} -> goto(state, page)
       _page_state -> state
     end
@@ -510,7 +510,11 @@ defmodule Badge.UI do
     %{battery: :battery_0, wifi: Wifi.icon(:disabled), clock: Clock.format(0)}
   end
 
-  defp escape(:home, state), do: goto(state, Home)
+  defp escape(:home, state) do
+    parent = if :lists.member(state.page, Games.pages()), do: Games, else: Home
+    goto(state, parent)
+  end
+
   defp escape(_key, state), do: state
 
   # Re-entering the current page would reset it, and key repeat fires a held key 8 times a second.

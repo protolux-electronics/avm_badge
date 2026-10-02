@@ -7,10 +7,8 @@ defmodule Badge.Pages do
   screen the grid is showing, and nowhere else. A slot may be `nil`: its
   button does nothing and its cell stays empty.
 
-  A page module that is not in this list cannot be reached at all.
+  Games are reached through `Badge.Page.Games`, not directly from Home.
   """
-
-  @keys [:square, :triangle, :cross, :circle, :clover, :diamond]
 
   # The first screen is what an attendee reaches for; the rest follow.
   # `Badge.Page.Text` is deliberately absent: it is an example, not a page.
@@ -24,42 +22,25 @@ defmodule Badge.Pages do
     Badge.Page.Led,
     Badge.Page.Sensors,
     Badge.Page.AshConf,
-    Badge.Page.ConnectFour,
-    Badge.Page.Raycaster,
+    Badge.Page.Games,
+    Badge.Page.Cluster,
     Badge.Page.Vote,
     Badge.Page.Console,
-    Badge.Page.Agent,
-    Badge.Page.Cluster
+    Badge.Page.Agent
   ]
-
-  @per_screen length(@keys)
-  @screens div(length(@pages) + @per_screen - 1, @per_screen)
 
   @doc "Every page, in grid order."
   def all, do: @pages
 
   @doc "The shape keys, in button order."
-  def keys, do: @keys
+  def keys, do: Badge.Menu.keys()
 
   @doc "How many screens of six the grid needs."
-  def screens, do: @screens
+  def screens, do: Badge.Menu.screens(@pages)
 
   @doc "One screen as `{key, module}` pairs, one per key, `nil` where the slot is empty."
-  def screen(n), do: pair(@keys, drop(@pages, n * @per_screen), [])
+  def screen(n), do: Badge.Menu.screen(@pages, n)
 
   @doc "The page a shape key opens while the home grid shows screen `n`."
-  def for_key(key, n) do
-    case :lists.keyfind(key, 1, screen(n)) do
-      {_key, module} -> module
-      false -> nil
-    end
-  end
-
-  defp pair([], _pages, acc), do: :lists.reverse(acc)
-  defp pair([key | keys], [], acc), do: pair(keys, [], [{key, nil} | acc])
-  defp pair([key | keys], [page | pages], acc), do: pair(keys, pages, [{key, page} | acc])
-
-  defp drop(list, 0), do: list
-  defp drop([], _n), do: []
-  defp drop([_head | rest], n), do: drop(rest, n - 1)
+  def for_key(key, n), do: Badge.Menu.for_key(@pages, key, n)
 end

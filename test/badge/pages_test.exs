@@ -75,21 +75,21 @@ defmodule Badge.PagesTest do
                Badge.Page.Led,
                Badge.Page.Sensors,
                Badge.Page.AshConf,
-               Badge.Page.ConnectFour,
-               Badge.Page.Raycaster,
+               Badge.Page.Games,
+               Badge.Page.Cluster,
                Badge.Page.Vote
              ]
 
+      assert Pages.for_key(:clover, 1) == Badge.Page.Cluster
       assert Pages.for_key(:diamond, 1) == Badge.Page.Vote
     end
 
-    test "the console, the agent and the cluster make a third screen" do
+    test "the console and the agent make a third screen" do
       assert Pages.screens() == 3
 
       assert for({_key, module} <- Pages.screen(2), do: module) == [
                Badge.Page.Console,
-               Badge.Page.Agent,
-               Badge.Page.Cluster | List.duplicate(nil, 3)
+               Badge.Page.Agent | List.duplicate(nil, 4)
              ]
 
       assert Pages.for_key(:square, 2) == Badge.Page.Console
@@ -135,11 +135,8 @@ defmodule Badge.PagesTest do
       end
     end
 
-    # Connect Four is the one deliberate exception: a shape key doubles as a
-    # column drop mid-game, and mid-pairing it would otherwise bounce the
-    # player to whatever app that key opens instead of just doing nothing.
-    test "no page traps a shape key, since the router only sees what a page ignores" do
-      for module <- assigned() -- [Badge.Page.ConnectFour], key <- @keys do
+    test "non-menu pages ignore shape keys at entry" do
+      for module <- assigned() -- [Badge.Page.Games], key <- @keys do
         assert module.handle_key({:nav, key}, module.init()) == :ignore
       end
     end
