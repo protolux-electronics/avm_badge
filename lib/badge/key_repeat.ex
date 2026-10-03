@@ -54,16 +54,7 @@ defmodule Badge.KeyRepeat do
     {:idle, state}
   end
 
-  def due(%{label: label, event: event, due_us: due_us} = state, now_us, interval_ms) do
-    # TEMPORARY: debug logging of repeat fire lateness; remove once it has served.
-    :io.format(~c"KeyRepeat: fire ~s at ~pus (due ~pus, late ~pus, next in ~pms)~n", [
-      label,
-      now_us,
-      due_us,
-      now_us - due_us,
-      interval_ms
-    ])
-
+  def due(%{event: event} = state, now_us, interval_ms) do
     {:fire, event, %{state | due_us: now_us + interval_ms * 1000}}
   end
 end
