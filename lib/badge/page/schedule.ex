@@ -11,6 +11,10 @@ defmodule Badge.Page.Schedule do
   nothing is on, and follows the clock. Once the arrows have moved it, Esc
   brings it back to now; on now, Esc is left for the router and goes Home.
 
+  Enter opens a session's abstract full-screen, when it has one; Up and
+  Down then scroll that text instead of the timeline, and Esc closes it
+  back to the card it was opened from.
+
   The programme comes from a source module answering `status/0`,
   `entries/0` and `retry/0`: `Badge.Schedule.Link` here, which fetches it by
   itself and answers from what it holds; every line here is drawn as held.
@@ -49,6 +53,10 @@ defmodule Badge.Page.Schedule do
   @lower_rule_y @card_y + @card_rows * @pitch + 2
   @below_y @lower_rule_y + 6
 
+  @detail_rule_y @top + (1 + @title_lines) * @pitch + 4
+  @detail_body_y @detail_rule_y + 10
+  @detail_rows div(Theme.height() - @detail_body_y, @pitch)
+
   @waiting "Waiting for wifi"
   @fetching "Fetching the programme"
   @failed "Programme unavailable"
@@ -81,7 +89,9 @@ defmodule Badge.Page.Schedule do
       now: nil,
       minute: nil,
       focus: nil,
-      next_start: nil
+      next_start: nil,
+      mode: :timeline,
+      scroll: 0
     }
   end
 
@@ -145,6 +155,13 @@ defmodule Badge.Page.Schedule do
   def current(%{focus: focus}), do: focus || 0
 
   @impl true
+  def handle_key({:nav, :home}, %{mode: :detail} = state) do
+    {:ok, %{state | mode: :timeline, scroll: 0}}
+  end
+
+  def handle_key({:move, :up}, %{mode: :detail} = state), do: scroll(state, -1)
+  def handle_key({:move, :down}, %{mode: :detail} = state), do: scroll(state, 1)
+
   def handle_key({:move, :up}, state), do: move(state, -1)
   def handle_key({:move, :down}, state), do: move(state, 1)
 
@@ -158,7 +175,24 @@ defmodule Badge.Page.Schedule do
     {:ok, state}
   end
 
+  # Nothing to open for a session without an abstract; the key is left alone.
+  def handle_key({:edit, :newline}, %{mode: :timeline, entries: entries} = state)
+      when entries != {} do
+    case current_session(state).description_lines do
+      [] -> :ignore
+      _lines -> {:ok, %{state | mode: :detail, scroll: 0}}
+    end
+  end
+
   def handle_key(_event, _state), do: :ignore
+
+  defp scroll(state, step) do
+    max_offset = max(length(current_session(state).description_lines) - @detail_rows, 0)
+
+    {:ok, %{state | scroll: min(max(state.scroll + step, 0), max_offset)}}
+  end
+
+  defp current_session(state), do: Schedule.unpack(Schedule.entry(state.entries, current(state)))
 
   # Off either end there is nothing to open; let the router keep the key.
   defp move(%{entries: {}}, _step), do: :ignore
@@ -183,6 +217,8 @@ defmodule Badge.Page.Schedule do
   @impl true
   def render(%{entries: {}} = state), do: rules() ++ notice(state)
 
+  def render(%{mode: :detail} = state), do: render_detail(state)
+
   def render(%{entries: entries} = state) do
     index = current(state)
     above = unpacked(Schedule.slice(entries, index - @above, index - 1))
@@ -196,6 +232,16 @@ defmodule Badge.Page.Schedule do
   end
 
   defp unpacked(entries), do: :lists.map(&Schedule.unpack/1, entries)
+
+  defp render_detail(state) do
+    session = current_session(state)
+    body = Enum.slice(session.description_lines, state.scroll, @detail_rows)
+
+    [line(@top, Theme.accent(), clip(session.when))] ++
+      items(titles(session), @top + @pitch, &fg/1) ++
+      Theme.rule(@margin, @detail_rule_y, Theme.width() - 2 * @margin) ++
+      items(body, @detail_body_y, &fg/1)
+  end
 
   defp rules do
     Theme.rule(@margin, @upper_rule_y, Theme.width() - 2 * @margin) ++
@@ -235,11 +281,9 @@ defmodule Badge.Page.Schedule do
   defp day_prefix(session, _open), do: Schedule.weekday_face(session.weekday) <> " "
 
   defp card(session, state) do
-    titles = :lists.sublist(session.lines, @title_lines)
-
     [line(@card_y, Theme.accent(), session.when)] ++
       tag(session, state) ++
-      items(titles, @card_y + @pitch, fn title -> {Theme.fg(), title} end) ++
+      items(titles(session), @card_y + @pitch, &fg/1) ++
       unless_blank(@card_y + (1 + @title_lines) * @pitch, session.where) ++
       unless_blank(@card_y + (2 + @title_lines) * @pitch, session.who)
   end
@@ -271,6 +315,10 @@ defmodule Badge.Page.Schedule do
   end
 
   defp tag_text(:done, _session, _state), do: {Theme.dim(), "ended"}
+
+  defp titles(session), do: Enum.slice(session.lines, 0, @title_lines)
+
+  defp fg(text), do: {Theme.fg(), text}
 
   defp items(list, y, fun), do: items(list, y, fun, [])
 

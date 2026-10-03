@@ -194,9 +194,51 @@ defmodule Badge.Page.ScheduleTest do
       assert row(Page.render(held), @card_y + @pitch) == ["Video Game Archaeology with Elixir"]
     end
 
-    test "Enter is left for the router unless a fetch failed", %{state: state} do
+    test "Enter is ignored for a session without an abstract", %{state: state} do
       assert Page.handle_key({:edit, :newline}, state) == :ignore
       assert Page.handle_key({:char, ?a}, state) == :ignore
+    end
+  end
+
+  describe "a session's abstract" do
+    defp with_abstract(lines), do: shown(nil, [Map.put(hd(programme()), :description_lines, lines)])
+
+    test "Enter opens it and Esc closes back to the card" do
+      state = with_abstract(["First line", "Second line"])
+      card = texts(Page.render(state))
+
+      {:ok, opened} = Page.handle_key({:edit, :newline}, state)
+      assert opened.mode == :detail
+      assert texts(Page.render(opened)) -- card == ["First line", "Second line"]
+
+      {:ok, closed} = Page.handle_key({:nav, :home}, opened)
+      assert closed.mode == :timeline
+      assert Page.render(closed) == Page.render(state)
+    end
+
+    test "Down and Up scroll the abstract instead of moving the cursor" do
+      lines = for n <- 1..10, do: "Line #{n}"
+      state = with_abstract(lines)
+      body = fn page_state -> Enum.drop(texts(Page.render(page_state)), 2) end
+
+      {:ok, opened} = Page.handle_key({:edit, :newline}, state)
+      assert body.(opened) == :lists.sublist(lines, 7)
+
+      {:ok, down} = Page.handle_key({:move, :down}, opened)
+      assert body.(down) == :lists.sublist(lines, 2, 7)
+      assert Page.current(down) == Page.current(opened)
+
+      bottomed_out =
+        Enum.reduce(1..2, down, fn _step, state ->
+          {:ok, next} = Page.handle_key({:move, :down}, state)
+          next
+        end)
+
+      assert body.(bottomed_out) == :lists.sublist(lines, 4, 7)
+      assert Page.handle_key({:move, :down}, bottomed_out) == {:ok, bottomed_out}
+
+      {:ok, back_up} = Page.handle_key({:move, :up}, opened)
+      assert back_up == opened
     end
   end
 
