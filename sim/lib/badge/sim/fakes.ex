@@ -63,7 +63,7 @@ defmodule Badge.Sim.Fakes do
           %{
             state: Map.get(d, :state, :off),
             node: Map.get(d, :node),
-            cookie: Map.get(d, :cookie, "goatmire"),
+            cookie: Map.get(d, :cookie, "goat-5a1d0c3e7b29"),
             ip: "192.168.1.42",
             peers: Map.get(d, :peers, []),
             reason: nil
@@ -72,7 +72,7 @@ defmodule Badge.Sim.Fakes do
         fn
           :open, d -> Map.merge(d, %{state: :up, node: "badge@192.168.1.42", peers: ["host@sim"]})
           :close, d -> Map.merge(d, %{state: :off, node: nil, peers: []})
-          {:cookie, ""}, d -> Map.put(d, :cookie, "goatmire")
+          {:cookie, ""}, d -> Map.put(d, :cookie, "goat-0f9e8d7c6b5a")
           {:cookie, value}, d -> Map.put(d, :cookie, value)
           _, d -> d
         end

@@ -3,7 +3,7 @@ defmodule Badge.Page.Cluster do
   Joins the badge to an Erlang cluster over wifi.
 
   S brings the node up and S again takes it down. Enter edits the cookie,
-  which a host has to match; clearing it puts the compiled default back.
+  which a host has to match; clearing it makes a fresh random one.
   Everything else drawn comes from `Badge.Cluster.Link.status/0`.
 
   The node stays up when the page is left, since a badge that only clustered
@@ -116,7 +116,7 @@ defmodule Badge.Page.Cluster do
   end
 
   defp unknown do
-    %{state: :off, node: nil, cookie: Link.default_cookie(), ip: nil, peers: [], reason: nil}
+    %{state: :off, node: nil, cookie: "", ip: nil, peers: [], reason: nil}
   end
 
   defp state_row(status) do
