@@ -8,7 +8,8 @@ defmodule Badge.Page.Goatbot do
   and the page asks by itself when none is stored.
 
   Once the robot answers, A arms it, S stands it up and D disarms it, as in
-  the robot's dashboard. Enter starts driving and takes the pose the badge is
+  the robot's dashboard. P twice powers it off, which the robot only allows
+  while disarmed; any other key after the first P cancels. Enter starts driving and takes the pose the badge is
   held in as level; Enter again, D, or leaving the page, stops it. Tipping
   the top edge away drives forwards, tipping it back reverses, and tipping
   sideways turns, each past a small deadband. The pad shows the tilt from
@@ -53,7 +54,7 @@ defmodule Badge.Page.Goatbot do
   def icon, do: :cross
 
   @impl true
-  def init, do: %{pilot: nil, report: nil, address: nil, field: nil, save: nil}
+  def init, do: %{pilot: nil, report: nil, address: nil, field: nil, save: nil, confirm: false}
 
   @impl true
   def refresh(_state), do: 200
@@ -83,6 +84,19 @@ defmodule Badge.Page.Goatbot do
   # Typing owns every key, so an A in an address is not a command.
   @impl true
   def handle_key(event, %{field: field} = state) when field != nil, do: typing(event, state)
+
+  # The second P powers off; anything else is swallowed and cancels.
+  def handle_key({:char, char}, %{confirm: true} = state) when char == ?p or char == ?P do
+    Pilot.command(state.pilot, :poweroff)
+    {:ok, %{state | confirm: false}}
+  end
+
+  def handle_key(_event, %{confirm: true} = state), do: {:ok, %{state | confirm: false}}
+
+  def handle_key({:char, char}, %{report: report} = state)
+      when (char == ?p or char == ?P) and report != nil do
+    {:ok, %{state | confirm: true}}
+  end
 
   def handle_key({:edit, :newline}, state), do: toggle(state)
   def handle_key({:char, ?\s}, state), do: toggle(state)
@@ -268,12 +282,17 @@ defmodule Badge.Page.Goatbot do
     Nav.hint([{"Enter", "save"}, {"Esc", "cancel"}], @help_y, Theme.accent())
   end
 
+  defp help(%{confirm: true}) do
+    Nav.hint([{"P", "again: power off robot"}], @help_y, Theme.alert()) ++
+      Nav.hint([{"any key", "cancels"}], @help2_y, Theme.dim())
+  end
+
   defp help(%{report: %{engaged: true}}) do
     Nav.hint([{"Enter", "stop"}, {"D", "disarm"}], @help_y, Theme.accent())
   end
 
   defp help(%{report: %{link: :connected}}) do
-    Nav.hint([{"A", "arm"}, {"S", "stand"}, {"D", "disarm"}], @help_y, Theme.dim()) ++
+    Nav.hint([{"A", "arm"}, {"S", "stand"}, {"D", "disarm"}, {"P", "off"}], @help_y, Theme.dim()) ++
       Nav.hint([{"Enter", "drive"}, {"I", "address"}], @help2_y, Theme.dim())
   end
 

@@ -101,6 +101,25 @@ defmodule Badge.Page.GoatbotTest do
       assert :ignore = Goatbot.handle_key({:char, ?a}, Goatbot.init())
     end
 
+    test "P twice powers off, and only twice" do
+      assert {:ok, state} = Goatbot.handle_key({:char, ?p}, page(%{}))
+      refute_received {:command, :poweroff}
+
+      assert {:ok, state} = Goatbot.handle_key({:char, ?P}, state)
+      assert_received {:command, :poweroff}
+      refute state.confirm
+    end
+
+    test "any other key after the first P cancels, and does nothing else" do
+      {:ok, state} = Goatbot.handle_key({:char, ?p}, page(%{}))
+      assert {:ok, state} = Goatbot.handle_key({:edit, :newline}, state)
+      refute state.confirm
+      refute_received :engage
+
+      assert {:ok, %{confirm: true}} = Goatbot.handle_key({:char, ?p}, state)
+      refute_received {:command, :poweroff}
+    end
+
     test "other letters do nothing" do
       assert :ignore = Goatbot.handle_key({:char, ?q}, page(%{}))
     end

@@ -54,7 +54,8 @@ defmodule Badge.Goatbot.Pilot do
   def retarget(pilot, target), do: tell(pilot, {:target, target})
 
   @doc """
-  Runs `:arm`, `:stand` or `:disarm` on the robot, if it is answering.
+  Runs `:arm`, `:stand`, `:disarm` or `:poweroff` on the robot, if it is
+  answering.
   Disarming also stops driving.
   """
   @spec command(pid, atom) :: :ok
