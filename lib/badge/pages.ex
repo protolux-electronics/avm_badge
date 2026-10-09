@@ -29,7 +29,8 @@ defmodule Badge.Pages do
     Badge.Page.Vote,
     Badge.Page.Console,
     Badge.Page.Agent,
-    Badge.Page.Cluster
+    Badge.Page.Cluster,
+    Badge.Page.Goatbot
   ]
 
   @per_screen length(@keys)

@@ -28,7 +28,7 @@ defmodule Badge.Update.Link do
   alias Badge.Nvs
   alias Badge.Wifi
 
-  @compile {:no_warn_undefined, [:esp, :nh_flash, :nh_ota, NervesHubLink]}
+  @compile {:no_warn_undefined, [:esp, :nh_flash, :nh_ota, :ssl, NervesHubLink]}
 
   @host "devices.nervescloud.com"
 
@@ -133,6 +133,8 @@ defmodule Badge.Update.Link do
   # Neither reading flash nor opening a socket happens here: `status/0` is
   # called from the render loop and must never queue behind either.
   def handle_cast(:open, state) do
+    # The downloader's TLS calls the ssl server, and nothing else starts it.
+    :ssl.start()
     describe_later()
 
     {:noreply, %{state | want: true, state: :waiting}}
