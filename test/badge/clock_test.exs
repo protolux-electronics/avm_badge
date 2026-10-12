@@ -3,6 +3,53 @@ defmodule Badge.ClockTest do
 
   alias Badge.Clock
 
+  doctest Badge.Clock
+
+  describe "stamp/1 and parse_stamp/1" do
+    test "round-trip across leap days, month ends and the epoch" do
+      for text <- [
+            "1970-01-01 00:00:00",
+            "2024-02-29 12:00:00",
+            "2026-12-31 23:59:59",
+            "2100-03-01 00:00:01"
+          ] do
+        {:ok, seconds} = Clock.parse_stamp(text)
+        assert Clock.stamp(seconds) == text
+      end
+    end
+
+    test "agree with the calendar" do
+      seconds =
+        :calendar.datetime_to_gregorian_seconds({{2026, 10, 2}, {3, 41, 7}}) - 62_167_219_200
+
+      assert Clock.stamp(seconds) == "2026-10-02 03:41:07"
+    end
+
+    test "refuse what is not a real moment" do
+      for text <- [
+            "2026-02-29 00:00:00",
+            "2026-13-01 00:00:00",
+            "2026-04-31 00:00:00",
+            "2026-10-02 24:00:00",
+            "2026-10-02 12:60:00",
+            "1969-12-31 23:59:59",
+            "2026-10-02 1:00:00",
+            "2026-1o-02 01:00:00",
+            "2026-10-02"
+          ] do
+        assert Clock.parse_stamp(text) == :error, text
+      end
+    end
+  end
+
+  describe "ago/1" do
+    test "steps from moments to days" do
+      assert Clock.ago(5) == "just now"
+      assert Clock.ago(3 * 3600) == "3 h ago"
+      assert Clock.ago(2 * 86_400 + 5) == "2 d ago"
+    end
+  end
+
   describe "format/1" do
     test "zero is midnight" do
       assert Clock.format(0) == "00:00:00"

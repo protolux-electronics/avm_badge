@@ -17,6 +17,9 @@ defmodule Badge.Sim.Fakes do
               synced: true,
               offset: 120,
               zone: "Europe/Stockholm",
+              source: Map.get(d, :source, "SNTP"),
+              updated: Map.get(d, :updated, :erlang.system_time(:second) - 1_700),
+              sntp_host: Map.get(d, :sntp_host, "pool.ntp.org"),
               scanning: false,
               scan_id: Map.get(d, :scan_id, 0)
             }
@@ -29,10 +32,26 @@ defmodule Badge.Sim.Fakes do
             ]
         end,
         fn
-          :scan, d -> Map.update(d, :scan_id, 1, &(&1 + 1))
-          {:connect, ssid, _psk}, d -> Map.merge(d, %{radio: :connected, ssid: ssid})
-          :forget, d -> Map.merge(d, %{radio: :disabled, ssid: nil})
-          _, d -> d
+          :scan, d ->
+            Map.update(d, :scan_id, 1, &(&1 + 1))
+
+          {:connect, ssid, _psk}, d ->
+            Map.merge(d, %{radio: :connected, ssid: ssid})
+
+          :forget, d ->
+            Map.merge(d, %{radio: :disabled, ssid: nil})
+
+          {:clock_set, source}, d ->
+            Map.merge(d, %{source: source, updated: :erlang.system_time(:second)})
+
+          {:sntp_host, ""}, d ->
+            Map.put(d, :sntp_host, "pool.ntp.org")
+
+          {:sntp_host, host}, d ->
+            Map.put(d, :sntp_host, host)
+
+          _, d ->
+            d
         end
       ),
       fake(

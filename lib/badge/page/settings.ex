@@ -20,12 +20,13 @@ defmodule Badge.Page.Settings do
   alias Badge.Page.Settings.Display
   alias Badge.Page.Settings.Log
   alias Badge.Page.Settings.Sudo
+  alias Badge.Page.Settings.Time
   alias Badge.Page.Settings.Update
   alias Badge.Page.Settings.Wifi
   alias Badge.Theme
 
   @margin 8
-  @subpages [Display, Wifi, Update, Log, Sudo]
+  @subpages [Display, Wifi, Time, Update, Log, Sudo]
   @count length(@subpages)
 
   @strip_y Theme.content_top()

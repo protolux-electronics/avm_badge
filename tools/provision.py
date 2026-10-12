@@ -16,6 +16,7 @@ badge.
     --wifi-psk    BADGE_WIFI_PSK      prompted for, hidden, when a network is named
     --utc-offset  BADGE_UTC_OFFSET    minutes, -720..840; a fallback for time_zone
     --chat-url    AVM_BADGE_SERVER_URL
+    --sntp-host   BADGE_SNTP_HOST     SNTP server; the firmware defaults this to pool.ntp.org
 
 `--forget-wifi` drops the saved network, keeping everything else.
 
@@ -53,6 +54,7 @@ SETTINGS = [
     ("wifi_psk", "--wifi-psk", "BADGE_WIFI_PSK"),
     ("chat_url", "--chat-url", "AVM_BADGE_SERVER_URL"),
     ("utc_offset_m", "--utc-offset", "BADGE_UTC_OFFSET"),
+    ("sntp_host", "--sntp-host", "BADGE_SNTP_HOST"),
 ]
 
 WIFI = ("wifi_ssid", "wifi_psk")
