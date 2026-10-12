@@ -61,13 +61,21 @@ defmodule Badge.Schedule do
           when: binary,
           where: binary,
           who: binary,
-          row: binary
+          row: binary,
+          description_lines: [binary]
         }
 
   @type entry :: {integer, integer, binary}
   @type entries :: tuple
 
-  @doc "The programme wrapped to `columns`, or an error when the site cannot be reached or read."
+  @doc """
+  The programme wrapped to `columns`, or an error when the site cannot be
+  reached or read.
+
+  The site's JSON holds no abstracts; those come from the talk pages that
+  `mix badge.schedule` crawls into `assets/schedule.json`. A programme
+  fetched here carries none, and replaces a compiled-in one that does.
+  """
   @spec fetch(pos_integer) :: {:ok, [session]} | {:error, term}
   def fetch(columns) do
     :ssl.start()
@@ -200,7 +208,8 @@ defmodule Badge.Schedule do
         when: date_face(weekday, ymd) <> " " <> clock_face(start) <> "-" <> clock_face(stop),
         where: where(space, label),
         who: who(Map.get(session, "speakers")),
-        row: clock_face(start) <> " " <> title
+        row: clock_face(start) <> " " <> title,
+        description_lines: description_lines(text(session, "description"), columns)
       }
 
       [{entry.start, entry}]
@@ -213,6 +222,14 @@ defmodule Badge.Schedule do
 
   defp where(space, nil), do: Text.cp437(space)
   defp where(space, label), do: Text.cp437(space <> ", " <> label)
+
+  # The site renders this as `white-space: pre-wrap`, so every line break in
+  # it is one the talk's own author put there and is kept, not collapsed.
+  defp description_lines(nil, _columns), do: []
+
+  defp description_lines(raw, columns) do
+    Enum.flat_map(:binary.split(Text.cp437(raw), "\n", [:global]), &Text.wrap(&1, columns))
+  end
 
   defp who(list) when is_list(list) do
     Text.cp437(:erlang.iolist_to_binary(:lists.join(", ", :lists.flatmap(&speaker/1, list))))

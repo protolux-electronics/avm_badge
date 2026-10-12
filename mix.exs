@@ -3,6 +3,8 @@
 if System.get_env("MIX_TARGET") == nil do
   case System.argv() do
     ["atomvm." <> _ | _] -> Mix.target(:badge)
+    # Fetches the programme over Req/LazyHTML, both :host-only deps.
+    ["badge.schedule" | _] -> :ok
     ["badge." <> _ | _] -> Mix.target(:badge)
     _other -> :ok
   end
@@ -71,7 +73,10 @@ defmodule Badge.MixProject do
       # The packbeam escript, from Hex rather than an AtomVM checkout.
       {:atomvm_packbeam, "~> 0.8.2", runtime: false},
       # The browser side of the simulator, absent from the badge build.
-      {:phoenix_playground, "~> 0.1.9", targets: [:host]}
+      {:phoenix_playground, "~> 0.1.9", targets: [:host]},
+      # Fetches and parses the programme for `mix badge.schedule`.
+      {:req, "~> 0.5", targets: [:host]},
+      {:lazy_html, "~> 0.1", targets: [:host]}
     ]
   end
 end
