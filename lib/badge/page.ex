@@ -59,6 +59,14 @@ defmodule Badge.Page do
   @callback refresh(state) :: pos_integer
 
   @doc """
+  Whether a tick that took the state from `old` to `new` changes what is drawn.
+
+  A page whose state moves on without the picture moving, such as something off screen, says
+  so here and is not repainted for it. Only ticks are asked; the default is `old != new`.
+  """
+  @callback changed?(old :: state, new :: state) :: boolean
+
+  @doc """
   Applies a message sent to `Badge.UI` by a process the page owns.
 
   A page cannot receive for itself: `Badge.UI` is a `GenServer` and takes
@@ -111,6 +119,9 @@ defmodule Badge.Page do
       def tick(state), do: state
 
       @impl true
+      def changed?(old, new), do: old != new
+
+      @impl true
       def refresh(_state), do: 100
 
       @impl true
@@ -133,6 +144,7 @@ defmodule Badge.Page do
 
       defoverridable handle_key: 2,
                      tick: 1,
+                     changed?: 2,
                      refresh: 1,
                      icon: 0,
                      leave: 1,
