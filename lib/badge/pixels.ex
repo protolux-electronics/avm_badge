@@ -21,6 +21,7 @@ defmodule Badge.Pixels do
   alias Badge.Hardware
   alias Badge.LedMode
   alias Badge.Nvs
+  alias Badge.Pixels.Pattern
 
   @compile {:no_warn_undefined, :spi}
 
@@ -54,6 +55,20 @@ defmodule Badge.Pixels do
     GenServer.cast(__MODULE__, {:mode, mode})
   end
 
+  @doc """
+  Plays `frames`, each `{r, g, b}` per LED, `ms` apiece (or `:infinity` for one that stays),
+  over the mode until `pattern_off/0`.
+
+  Not saved to NVS, and the mode comes back by itself afterwards. A flash and a sleeping
+  badge still outrank it.
+  """
+  @spec pattern(pos_integer | :infinity, [Pattern.frame(), ...]) :: :ok
+  def pattern(ms, frames), do: GenServer.cast(__MODULE__, {:pattern, ms, frames})
+
+  @doc "Ends a `pattern/2`, and the mode takes the chain back."
+  @spec pattern_off() :: :ok
+  def pattern_off, do: GenServer.cast(__MODULE__, :pattern_off)
+
   @doc "What the chain is showing, so a page can adopt it rather than reset it."
   @spec mode() :: atom | {atom, integer}
   def mode, do: GenServer.call(__MODULE__, :mode)
@@ -85,7 +100,15 @@ defmodule Badge.Pixels do
       Hardware.pixel_clock_hz()
     ])
 
-    state = %{spi: spi, phase: 0, mode: :rainbow, last: nil, flash: nil, asleep: false}
+    state = %{
+      spi: spi,
+      phase: 0,
+      mode: :rainbow,
+      last: nil,
+      flash: nil,
+      pattern: nil,
+      asleep: false
+    }
 
     {:ok, state, {:continue, :restore}}
   end
@@ -118,7 +141,17 @@ defmodule Badge.Pixels do
   def handle_cast(:sleep, state), do: {:noreply, %{state | asleep: true}}
 
   # `last` is cleared so the chain is repainted even if the colour is unchanged.
-  def handle_cast(:wake, state), do: {:noreply, %{state | asleep: false, last: nil}}
+  def handle_cast(:wake, state) do
+    pattern = if state.pattern, do: Pattern.restart(state.pattern)
+
+    {:noreply, %{state | asleep: false, last: nil, pattern: pattern}}
+  end
+
+  def handle_cast({:pattern, ms, frames}, state) do
+    {:noreply, %{state | pattern: Pattern.new(ms, frames, @tick)}}
+  end
+
+  def handle_cast(:pattern_off, state), do: {:noreply, %{state | pattern: nil, last: nil}}
 
   def handle_cast({:flash, hue, ticks}, state) do
     {:noreply, %{state | flash: {hue, ticks}}}
@@ -140,12 +173,27 @@ defmodule Badge.Pixels do
 
   # A flash outranks the mode until its ticks run out, then the mode resumes
   # on its own because `last` no longer matches.
-  defp paint(%{flash: {_hue, 0}} = state), do: paint(%{state | flash: nil})
+  defp paint(%{flash: {_hue, 0}} = state) do
+    pattern = if state.pattern, do: Pattern.restart(state.pattern)
+
+    paint(%{state | flash: nil, pattern: pattern})
+  end
 
   defp paint(%{flash: {hue, left}} = state) do
     lit = hold(state, Color.hsv_to_rgb(hue, 255, @brightness))
 
     %{lit | flash: {hue, left - 1}}
+  end
+
+  defp paint(%{pattern: pattern, spi: spi} = state) when pattern != nil do
+    case Pattern.step(pattern) do
+      {nil, pattern} ->
+        %{state | pattern: pattern}
+
+      {frame, pattern} ->
+        show(spi, frame)
+        %{state | pattern: pattern, last: nil}
+    end
   end
 
   defp paint(%{mode: :rainbow, spi: spi, phase: phase} = state) do

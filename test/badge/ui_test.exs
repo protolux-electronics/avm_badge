@@ -59,4 +59,45 @@ defmodule Badge.UITest do
       refute Badge.UI.key_due?(1_000, 1_034)
     end
   end
+
+  defmodule Moving do
+    @moduledoc false
+    use Badge.Page
+
+    def title, do: "Moving"
+    def init, do: %{shown: 0, hidden: 0}
+    def render(_state), do: []
+    def changed?(old, new), do: old.shown != new.shown
+  end
+
+  describe "a tick" do
+    defp ui(dirty, page), do: %{dirty: dirty, status: :same, page: page, page_state: page.init()}
+
+    test "that only changes what the page says is not drawn does not dirty the screen" do
+      state = ui(false, Moving)
+
+      refute Badge.UI.dirty_after_tick?(state, %{state.page_state | hidden: 1}, :same)
+    end
+
+    test "that changes what is drawn does" do
+      state = ui(false, Moving)
+
+      assert Badge.UI.dirty_after_tick?(state, %{state.page_state | shown: 1}, :same)
+    end
+
+    test "is drawn if the screen was already dirty or the status changed" do
+      state = ui(true, Moving)
+      assert Badge.UI.dirty_after_tick?(state, state.page_state, :same)
+
+      state = ui(false, Moving)
+      assert Badge.UI.dirty_after_tick?(state, state.page_state, :other)
+    end
+
+    test "on a page without changed? is dirty when the state differs at all" do
+      state = ui(false, Badge.Page.Name)
+
+      refute Badge.UI.dirty_after_tick?(state, state.page_state, :same)
+      assert Badge.UI.dirty_after_tick?(state, %{state.page_state | mode: :fields}, :same)
+    end
+  end
 end

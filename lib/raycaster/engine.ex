@@ -12,11 +12,11 @@ defmodule Raycaster.Engine do
 
   import Bitwise
 
-  # Vertical slices across the screen. Ray casting is nearly all of the frame
-  # time and costs the same per slice, so this is the frame rate knob: 80 slices
-  # ran at 7 fps on the badge standing still, 40 at 12-13 (about 10 while
-  # walking). It must divide the screen width.
-  @cols 40
+  # Rays cast evenly across the screen before edges are refined; must divide the width.
+  @cols 20
+  # A face gets a band of shade per this many rows of height change, at most @bands.
+  @band_lines 24
+  @bands 4
   @half div(@cols, 2)
   # Distance along a ray that never crosses a grid line. AtomVM's integers are
   # 28 bits wide on this chip before they spill onto the heap, so keep it
@@ -61,6 +61,13 @@ defmodule Raycaster.Engine do
         end)
         |> List.to_tuple()
 
+  # The floor as one integer, bit `y * 16 + x` set where column `x` of row `y` is floor.
+  @open_mask (for {row, y} <- Enum.with_index(@rows),
+                  {?., x} <- Enum.with_index(String.to_charlist(row)),
+                  reduce: 0 do
+                bits -> bits ||| 1 <<< (y * 16 + x)
+              end)
+
   @ceiling 0x202838
   @floor 0x504030
 
@@ -75,6 +82,17 @@ defmodule Raycaster.Engine do
   @turn_right 16
   @turn_left 32
 
+  # Nearer than this a figure is inside the player.
+  @nearest 64
+  @goat_fur 0xE6E0D2
+  @goat_face 0xD2CABA
+  @goat_beard 0xB4AC9C
+  @goat_dark 0x3C3228
+  @goat_calm 0xE8B820
+  @goat_angry 0xFF2010
+  # Pixels tall below which the goat is drawn in five rectangles.
+  @goat_detail 64
+
   # How close to a wall the player may get, in Q8.
   @radius 60
 
@@ -83,10 +101,25 @@ defmodule Raycaster.Engine do
 
   def new, do: %{x: 384, y: 384, a: 0}
 
+  # Where a caught player comes back: the start or the far corner, whichever is farther from the goat.
+  @start %{x: 384, y: 384, a: 0}
+  @corner %{x: 13 * 256 + 128, y: 13 * 256 + 128, a: 49_152}
+
+  def respawn({gx, gy, _hunting}) do
+    if apart(@start, gx, gy) >= apart(@corner, gx, gy), do: @start, else: @corner
+  end
+
+  def respawn(_no_goat), do: new()
+
+  defp apart(%{x: x, y: y}, gx, gy), do: (x - gx) * (x - gx) + (y - gy) * (y - gy)
+
   # The map. Call this once and pass the result to step/4 and frame/4.
   def grid, do: @grid
 
   def cols, do: @cols
+
+  @doc "The floor as one integer, a bit for each cell, `y * 16 + x`."
+  def open_mask, do: @open_mask
 
   # Held keys are labels from Raycaster.Keymap, binaries or charlists.
   def step(grid, state, held, dt_ms) do
@@ -134,7 +167,7 @@ defmodule Raycaster.Engine do
     # What every column needs and none changes, in one tuple: a call only has
     # to keep a few variables alive across it, and each one costs a save and a
     # restore on this chip.
-    view = {grid, cell, in_x, in_y, dir_x, dir_y, plane_x, plane_y, column_width, height}
+    view = {grid, cell, in_x, in_y, dir_x, dir_y, plane_x, plane_y, column_width, height, width}
 
     # The first item is on top, so floor and ceiling go last, behind the walls.
     # The walls are put in front of them as they are found.
@@ -160,51 +193,327 @@ defmodule Raycaster.Engine do
     receive do
       # The right half's rectangles come nearest the seam first; the display
       # list wants the rightmost first.
-      {^ref, {right_run, right}} -> :lists.reverse(right, join(left_run, right_run, left))
+      {^ref, {right_run, right}} ->
+        :lists.reverse(right, join(left_run, right_run, view, left))
     end
   end
 
-  # `run` is the rectangle being widened: neighbouring columns with the same
-  # height and colour (a flat wall facing you) become one rectangle. Casts
-  # columns from `i` up to or down to `stop` (by `step`, +1 or -1), and returns
-  # the rectangle still being widened along with the finished ones before it.
+  @doc """
+  Goats as figures, to go in front of what `frame/4` returns.
+
+  `others` is a list of `{:goat, x, y, hunting}`, positions in the same Q8 as the
+  player's, or `{:goat, x, y, hunting, true}` when it is known to be in plain sight
+  and the walk to check it can be skipped. The goat's eyes go red while `hunting`
+  is true. A figure is sized by how far away it is, and left out when behind the
+  player, off to the side of the view, or hidden by a wall: a goat half behind a
+  corner is either seen or not. The nearest come first.
+  """
+  def sprites(_grid, _player, [], _width, _height), do: []
+
+  def sprites(grid, %{x: x, y: y, a: angle}, others, width, height) do
+    index = index(angle)
+    dir_x = cos(index)
+    dir_y = sin(index)
+    plane_x = div(-dir_y * 169, 256)
+    plane_y = div(dir_x * 169, 256)
+    # The camera's determinant, over 256 so the quotients below come out in Q8
+    # without a product big enough to be boxed.
+    det = div(plane_x * dir_y - dir_x * plane_y, 256)
+
+    view = {grid, x, y, dir_x, dir_y, plane_x, plane_y, det, width, height}
+
+    # Nearest first: the first item is drawn on top.
+    nearest_first = :lists.keysort(1, figures(view, others, []))
+
+    flatten_figures(nearest_first)
+  end
+
+  defp figures(_view, [], acc), do: acc
+
+  defp figures(view, [{:goat, ox, oy, hunting} | rest], acc),
+    do: figures(view, rest, place(acc, view, ox, oy, hunting, false))
+
+  defp figures(view, [{:goat, ox, oy, hunting, sure} | rest], acc),
+    do: figures(view, rest, place(acc, view, ox, oy, hunting, sure))
+
+  # `sure` says it is already known to be in line of sight.
+  defp place(acc, view, ox, oy, hunting, sure) do
+    {_grid, x, y, dir_x, dir_y, plane_x, plane_y, det, _width, _height} = view
+
+    rel_x = ox - x
+    rel_y = oy - y
+    depth = div(plane_x * rel_y - plane_y * rel_x, det)
+    across = div(dir_y * rel_x - dir_x * rel_y, det)
+
+    if depth >= @nearest, do: seen(acc, view, ox, oy, depth, across, hunting, sure), else: acc
+  end
+
+  # The walk along the line to a figure is only made for one in the view.
+  defp seen(acc, view, ox, oy, depth, across, hunting, sure) do
+    {grid, x, y, _dir_x, _dir_y, _plane_x, _plane_y, _det, width, height} = view
+
+    centre = div(width * (depth + across), 2 * depth)
+    line = div(height * 256, depth)
+
+    if centre + line > 0 and centre - line < width and (sure or visible?(grid, x, y, ox, oy)) do
+      add_figure(acc, depth, centre, line, hunting, width, height)
+    else
+      acc
+    end
+  end
+
+  # `line` is a wall's height at this distance; parts are in hundredths of `size`, topmost first.
+  defp add_figure(acc, depth, centre, line, hunting, width, height) do
+    size = div(line * 6, 5)
+    at = {centre, div(height + line, 2), size, width, height}
+
+    fur = shade(@goat_fur, depth)
+    face = shade(@goat_face, depth)
+    dark = shade(@goat_dark, depth)
+    # Unshaded, so they shine out of the dark.
+    eyes = if hunting, do: @goat_angry, else: @goat_calm
+
+    items =
+      if size < @goat_detail do
+        part(at, -7, 43, 4, 3, eyes) ++
+          part(at, 3, 43, 4, 3, eyes) ++
+          part(at, -9, 50, 18, 22, face) ++
+          part(at, -18, 36, 36, 21, fur) ++
+          part(at, -14, 16, 28, 16, dark)
+      else
+        part(at, -7, 43, 4, 3, eyes) ++
+          part(at, 3, 43, 4, 3, eyes) ++
+          part(at, -3, 30, 6, 9, shade(@goat_beard, depth)) ++
+          part(at, -13, 66, 6, 5, dark) ++
+          part(at, 7, 66, 6, 5, dark) ++
+          part(at, -9, 62, 5, 13, dark) ++
+          part(at, 4, 62, 5, 13, dark) ++
+          part(at, -9, 50, 18, 22, face) ++
+          part(at, -19, 47, 10, 5, face) ++
+          part(at, 9, 47, 10, 5, face) ++
+          part(at, -18, 36, 36, 21, fur) ++
+          part(at, -14, 16, 7, 16, dark) ++
+          part(at, 7, 16, 7, 16, dark)
+      end
+
+    [{depth, items} | acc]
+  end
+
+  # A goat part in hundredths of its size, `up` from the floor to its top, at least a pixel.
+  defp part({centre, floor, size, width, height}, left, up, w, h, colour) do
+    clip(
+      {:rect, centre + div(size * left, 100), floor - div(size * up, 100),
+       max(div(size * w, 100), 1), max(div(size * h, 100), 1), colour},
+      width,
+      height
+    )
+  end
+
+  defp flatten_figures([]), do: []
+
+  defp flatten_figures([{_depth, items} | rest]),
+    do: :lists.append(items, flatten_figures(rest))
+
+  # Keeps a rectangle on the screen, or drops it.
+  defp clip({:rect, x, y, w, h, colour}, width, height) do
+    left = max(x, 0)
+    top = max(y, 0)
+    right = min(x + w, width)
+    bottom = min(y + h, height)
+
+    if right > left and bottom > top do
+      [{:rect, left, top, right - left, bottom - top, colour}]
+    else
+      []
+    end
+  end
+
+  @doc false
+  # Nothing solid between two points, looked at every quarter cell.
+  def visible?(grid, x, y, ox, oy) do
+    dx = ox - x
+    dy = oy - y
+    steps = max(div(max(abs(dx), abs(dy)), 64), 1)
+
+    clear?(grid, x, y, dx, dy, steps, 1)
+  end
+
+  defp clear?(_grid, _x, _y, _dx, _dy, steps, i) when i >= steps, do: true
+
+  defp clear?(grid, x, y, dx, dy, steps, i) do
+    if open?(grid, x + div(dx * i, steps), y + div(dy * i, steps)) do
+      clear?(grid, x, y, dx, dy, steps, i + 1)
+    else
+      false
+    end
+  end
+
+  defp shade({r, g, b}, depth) do
+    factor = max(64, 256 - div(depth, 10))
+    div(r * factor, 256) <<< 16 ||| div(g * factor, 256) <<< 8 ||| div(b * factor, 256)
+  end
+
+  defp shade(colour, depth) do
+    shade({colour >>> 16 &&& 255, colour >>> 8 &&& 255, colour &&& 255}, depth)
+  end
+
+  # Casts `i` to `stop` by `step`; `run` is the open face, `{face, edge, first, last}`.
   defp columns(_view, stop, stop, _step, run, acc), do: {run, acc}
 
   defp columns(view, i, stop, step, run, acc) do
-    {grid, cell, in_x, in_y, dir_x, dir_y, plane_x, plane_y, column_width, height} = view
-
-    camera = div(2 * i * 256, @cols) - 256
-    ray_x = dir_x + div(plane_x * camera, 256)
-    ray_y = dir_y + div(plane_y * camera, 256)
-
-    {wall, side, dist} = cast(grid, cell, in_x, in_y, ray_x, ray_y)
-    line = min(div(height * 256, max(dist, 1)), height)
-    top = div(height - line, 2)
-    colour = colour(wall, side, dist)
+    column_width = elem(view, 8)
+    x = i * column_width
+    {face, sample} = sample(view, x)
 
     {run, acc} =
       case run do
-        {rx, rw, ^top, ^line, ^colour} ->
-          # Going leftwards, the rectangle grows at its left edge.
-          x = if step > 0, do: rx, else: i * column_width
-          {{x, rw + column_width, top, line, colour}, acc}
+        nil ->
+          edge = if step > 0, do: x, else: x + column_width
+          {{face, edge, sample, sample}, acc}
 
-        _ ->
-          {{i * column_width, column_width, top, line, colour}, emit(run, acc)}
+        {^face, edge, first, _last} ->
+          {{face, edge, first, sample}, acc}
+
+        _other ->
+          cross(view, run, x, face, sample, acc)
       end
 
     columns(view, i + step, stop, step, run, acc)
   end
 
-  # The two rectangles meeting at the seam, one from each half: one rectangle
-  # if they match, as a single pass across the screen would have made it.
-  defp join({x, w, top, line, colour}, {_x, right_w, top, line, colour}, acc),
-    do: [{:rect, x, top, w + right_w, line, colour} | acc]
+  # Ends the run where the face changes before `x`, and starts the next, however thin.
+  defp cross(view, {old, _edge, _first, {last_x, _, _, _, _, _}} = run, x, face, sample, acc) do
+    edge = boundary(view, old, last_x, x)
+    acc = emit(run, edge, view, acc)
+    next = if last_x < x, do: edge, else: edge - 1
 
-  defp join(left_run, right_run, acc), do: emit(right_run, emit(left_run, acc))
+    case next == x do
+      true ->
+        {{face, edge, sample, sample}, acc}
 
-  defp emit(nil, acc), do: acc
-  defp emit({x, w, y, h, colour}, acc), do: [{:rect, x, y, w, h, colour} | acc]
+      false ->
+        case sample(view, next) do
+          {^face, first} -> {{face, edge, first, sample}, acc}
+          {thin, first} -> cross(view, {thin, edge, first, first}, x, face, sample, acc)
+        end
+    end
+  end
+
+  # One ray, through the left edge of pixel column `x`.
+  defp sample(view, x) do
+    {grid, cell, in_x, in_y, dir_x, dir_y, plane_x, plane_y, _column_width, height, width} = view
+
+    camera = div(2 * x * 256, width) - 256
+    ray_x = dir_x + div(plane_x * camera, 256)
+    ray_y = dir_y + div(plane_y * camera, 256)
+
+    {wall, side, dist, hit} = cast(grid, cell, in_x, in_y, ray_x, ray_y)
+    # Not cut to the screen, so a near wall keeps its slope.
+    line = div(height * 256, max(dist, 1))
+    top = div(height - line, 2)
+
+    face =
+      if side == 0,
+        do: {0, rem(hit - 1, @size), ray_x > 0, wall},
+        else: {1, div(hit - 1, @size), ray_y > 0, wall}
+
+    {face, {x, top, line, dist, wall, side}}
+  end
+
+  # The pixel edge between `face` at `from` and something else at `to`, by halving the gap.
+  defp boundary(view, face, from, to) do
+    {lo, hi} = if from < to, do: {from, to}, else: {to, from}
+    narrow(view, face, lo, hi, from < to)
+  end
+
+  defp narrow(_view, _face, lo, hi, _rising) when hi - lo <= 1, do: hi
+
+  defp narrow(view, face, lo, hi, rising) do
+    mid = div(lo + hi, 2)
+
+    case {elem(sample(view, mid), 0) == face, rising} do
+      {true, true} -> narrow(view, face, mid, hi, rising)
+      {false, true} -> narrow(view, face, lo, mid, rising)
+      {true, false} -> narrow(view, face, lo, mid, rising)
+      {false, false} -> narrow(view, face, mid, hi, rising)
+    end
+  end
+
+  # The two halves' faces at the seam: one polygon if they are the same face.
+  defp join({face, left_edge, left_first, _}, {face, right_edge, right_first, _}, view, acc),
+    do: emit({face, left_edge, left_first, right_first}, right_edge, view, acc)
+
+  # Different faces: the edge between them is found here, as inside a half.
+  defp join(
+         {left_face, _, _, {left_x, _, _, _, _, _}} = left_run,
+         {_, _, _, {right_x, _, _, _, _, _}} = right_run,
+         view,
+         acc
+       ) do
+    edge = boundary(view, left_face, left_x, right_x)
+    emit(right_run, edge, view, emit(left_run, edge, view, acc))
+  end
+
+  # Top and bottom through the first and last samples, in bands of shade by distance.
+  defp emit({face, edge, first, last}, ending, view, acc) do
+    height = elem(view, 9)
+    {left, right} = if edge < ending, do: {edge, ending}, else: {ending, edge}
+    {first, last} = slope(view, face, first, last, left, right)
+    {ax, at, al, _ad, wall, side} = first
+    {bx, bt, bl, _bd, _, _} = last
+
+    if ax == bx do
+      top = max(at, 0)
+
+      [
+        {:rect, left, top, right - left, min(at + al, height) - top,
+         colour(wall, side, line_dist(al, height))}
+        | acc
+      ]
+    else
+      line = {ax, at, al, bx, bt, bl, wall, side, height}
+      lines = abs(along(ax, al, bx, bl, left) - along(ax, al, bx, bl, right))
+      n = min(max(div(lines, @band_lines), 1), @bands)
+      bands(line, left, right, n, 0, acc)
+    end
+  end
+
+  # A face one ray hit gets a second ray at its other end, for its slope.
+  defp slope(view, face, {x, _, _, _, _, _} = first, {x, _, _, _, _, _}, left, right)
+       when right - left >= 2 do
+    other = if x - left < right - 1 - x, do: right - 1, else: left
+
+    case sample(view, other) do
+      {^face, second} when other != x -> {first, second}
+      _ -> {first, first}
+    end
+  end
+
+  defp slope(_view, _face, first, last, _left, _right), do: {first, last}
+
+  defp bands(_line, _left, _right, n, n, acc), do: acc
+
+  defp bands(line, left, right, n, k, acc) do
+    {ax, at, al, bx, bt, bl, wall, side, height} = line
+    l = left + div((right - left) * k, n)
+    r = left + div((right - left) * (k + 1), n)
+    middle = along(ax, al, bx, bl, div(l + r, 2))
+    colour = colour(wall, side, line_dist(middle, height))
+    lt = cut(along(ax, at, bx, bt, l), height)
+    rt = cut(along(ax, at, bx, bt, r), height)
+    lb = cut(along(ax, at + al, bx, bt + bl, l), height)
+    rb = cut(along(ax, at + al, bx, bt + bl, r), height)
+    item = {:polygon, [{l, lt}, {r, rt}, {r, rb}, {l, lb}], colour}
+    bands(line, left, right, n, k + 1, [item | acc])
+  end
+
+  defp line_dist(line, height), do: div(height * 256, max(line, 1))
+
+  # AtomGL clips polygons itself, but wants points within 16 bits.
+  defp cut(y, _height), do: min(max(y, -32_000), 32_000)
+
+  # The height at `x` of the line through `{ax, ay}` and `{bx, by}`.
+  defp along(ax, ay, bx, by, x), do: ay + div((by - ay) * (x - ax), bx - ax)
 
   # Digital differential analysis: hop from grid line to grid line along the
   # ray until a wall cell is entered. Returns {wall type, side hit, distance}.
@@ -251,14 +560,14 @@ defmodule Raycaster.Engine do
 
       case :erlang.element(cell, grid) do
         0 -> march(grid, cell, side_x + delta_x, side_y, delta_x, delta_y, step_x, step_y)
-        wall -> {wall, 0, side_x}
+        wall -> {wall, 0, side_x, cell}
       end
     else
       cell = cell + step_y
 
       case :erlang.element(cell, grid) do
         0 -> march(grid, cell, side_x, side_y + delta_y, delta_x, delta_y, step_x, step_y)
-        wall -> {wall, 1, side_y}
+        wall -> {wall, 1, side_y, cell}
       end
     end
   end
@@ -266,7 +575,13 @@ defmodule Raycaster.Engine do
   defp cell(_grid, x, y) when x < 0 or y < 0 or x >= @size or y >= @size, do: 1
   defp cell(grid, x, y), do: elem(grid, y * @size + x)
 
-  defp open?(grid, x, y), do: cell(grid, x >>> 8, y >>> 8) == 0
+  @doc false
+  # Whether the point, in the fixed point, is on floor. Outside the map is wall.
+  def open?(grid, x, y), do: cell(grid, x >>> 8, y >>> 8) == 0
+
+  @doc false
+  # Whether the cell `{column, row}` is floor.
+  def open_cell?(grid, cx, cy), do: cell(grid, cx, cy) == 0
 
   # Darker with distance, and walls facing along y a little darker again, so
   # corners read.

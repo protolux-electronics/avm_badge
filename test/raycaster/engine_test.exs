@@ -9,32 +9,44 @@ defmodule Raycaster.EngineTest do
 
   @width 320
   @height 240
-  @ceiling 0x202838
-  @floor 0x504030
 
   # The player starts in the corner cell (1.5, 1.5), and one map cell is 256.
   @cell 256
 
   defp frame(player), do: Engine.frame(Engine.grid(), player, @width, @height)
 
-  defp walls(items),
-    do: for({:rect, x, y, w, h, c} <- items, c not in [@ceiling, @floor], do: {x, y, w, h})
+  # Floor and ceiling are the bands that span the whole screen; everything else is wall.
+  defp walls(items), do: Enum.reject(items, &match?({:rect, 0, _, @width, _, _}, &1))
 
-  # The wall rectangle covering the middle of the screen, which is where the
-  # ray runs straight along the player's direction.
-  defp centre_wall(player) do
-    Enum.find(walls(frame(player)), fn {x, _y, w, _h} -> x <= 160 and 160 < x + w end)
+  # The wall covering the middle of the screen, which is where the ray runs straight along
+  # the player's direction, as `{x, top, w, h, colour}` in pixel column 160.
+  defp centre_wall(player), do: player |> frame() |> walls() |> wall_at(160)
+
+  defp wall_at(walls, x) do
+    Enum.find_value(walls, fn
+      {:rect, rx, ry, w, h, c} when rx <= x and x < rx + w ->
+        {rx, ry, w, h, c}
+
+      {:polygon, [{l, lt}, {r, rt}, {r, rb}, {l, lb}], c} when l <= x and x < r ->
+        # Cut to the screen, as the panel shows it.
+        top = max(lt + div((rt - lt) * (x - l), r - l), 0)
+        bottom = min(lb + div((rb - lb) * (x - l), r - l), @height)
+        {l, top, r - l, bottom - top, c}
+
+      _ ->
+        nil
+    end)
   end
 
   describe "wall height in the middle column is screen height / distance" do
     test "facing the west wall half a cell away fills the screen" do
       # Height would be 480, clamped to the screen.
-      assert {_x, 0, _w, 240} = centre_wall(%{Engine.new() | a: 128 * 256})
+      assert {_x, 0, _w, 240, _} = centre_wall(%{Engine.new() | a: 128 * 256})
     end
 
     test "facing the far east wall 13.5 cells away" do
       # 240 * 256 / (13.5 * 256), rounded down.
-      assert {_x, top, _w, 17} = centre_wall(%{Engine.new() | a: 0})
+      assert {_x, top, _w, 17, _} = centre_wall(%{Engine.new() | a: 0})
       assert top == div(240 - 17, 2)
     end
 
@@ -42,11 +54,11 @@ defmodule Raycaster.EngineTest do
       near = %{x: 12 * @cell + 128, y: 384, a: 0}
 
       # 2.5 cells to the wall at x = 15: 240 * 256 / 640 = 96.
-      assert {_x, _top, _w, 96} = centre_wall(near)
+      assert {_x, _top, _w, 96, _} = centre_wall(near)
     end
 
     test "looking along y gives the same distance as along x" do
-      assert {_, _, _, 17} = centre_wall(%{Engine.new() | a: 64 * 256})
+      assert {_, _, _, 17, _} = centre_wall(%{Engine.new() | a: 64 * 256})
     end
   end
 
@@ -60,26 +72,31 @@ defmodule Raycaster.EngineTest do
           assert rx + w <= @width and ry + h <= @height
         end
 
-        # At most one rectangle per column, plus floor and ceiling.
-        assert length(items) <= Engine.cols() + 2
+        # A polygon's corners may be above or below the screen, where AtomGL clips it, but
+        # never beside it, and always within the 16 bits AtomGL takes.
+        for {:polygon, points, _colour} <- items, {px, py} <- points do
+          assert px >= 0 and px <= @width and abs(py) <= 32_767
+        end
+
+        # Fewer items than the columns: a wall face is one polygon, or a few bands of one.
+        assert length(walls(items)) <= Engine.cols()
       end
     end
 
     test "floor and ceiling are drawn behind the walls" do
       items = frame(Engine.new())
 
-      # The first item is on top and the last is drawn first.
-      assert [{:rect, 0, 0, @width, 120, @ceiling}, {:rect, 0, 120, @width, 120, @floor} | _] =
-               Enum.reverse(items)
+      # The first item is on top and the last is drawn first: the bands that span the screen
+      # come last, and between them cover it from top to bottom.
+      bands = items |> Enum.reverse() |> Enum.take_while(&match?({:rect, 0, _, @width, _, _}, &1))
+      assert length(bands) >= 2
+      assert bands |> Enum.map(fn {:rect, _, _, _, h, _} -> h end) |> Enum.sum() == @height
+      assert Enum.all?(walls(items), &(&1 not in bands))
     end
 
     test "farther walls are darker" do
       colour_at = fn a ->
-        {:rect, _x, _y, _w, _h, colour} =
-          Enum.find(frame(%{Engine.new() | a: a}), fn {:rect, x, _, w, _, c} ->
-            c not in [@ceiling, @floor] and x <= 160 and 160 < x + w
-          end)
-
+        {_x, _y, _w, _h, colour} = centre_wall(%{Engine.new() | a: a})
         colour
       end
 
@@ -160,6 +177,51 @@ defmodule Raycaster.EngineTest do
 
     test "no keys held means no movement" do
       assert Engine.step(Engine.grid(), Engine.new(), [], 500) == Engine.new()
+    end
+  end
+
+  describe "respawn/1" do
+    test "a goat near the start sends the badge to the far corner, facing north" do
+      assert %{x: 3456, y: 3456, a: 49_152} = Engine.respawn({500, 500, true})
+    end
+
+    test "a goat near the far corner leaves the badge at the start" do
+      assert Engine.respawn({3400, 3400, true}) == Engine.new()
+    end
+
+    test "either place looks down a corridor, not at a wall" do
+      # A wall half a cell away is 240 pixels tall and fills the screen; 8 cells away it is 30.
+      for goat <- [{500, 500, true}, {3400, 3400, true}] do
+        assert {_x, _top, _w, height, _} = centre_wall(Engine.respawn(goat))
+        assert height <= 30
+      end
+    end
+  end
+
+  describe "a goat known to be in sight" do
+    test "is drawn without the walk, and the walk hides one that is not" do
+      player = %{Engine.new() | a: 0}
+      # Two cells ahead of the player, in the open.
+      at = {Engine.new().x + 2 * @cell, Engine.new().y}
+      {gx, gy} = at
+
+      assert [_ | _] =
+               Engine.sprites(Engine.grid(), player, [{:goat, gx, gy, true}], @width, @height)
+
+      assert Engine.sprites(Engine.grid(), player, [{:goat, gx, gy, true, true}], @width, @height) ==
+               Engine.sprites(Engine.grid(), player, [{:goat, gx, gy, true}], @width, @height)
+    end
+  end
+
+  describe "open_mask/0" do
+    test "is the floor of the grid, one bit to a cell at y * 16 + x" do
+      grid = Engine.grid()
+      mask = Engine.open_mask()
+
+      for y <- 0..15, x <- 0..15 do
+        assert Bitwise.band(Bitwise.bsr(mask, y * 16 + x), 1) == 1 ==
+                 Engine.open_cell?(grid, x, y)
+      end
     end
   end
 end
